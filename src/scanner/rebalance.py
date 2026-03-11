@@ -1,12 +1,17 @@
 """
 Type 1: Multi-Option Rebalance Scanner.
 
-For neg-risk events where all outcomes are mutually exclusive, checks if
-sum(best_ask for each YES outcome) < 1.0, which creates a guaranteed profit
-by buying one YES share in every outcome.
+For neg-risk events where all outcomes are mutually exclusive AND exhaustive,
+checks if sum(best_ask for each YES outcome) < 1.0, which creates a guaranteed
+profit by buying one YES share in every outcome.
+
+IMPORTANT: Outcome sets must be exhaustive (cover all possibilities) for this
+to work. Events without a catch-all market ("Other", "Field", etc.) have
+incomplete coverage — buying all listed YES shares does NOT guarantee a payout.
 """
 
 import logging
+import re
 
 from config.settings import RISK_CONFIG, TRADE_FEE_PCT
 from src.client import PolymarketClient
@@ -17,6 +22,13 @@ logger = logging.getLogger(__name__)
 
 MIN_PROFIT_PCT = RISK_CONFIG["min_profit_type1_pct"] / 100
 MIN_VOLUME_24H = 1000.0  # skip illiquid events
+
+# Keywords indicating a catch-all / "rest of field" market that makes outcomes exhaustive
+_CATCHALL_KEYWORDS = re.compile(
+    r"\b(other|field|none of|someone else|another|rest of|no one|nobody|"
+    r"not listed|any other|different|else wins|other than)\b",
+    re.IGNORECASE,
+)
 
 
 class RebalanceScanner(BaseScanner):
@@ -32,11 +44,24 @@ class RebalanceScanner(BaseScanner):
         logger.info("RebalanceScanner: %d opportunity(s) found", len(opportunities))
         return opportunities
 
+    @staticmethod
+    def _has_catchall_market(markets: list[Market]) -> bool:
+        """Check if any market question indicates a catch-all / exhaustive outcome set."""
+        return any(_CATCHALL_KEYWORDS.search(m.question) for m in markets)
+
     def _check_event(self, event: Event) -> ArbitrageOpportunity | None:
         """Check a single event for Type 1 arbitrage."""
         # Only neg-risk markets are mutually exclusive
         neg_risk_markets = [m for m in event.markets if m.neg_risk and m.active]
         if len(neg_risk_markets) < 2:
+            return None
+
+        # Exhaustiveness check: outcomes must cover all possibilities
+        if not self._has_catchall_market(neg_risk_markets):
+            logger.debug(
+                "Event '%s': skipped — no catch-all market (incomplete coverage)",
+                event.title,
+            )
             return None
 
         # Filter for liquidity

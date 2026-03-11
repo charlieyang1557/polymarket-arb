@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import signal
 import statistics
 import sys
@@ -31,6 +32,13 @@ GAMMA_API_BASE = "https://gamma-api.polymarket.com"
 CLOB_API_BASE = "https://clob.polymarket.com"
 MAX_REQUESTS_PER_MINUTE = 60
 TRADE_FEE_PCT = 0.0001  # 0.01%
+
+# Keywords indicating a catch-all market that makes outcomes exhaustive
+_CATCHALL_RE = re.compile(
+    r"\b(other|field|none of|someone else|another|rest of|no one|nobody|"
+    r"not listed|any other|different|else wins|other than)\b",
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # State — collected data, saved on interrupt
@@ -504,6 +512,7 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
             })
 
         total_volume = sum(d["volume_24h"] for d in markets_detail)
+        has_catchall = any(_CATCHALL_RE.search(d["question"]) for d in markets_detail)
         event_sums.append({
             "event_id": str(event.get("id", "")),
             "title": event.get("title", ""),
@@ -511,6 +520,7 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
             "price_source": "gamma" if mode == "fast" else ("clob_ask" if any(
                 prices.get(d.get("token_id", ""), {}).get("ask") for d in markets_detail
             ) else "gamma"),
+            "exhaustive": has_catchall,
             "volume_24h": total_volume,
             "tokens_valid": valid_count,
             "tokens_total": len(tokens),
@@ -521,6 +531,10 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
     all_valid = sum(1 for e in event_sums if e["tokens_valid"] == e["tokens_total"] and e["tokens_total"] > 0)
     some_missing = sum(1 for e in event_sums if e["tokens_valid"] < e["tokens_total"])
     completeness_rate = (all_valid / len(event_sums) * 100) if event_sums else 0.0
+
+    # Exhaustiveness breakdown
+    below_1_exhaustive = [e for e in event_sums if e["price_sum"] > 0 and e["price_sum"] < 1.0 and e.get("exhaustive")]
+    below_1_incomplete = [e for e in event_sums if e["price_sum"] > 0 and e["price_sum"] < 1.0 and not e.get("exhaustive")]
 
     # Price sum distribution
     sums = [e["price_sum"] for e in event_sums if e["price_sum"] > 0]
@@ -617,6 +631,14 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
             "events_all_prices_valid": all_valid,
             "events_some_prices_missing": some_missing,
             "completeness_rate_pct": round(completeness_rate, 1),
+        },
+        "exhaustiveness": {
+            "below_1_exhaustive": len(below_1_exhaustive),
+            "below_1_incomplete_coverage": len(below_1_incomplete),
+            "exhaustive_events": [
+                {"title": e["title"], "price_sum": e["price_sum"], "volume_24h": e["volume_24h"]}
+                for e in sorted(below_1_exhaustive, key=lambda x: x["price_sum"])
+            ],
         },
         "price_sum_distribution": dist,
         "volume_tiers": volume_tiers,
@@ -730,6 +752,16 @@ def _print_console_summary(summary: dict):
     dead = summary.get("dead_tokens", 0)
     if dead:
         print(f"  Dead tokens (404): {dead}")
+
+    exh = summary.get("exhaustiveness", {})
+    if exh:
+        print(f"\nExhaustiveness filter:")
+        print(f"  Below $1.00 with catch-all market:  {exh.get('below_1_exhaustive', 0)} (real candidates)")
+        print(f"  Below $1.00 incomplete coverage:    {exh.get('below_1_incomplete_coverage', 0)} (false positives)")
+        for e in exh.get("exhaustive_events", []):
+            net_pct = (1.0 - e["price_sum"]) / e["price_sum"] * 100
+            print(f"    ${e['price_sum']:.4f} ({net_pct:.1f}%) vol=${e['volume_24h']:,.0f}  {e['title'][:50]}")
+
     print(f"\nPrice sum distribution (across all outcomes):")
     print(f"  Min: {dist['min']:.4f}  Max: {dist['max']:.4f}  Median: {dist['median']:.4f}")
     print(f"  p10: {dist['p10']:.4f}  p90: {dist['p90']:.4f}")

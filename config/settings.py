@@ -5,7 +5,7 @@ RISK_CONFIG = {
     "max_total_exposure_usd": 200,
 
     # Minimum edge to trade
-    "min_profit_type1_pct": 1.0,   # Type 1: min 1% profit after fees
+    "min_profit_type1_pct": 0.3,   # Type 1: min 0.3% profit after fees (real edges are 0.5-4%)
     "min_profit_type2_pct": 3.0,   # Type 2: min 3% edge (higher risk)
 
     # Stop-loss
