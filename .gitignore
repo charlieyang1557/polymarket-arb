@@ -11,3 +11,5 @@ dist/
 build/
 .DS_Store
 data/diagnostics/
+data/historical/raw_markets.json
+data/historical/sample_resolved*.json

@@ -1,0 +1,11 @@
+{
+  "total_raw": 135718,
+  "filtered_out": {
+    "not_binary_yes_no": 100825,
+    "coinflip_pattern": 5450,
+    "low_volume": 12077,
+    "no_clob_tokens": 0,
+    "unresolved": 4
+  },
+  "survived": 17362
+}
