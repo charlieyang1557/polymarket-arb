@@ -154,7 +154,7 @@ def _safe_float(val) -> Optional[float]:
 # ---------------------------------------------------------------------------
 
 EXPECTED_EVENT_FIELDS = {"id", "title", "slug", "markets", "active"}
-EXPECTED_MARKET_FIELDS = {"id", "question", "negRisk", "active", "clobTokenIds", "volume24hr"}
+EXPECTED_MARKET_FIELDS = {"id", "question", "negRisk", "active", "clobTokenIds", "volumeNum", "outcomes", "outcomePrices"}
 
 
 def step_fetch_events(limit: Optional[int]) -> List[dict]:
@@ -282,7 +282,7 @@ def step_fetch_orderbooks(neg_risk_events: List[dict], prices: dict, best_event_
     event_volumes = []
     for event in neg_risk_events:
         total_vol = sum(
-            float(m.get("volume24hr", 0) or 0)
+            float(m.get("volumeNum", 0) or m.get("volume24hr", 0) or 0)
             for m in event.get("markets", [])
             if m.get("negRisk") and m.get("active")
         )
@@ -372,7 +372,7 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict) ->
                 "token_id": token_id,
                 "ask": ask,
                 "bid": price_info.get("bid"),
-                "volume_24h": float(m.get("volume24hr", 0) or 0),
+                "volume_24h": float(m.get("volumeNum", 0) or m.get("volume24hr", 0) or 0),
             })
 
         total_volume = sum(d["volume_24h"] for d in markets_detail)
