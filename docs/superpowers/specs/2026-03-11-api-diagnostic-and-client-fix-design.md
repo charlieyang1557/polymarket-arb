@@ -18,7 +18,7 @@ Build a standalone diagnostic script with no model dependencies, run it against 
 
 ### Execution Flow
 
-1. Fetch all active events from Gamma API (`GET /events?active=true&closed=false&limit=500`)
+1. Fetch all active events from Gamma API (`GET /events?active=true&closed=false&limit=500`), paginating if needed (fetch until response has fewer than `limit` items)
 2. Save raw response to `raw_events.json`
 3. Identify neg-risk events (markets where `negRisk=true`) with 2+ markets
 4. For every `clobTokenId` in those events, fetch CLOB price (`GET /price?token_id=X&side=BUY` and `side=SELL`)
@@ -27,6 +27,11 @@ Build a standalone diagnostic script with no model dependencies, run it against 
 7. Save order books to `raw_orderbooks.json`
 8. Compute analysis (see Summary section below)
 9. Save `summary.json`, `errors.json`, `run_meta.json`
+10. If interrupted or if a step fails, save partial results collected so far
+
+**Usage:** `python scripts/diagnose_api.py [--limit N]` (optional `--limit` to cap events for quick test runs)
+
+**Expected runtime:** ~8-10 minutes for a full run. With ~180 tokens across neg-risk events, that's ~360 price calls (BUY + SELL) at 60 req/min = ~6 minutes for prices alone, plus order book fetches.
 
 ### Output Directory
 
@@ -55,6 +60,7 @@ data/diagnostics/YYYY-MM-DD_HHMMSS/
   "price_sum_distribution": {
     "min": 0.0, "max": 0.0, "median": 0.0, "p10": 0.0, "p90": 0.0,
     "count_below_1": 0,
+    "count_below_1_after_fees": 0,
     "count_near_miss_0_98_to_1": 0
   },
   "volume_tiers": {
@@ -137,11 +143,14 @@ While running, print progress to stdout:
 
 | File | Line(s) | Issue | Fix |
 |---|---|---|---|
-| `src/models.py` | 18-23 | `Outcome` has `yes_price`/`no_price` | Change to `best_ask`/`best_bid` (or whatever CLOB actually returns) — confirmed from `raw_prices.json` |
-| `src/client.py` | 92, 121 | Constructs `Outcome` with fields that don't exist on model | Align with updated `Outcome` fields |
+| `src/models.py` | 18-23 | `Outcome` has `yes_price`/`no_price` but client already uses `best_ask`/`best_bid` | Update model to match client — add `best_ask`/`best_bid` fields. Final field names confirmed from `raw_prices.json` |
+| `src/models.py` | 44 | `Event.is_neg_risk` exists but is never populated by `client.py` | Diagnostic will confirm if Gamma returns `negRisk` at event level. Either populate from API or remove the field |
+| `src/client.py` | 92, 121 | Constructs `Outcome` with `best_ask`/`best_bid` which don't exist on current model | Will be fixed by updating `models.py` to match (model is behind the client, not the reverse) |
+| `src/client.py` | 191-192 | `get_book_depth` assumes order book levels are dicts with `price`/`size` keys | Confirm format from `raw_orderbooks.json`, update parsing if needed |
 | `src/scanner/rebalance.py` | 13 | Imports non-existent `ArbitrageType` | Remove import, use string literal `"type1_rebalance"` |
-| `src/scanner/rebalance.py` | 106-118 | Wrong field names in `ArbitrageOpportunity` constructor | Map: `opp_type` -> `type`, `event_id` -> `event_ids` (list), `net_profit` -> `expected_profit`, `net_profit_pct` -> `expected_profit_pct`, `markets_involved` -> `markets`, remove fields not in model (`gross_profit`, `total_fees`, `min_liquidity_usd`, `event_title`) |
-| `src/scanner/logical.py` | 14 (expected) | Same `ArbitrageType` import issue | Same fix — remove import, use string literal |
+| `src/scanner/rebalance.py` | 106-118 | Wrong field names in `ArbitrageOpportunity` constructor | Map: `opp_type` -> `type="type1_rebalance"`, `event_id` -> `event_ids` (list), `net_profit` -> `expected_profit`, `net_profit_pct` -> `expected_profit_pct`, `markets_involved` -> `markets`, remove fields not in model (`gross_profit`, `total_fees`, `min_liquidity_usd`, `event_title`) |
+| `src/scanner/logical.py` | 14 | Imports non-existent `ArbitrageType` | Remove import, use string literal `"type2_logical"` |
+| `src/scanner/logical.py` | 143-156 | Same constructor field mismatch as `rebalance.py` | Map: `opp_type` -> `type="type2_logical"`, `event_id` -> `event_ids` (list), `event_title` -> remove, `markets_involved` -> `markets`, `net_profit` -> `expected_profit`, `net_profit_pct` -> `expected_profit_pct`, remove `gross_profit`, `total_fees`, `min_liquidity_usd`, `notes`; move useful info into `details` dict |
 
 ### Diagnostic-Dependent Fixes
 
@@ -176,17 +185,17 @@ After fixes, add to `src/models.py`:
 - No new test files — diagnostic script is our validation
 - No changes to evaluator, risk manager, traders, dashboard, or `main.py`
 - No caching improvements (informed by rate limit data from diagnostic, done later)
-- Type 2 scanner: fix only the import error, no logic changes
+- Type 2 scanner: fix import and constructor errors only, no logic changes
 
 ---
 
 ## Deliverable Order
 
 1. Write `scripts/diagnose_api.py` (standalone, stdlib + requests only)
-2. Ensure `data/diagnostics/` is gitignored
+2. Ensure `data/diagnostics/` is gitignored (add `data/diagnostics/` line to `.gitignore`)
 3. Run diagnostic, review output
 4. Fix `src/models.py` fields based on raw JSON
 5. Fix `src/client.py` Outcome construction
 6. Fix `src/scanner/rebalance.py` imports and field names
-7. Fix `src/scanner/logical.py` import
+7. Fix `src/scanner/logical.py` import and constructor
 8. Run `scripts/scan_once.py` to confirm end-to-end
