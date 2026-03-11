@@ -161,7 +161,7 @@ class PolymarketClient:
         return resp.json()
 
     def get_price(self, token_id: str, side: str = "BUY") -> Optional[float]:
-        """Return best ask (BUY) or best bid (SELL) for a token."""
+        """Return price for a token. side=BUY returns best bid, side=SELL returns best ask."""
         try:
             data = self._clob_get("/price", params={"token_id": token_id, "side": side})
             return float(data.get("price", 0))
@@ -173,11 +173,12 @@ class PolymarketClient:
         """
         Batch fetch best ask and best bid for multiple tokens.
         Returns {token_id: {"ask": float, "bid": float}}
+        side=BUY returns best bid, side=SELL returns best ask.
         """
         results: dict[str, dict[str, float]] = {}
         for token_id in token_ids:
-            ask = self.get_price(token_id, "BUY")
-            bid = self.get_price(token_id, "SELL")
+            bid = self.get_price(token_id, "BUY")
+            ask = self.get_price(token_id, "SELL")
             results[token_id] = {"ask": ask or 0.0, "bid": bid or 0.0}
         return results
 

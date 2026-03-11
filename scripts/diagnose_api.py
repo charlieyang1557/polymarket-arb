@@ -265,16 +265,17 @@ def step_fetch_prices(neg_risk_events: List[dict]) -> dict:
         if (i + 1) % 10 == 0 or i == 0:
             print(f"  Fetching prices... {i + 1}/{total} tokens")
 
-        ask_data, _ = _api_get(CLOB_API_BASE, "/price",
+        # side=BUY returns best bid, side=SELL returns best ask
+        bid_data, _ = _api_get(CLOB_API_BASE, "/price",
                                params={"token_id": token_id, "side": "BUY"},
                                call_type="clob_price")
-        bid_data, _ = _api_get(CLOB_API_BASE, "/price",
+        ask_data, _ = _api_get(CLOB_API_BASE, "/price",
                                params={"token_id": token_id, "side": "SELL"},
                                call_type="clob_price")
 
         prices[token_id] = {
-            "ask_raw": ask_data,
             "bid_raw": bid_data,
+            "ask_raw": ask_data,
             "ask": _safe_float(ask_data.get("price")) if ask_data else None,
             "bid": _safe_float(bid_data.get("price")) if bid_data else None,
             "event_id": token_to_event.get(token_id, ""),
