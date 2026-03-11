@@ -255,7 +255,7 @@ def _validate_event_fields(event: dict):
 
 
 # ---------------------------------------------------------------------------
-# Step 2a: Fetch Midpoints (quick scan)
+# Step 2a: Extract prices from Gamma outcomePrices (zero API calls)
 # ---------------------------------------------------------------------------
 
 def _collect_token_event_map(neg_risk_events: List[dict]) -> Dict[str, str]:
@@ -271,59 +271,75 @@ def _collect_token_event_map(neg_risk_events: List[dict]) -> Dict[str, str]:
     return token_to_event
 
 
-def step_fetch_midpoints(neg_risk_events: List[dict]) -> Dict[str, dict]:
-    """Fetch midpoint for every YES token. 1 API call per token."""
-    token_to_event = _collect_token_event_map(neg_risk_events)
-    token_ids = list(token_to_event.keys())
-    total = len(token_ids)
-    print(f"Fetching midpoints for {total} tokens ({total} API calls)...")
-    print(f"  Estimated time: {total / MAX_REQUESTS_PER_MINUTE:.1f} minutes at {MAX_REQUESTS_PER_MINUTE} req/min\n")
-
-    midpoints: Dict[str, dict] = {}
-    skipped = 0
-    for i, token_id in enumerate(token_ids):
-        if (i + 1) % 50 == 0 or i == 0:
-            print(f"  Fetching midpoints... {i + 1}/{total} tokens"
-                  + (f" ({len(_dead_tokens)} dead)" if _dead_tokens else ""))
-
-        if token_id in _dead_tokens:
-            skipped += 1
-            continue
-
-        data, _ = _api_get(CLOB_API_BASE, "/midpoint",
-                           params={"token_id": token_id},
-                           call_type="clob_midpoint")
-
-        mid = _safe_float(data.get("mid")) if data else None
-        midpoints[token_id] = {
-            "mid_raw": data,
-            "mid": mid,
-            "event_id": token_to_event.get(token_id, ""),
-        }
-
-    _state["raw_midpoints"] = midpoints
-    valid = sum(1 for m in midpoints.values() if m["mid"] is not None and m["mid"] > 0)
-    print(f"\n  Midpoints fetched: {valid}/{total} valid"
-          + (f", {len(_dead_tokens)} dead tokens skipped" if _dead_tokens else "") + "\n")
-    return midpoints
+def _parse_outcome_prices(raw) -> List[float]:
+    """Parse outcomePrices which is a JSON-encoded string like '[\"0.449\", \"0.551\"]'."""
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [float(x) for x in parsed]
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+    if isinstance(raw, list):
+        try:
+            return [float(x) for x in raw]
+        except (ValueError, TypeError):
+            pass
+    return []
 
 
-def _find_candidate_events(neg_risk_events: List[dict], midpoints: Dict[str, dict],
+def step_extract_gamma_prices(neg_risk_events: List[dict]) -> Dict[str, dict]:
+    """Extract YES prices from Gamma outcomePrices field. Zero API calls needed.
+
+    outcomePrices is [YES_price, NO_price] — YES price ≈ CLOB midpoint.
+    """
+    print("Extracting prices from Gamma outcomePrices (no API calls needed)...")
+    gamma_prices: Dict[str, dict] = {}
+    valid = 0
+    missing = 0
+
+    for event in neg_risk_events:
+        for m in event.get("markets", []):
+            if not m.get("negRisk") or not m.get("active"):
+                continue
+            clob_ids = _parse_clob_token_ids(m.get("clobTokenIds"))
+            if not clob_ids:
+                continue
+            token_id = clob_ids[0]
+            outcome_prices = _parse_outcome_prices(m.get("outcomePrices"))
+            yes_price = outcome_prices[0] if outcome_prices else None
+
+            gamma_prices[token_id] = {
+                "gamma_yes": yes_price,
+                "gamma_no": outcome_prices[1] if len(outcome_prices) > 1 else None,
+                "event_id": str(event.get("id", "")),
+            }
+            if yes_price is not None and yes_price > 0:
+                valid += 1
+            else:
+                missing += 1
+
+    _state["raw_midpoints"] = gamma_prices  # reuse midpoints slot for gamma prices
+    print(f"  Extracted {valid} valid prices ({missing} missing/zero)\n")
+    return gamma_prices
+
+
+def _find_candidate_events(neg_risk_events: List[dict], gamma_prices: Dict[str, dict],
                            threshold: float = 1.05) -> List[dict]:
-    """Return events where sum of midpoints < threshold (potential arb candidates)."""
+    """Return events where sum of Gamma YES prices < threshold (potential arb candidates)."""
     candidates = []
     for event in neg_risk_events:
         tokens = _get_first_tokens(event)
         if not tokens:
             continue
-        mid_sum = sum(midpoints.get(t, {}).get("mid", 0) or 0 for t in tokens)
-        if 0 < mid_sum < threshold:
+        price_sum = sum(gamma_prices.get(t, {}).get("gamma_yes", 0) or 0 for t in tokens)
+        if 0 < price_sum < threshold:
             candidates.append(event)
     return candidates
 
 
 # ---------------------------------------------------------------------------
-# Step 2b: Fetch Full Prices (ask/bid)
+# Step 2b: Fetch Full Prices (ask/bid) — only for candidates
 # ---------------------------------------------------------------------------
 
 def step_fetch_prices(neg_risk_events: List[dict], only_tokens: Optional[set] = None) -> dict:
@@ -466,12 +482,12 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
                 continue
             token_id = clob_ids[0]
 
-            # Use ask price if available, fall back to midpoint
+            # Use ask price if available, fall back to Gamma YES price
             price_info = prices.get(token_id, {})
-            mid_info = (midpoints or {}).get(token_id, {})
+            gamma_info = (midpoints or {}).get(token_id, {})
             ask = price_info.get("ask")
-            mid = mid_info.get("mid")
-            price_val = ask if ask is not None and ask > 0 else mid
+            gamma_yes = gamma_info.get("gamma_yes")
+            price_val = ask if ask is not None and ask > 0 else gamma_yes
 
             if price_val is not None and price_val > 0:
                 total_price += price_val
@@ -482,7 +498,7 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
                 "token_id": token_id,
                 "ask": ask,
                 "bid": price_info.get("bid"),
-                "mid": mid,
+                "gamma_yes": gamma_yes,
                 "price_used": round(price_val, 6) if price_val else None,
                 "volume_24h": float(m.get("volumeNum", 0) or m.get("volume24hr", 0) or 0),
             })
@@ -642,20 +658,29 @@ def _calc_event_depth(event_data: dict, orderbooks: dict) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 def _filter_neg_risk(all_events: List[dict]) -> List[dict]:
-    """Filter events to those with 2+ neg-risk markets."""
+    """Filter events to those with 3+ neg-risk markets.
+
+    Skip 2-market events: binary YES/NO markets always sum to $1.00,
+    so Type 1 arb is impossible.
+    """
     result = []
+    skipped_binary = 0
     for event in all_events:
         neg_risk_markets = [
             m for m in event.get("markets", [])
             if m.get("negRisk") is True and m.get("active") is True
         ]
-        if len(neg_risk_markets) >= 2:
+        if len(neg_risk_markets) == 2:
+            skipped_binary += 1
+        elif len(neg_risk_markets) >= 3:
             result.append(event)
+    if skipped_binary:
+        print(f"  (Skipped {skipped_binary} binary 2-outcome events)")
     return result
 
 
 def _find_best_event_id(neg_risk_events: List[dict], prices: dict,
-                        midpoints: Optional[Dict[str, dict]] = None) -> Optional[str]:
+                        gamma_prices: Optional[Dict[str, dict]] = None) -> Optional[str]:
     """Quick scan to find event with lowest price sum (best arb candidate)."""
     best_sum = float("inf")
     best_id = None
@@ -666,8 +691,8 @@ def _find_best_event_id(neg_risk_events: List[dict], prices: dict,
         total = 0.0
         for t in tokens:
             ask = prices.get(t, {}).get("ask", 0) or 0
-            if not ask and midpoints:
-                ask = (midpoints or {}).get(t, {}).get("mid", 0) or 0
+            if not ask and gamma_prices:
+                ask = (gamma_prices or {}).get(t, {}).get("gamma_yes", 0) or 0
             total += ask
         if 0 < total < best_sum:
             best_sum = total
@@ -772,36 +797,35 @@ def main():
         # 1. Fetch events
         all_events = step_fetch_events(args.limit)
 
-        # 2. Filter to neg-risk with 2+ markets
+        # 2. Filter to neg-risk with 3+ markets (skip binary events)
         neg_risk_events = _filter_neg_risk(all_events)
         total_tokens = sum(len(_get_first_tokens(e)) for e in neg_risk_events)
-        print(f"Identified {len(neg_risk_events)} neg-risk events with 2+ markets ({total_tokens} tokens)\n")
+        print(f"Identified {len(neg_risk_events)} neg-risk events with 3+ markets ({total_tokens} tokens)\n")
 
-        # 3. Fetch midpoints for all tokens (always — it's 1 call per token)
-        midpoints = step_fetch_midpoints(neg_risk_events)
+        # 3. Extract prices from Gamma outcomePrices (zero API calls!)
+        gamma_prices = step_extract_gamma_prices(neg_risk_events)
 
         # 4. Fetch full ask/bid prices (depends on mode)
         prices: Dict[str, dict] = {}
         if mode == "fast":
-            print("--fast mode: skipping full ask/bid price fetch\n")
+            print("--fast mode: using Gamma prices only, skipping CLOB ask/bid fetch\n")
         elif mode == "full":
             prices = step_fetch_prices(neg_risk_events)
         else:
-            # Default: midpoint filter, then full prices on candidates
-            candidates = _find_candidate_events(neg_risk_events, midpoints, threshold=1.05)
+            # Default: Gamma filter, then CLOB ask/bid on candidates only
+            candidates = _find_candidate_events(neg_risk_events, gamma_prices, threshold=1.05)
             if candidates:
                 candidate_tokens = set()
                 for event in candidates:
                     candidate_tokens.update(_get_first_tokens(event))
-                print(f"Midpoint filter: {len(candidates)} candidate events "
-                      f"(midpoint sum < $1.05) with {len(candidate_tokens)} tokens\n")
+                print(f"Gamma price filter: {len(candidates)} candidate events "
+                      f"(gamma sum < $1.05) with {len(candidate_tokens)} tokens\n")
                 prices = step_fetch_prices(neg_risk_events, only_tokens=candidate_tokens)
             else:
-                print("Midpoint filter: no candidate events with midpoint sum < $1.05\n")
+                print("Gamma price filter: no candidate events with sum < $1.05\n")
 
         # 5. Quick pre-scan to find best opportunity event for order book fetch
-        # Use whichever price data we have (ask preferred, midpoint fallback)
-        best_event_id = _find_best_event_id(neg_risk_events, prices, midpoints)
+        best_event_id = _find_best_event_id(neg_risk_events, prices, gamma_prices)
 
         # 6. Fetch order books (skip in --fast mode)
         orderbooks: Dict[str, dict] = {}
@@ -812,7 +836,7 @@ def main():
 
         # 7. Analyze
         summary = step_analyze(neg_risk_events, prices, orderbooks,
-                               midpoints=midpoints, mode=mode)
+                               midpoints=gamma_prices, mode=mode)
         summary["dead_tokens"] = len(_dead_tokens)
 
         # 8. Save everything
