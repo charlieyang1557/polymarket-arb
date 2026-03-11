@@ -5,8 +5,11 @@ Standalone tool (no project imports) that hits live Polymarket APIs,
 captures raw JSON responses, and produces an analysis report.
 
 Usage:
-    python scripts/diagnose_api.py              # full run
-    python scripts/diagnose_api.py --limit 5    # cap at 5 events (quick test)
+    python scripts/diagnose_api.py                  # midpoint scan, full ask/bid on candidates
+    python scripts/diagnose_api.py --fast            # midpoint-only quick scan
+    python scripts/diagnose_api.py --full            # full ask/bid for all tokens
+    python scripts/diagnose_api.py --limit 50        # cap at 50 events
+    python scripts/diagnose_api.py --fast --limit 50 # quick scan, 50 events
 """
 
 import argparse
@@ -34,6 +37,7 @@ TRADE_FEE_PCT = 0.0001  # 0.01%
 # ---------------------------------------------------------------------------
 _state = {
     "raw_events": [],
+    "raw_midpoints": {},
     "raw_prices": {},
     "raw_orderbooks": {},
     "errors": {"api_errors": [], "unexpected_fields": [], "missing_fields": []},
@@ -41,7 +45,7 @@ _state = {
         "run_started_at": "",
         "run_finished_at": "",
         "elapsed_seconds": 0.0,
-        "api_calls": {"gamma_events": 0, "clob_price": 0, "clob_book": 0, "total": 0},
+        "api_calls": {"gamma_events": 0, "clob_midpoint": 0, "clob_price": 0, "clob_book": 0, "total": 0},
         "rate_limit_info": {
             "sleeps_triggered": 0,
             "total_sleep_seconds": 0.0,
@@ -50,6 +54,9 @@ _state = {
     },
     "output_dir": "",
 }
+
+# Tokens that returned 404 — skip on subsequent calls
+_dead_tokens: set = set()
 
 # ---------------------------------------------------------------------------
 # Rate limiter
@@ -92,14 +99,21 @@ def _api_get(base: str, path: str, params: Optional[dict] = None, call_type: str
                               if any(x in k.lower() for x in ["rate", "limit", "retry", "remaining"])}
                 if rl_headers:
                     _state["run_meta"]["rate_limit_info"]["response_headers_sample"] = rl_headers
+            # On 404, mark token as dead and don't retry
+            if resp.status_code == 404:
+                token_id = (params or {}).get("token_id", "")
+                if token_id:
+                    _dead_tokens.add(token_id)
+                return None, headers
             resp.raise_for_status()
             return resp.json(), headers
         except requests.RequestException as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
             if attempt == 2:
                 _state["errors"]["api_errors"].append({
                     "endpoint": f"{path}",
                     "params": str(params),
-                    "status_code": getattr(exc.response, "status_code", None) if hasattr(exc, "response") else None,
+                    "status_code": status,
                     "message": str(exc),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
@@ -123,6 +137,7 @@ def _save_partial():
 
     for filename, key in [
         ("raw_events.json", "raw_events"),
+        ("raw_midpoints.json", "raw_midpoints"),
         ("raw_prices.json", "raw_prices"),
         ("raw_orderbooks.json", "raw_orderbooks"),
         ("errors.json", "errors"),
@@ -240,13 +255,12 @@ def _validate_event_fields(event: dict):
 
 
 # ---------------------------------------------------------------------------
-# Step 2: Fetch Prices
+# Step 2a: Fetch Midpoints (quick scan)
 # ---------------------------------------------------------------------------
 
-def step_fetch_prices(neg_risk_events: List[dict]) -> dict:
-    """Fetch ask and bid prices for every YES token in neg-risk events."""
-    # Collect all first-token IDs (YES tokens) from neg-risk markets
-    token_to_event: Dict[str, str] = {}  # token_id -> event_id for debugging
+def _collect_token_event_map(neg_risk_events: List[dict]) -> Dict[str, str]:
+    """Build token_id -> event_id map for first (YES) token in each neg-risk market."""
+    token_to_event: Dict[str, str] = {}
     for event in neg_risk_events:
         for m in event.get("markets", []):
             if not m.get("negRisk") or not m.get("active"):
@@ -254,10 +268,77 @@ def step_fetch_prices(neg_risk_events: List[dict]) -> dict:
             clob_ids = _parse_clob_token_ids(m.get("clobTokenIds"))
             if clob_ids:
                 token_to_event[clob_ids[0]] = str(event.get("id", ""))
+    return token_to_event
 
+
+def step_fetch_midpoints(neg_risk_events: List[dict]) -> Dict[str, dict]:
+    """Fetch midpoint for every YES token. 1 API call per token."""
+    token_to_event = _collect_token_event_map(neg_risk_events)
     token_ids = list(token_to_event.keys())
     total = len(token_ids)
-    print(f"Fetching prices for {total} tokens (need {total * 2} API calls)...")
+    print(f"Fetching midpoints for {total} tokens ({total} API calls)...")
+    print(f"  Estimated time: {total / MAX_REQUESTS_PER_MINUTE:.1f} minutes at {MAX_REQUESTS_PER_MINUTE} req/min\n")
+
+    midpoints: Dict[str, dict] = {}
+    skipped = 0
+    for i, token_id in enumerate(token_ids):
+        if (i + 1) % 50 == 0 or i == 0:
+            print(f"  Fetching midpoints... {i + 1}/{total} tokens"
+                  + (f" ({len(_dead_tokens)} dead)" if _dead_tokens else ""))
+
+        if token_id in _dead_tokens:
+            skipped += 1
+            continue
+
+        data, _ = _api_get(CLOB_API_BASE, "/midpoint",
+                           params={"token_id": token_id},
+                           call_type="clob_midpoint")
+
+        mid = _safe_float(data.get("mid")) if data else None
+        midpoints[token_id] = {
+            "mid_raw": data,
+            "mid": mid,
+            "event_id": token_to_event.get(token_id, ""),
+        }
+
+    _state["raw_midpoints"] = midpoints
+    valid = sum(1 for m in midpoints.values() if m["mid"] is not None and m["mid"] > 0)
+    print(f"\n  Midpoints fetched: {valid}/{total} valid"
+          + (f", {len(_dead_tokens)} dead tokens skipped" if _dead_tokens else "") + "\n")
+    return midpoints
+
+
+def _find_candidate_events(neg_risk_events: List[dict], midpoints: Dict[str, dict],
+                           threshold: float = 1.05) -> List[dict]:
+    """Return events where sum of midpoints < threshold (potential arb candidates)."""
+    candidates = []
+    for event in neg_risk_events:
+        tokens = _get_first_tokens(event)
+        if not tokens:
+            continue
+        mid_sum = sum(midpoints.get(t, {}).get("mid", 0) or 0 for t in tokens)
+        if 0 < mid_sum < threshold:
+            candidates.append(event)
+    return candidates
+
+
+# ---------------------------------------------------------------------------
+# Step 2b: Fetch Full Prices (ask/bid)
+# ---------------------------------------------------------------------------
+
+def step_fetch_prices(neg_risk_events: List[dict], only_tokens: Optional[set] = None) -> dict:
+    """Fetch ask and bid prices for YES tokens. Optionally filter to specific tokens."""
+    token_to_event = _collect_token_event_map(neg_risk_events)
+
+    if only_tokens is not None:
+        token_ids = [t for t in token_to_event if t in only_tokens]
+    else:
+        token_ids = list(token_to_event.keys())
+
+    # Remove dead tokens
+    token_ids = [t for t in token_ids if t not in _dead_tokens]
+    total = len(token_ids)
+    print(f"Fetching full prices for {total} tokens ({total * 2} API calls)...")
     print(f"  Estimated time: {total * 2 / MAX_REQUESTS_PER_MINUTE:.1f} minutes at {MAX_REQUESTS_PER_MINUTE} req/min\n")
 
     prices: Dict[str, dict] = {}
@@ -269,9 +350,13 @@ def step_fetch_prices(neg_risk_events: List[dict]) -> dict:
         bid_data, _ = _api_get(CLOB_API_BASE, "/price",
                                params={"token_id": token_id, "side": "BUY"},
                                call_type="clob_price")
+        if token_id in _dead_tokens:
+            continue  # was marked dead by the bid call
         ask_data, _ = _api_get(CLOB_API_BASE, "/price",
                                params={"token_id": token_id, "side": "SELL"},
                                call_type="clob_price")
+        if token_id in _dead_tokens:
+            continue
 
         prices[token_id] = {
             "bid_raw": bid_data,
@@ -350,8 +435,12 @@ def step_fetch_orderbooks(neg_risk_events: List[dict], prices: dict, best_event_
 # Step 4: Analysis
 # ---------------------------------------------------------------------------
 
-def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict) -> dict:
-    """Compute summary analysis from fetched data."""
+def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
+                 midpoints: Optional[Dict[str, dict]] = None, mode: str = "default") -> dict:
+    """Compute summary analysis from fetched data.
+
+    mode: 'fast' uses midpoints as price proxy, 'default'/'full' uses ask prices.
+    """
     all_events = _state["raw_events"]
     total_events = len(all_events)
     total_neg_risk = len(neg_risk_events)
@@ -366,7 +455,7 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict) ->
         tokens = _get_first_tokens(event)
         if not tokens:
             continue
-        total_ask = 0.0
+        total_price = 0.0
         valid_count = 0
         markets_detail = []
         for m in event.get("markets", []):
@@ -376,10 +465,16 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict) ->
             if not clob_ids:
                 continue
             token_id = clob_ids[0]
+
+            # Use ask price if available, fall back to midpoint
             price_info = prices.get(token_id, {})
+            mid_info = (midpoints or {}).get(token_id, {})
             ask = price_info.get("ask")
-            if ask is not None and ask > 0:
-                total_ask += ask
+            mid = mid_info.get("mid")
+            price_val = ask if ask is not None and ask > 0 else mid
+
+            if price_val is not None and price_val > 0:
+                total_price += price_val
                 valid_count += 1
             markets_detail.append({
                 "market_id": m.get("id", ""),
@@ -387,6 +482,8 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict) ->
                 "token_id": token_id,
                 "ask": ask,
                 "bid": price_info.get("bid"),
+                "mid": mid,
+                "price_used": round(price_val, 6) if price_val else None,
                 "volume_24h": float(m.get("volumeNum", 0) or m.get("volume24hr", 0) or 0),
             })
 
@@ -394,7 +491,8 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict) ->
         event_sums.append({
             "event_id": str(event.get("id", "")),
             "title": event.get("title", ""),
-            "price_sum": round(total_ask, 6),
+            "price_sum": round(total_price, 6),
+            "price_source": "midpoint" if mode == "fast" else "ask",
             "volume_24h": total_volume,
             "tokens_valid": valid_count,
             "tokens_total": len(tokens),
@@ -556,7 +654,8 @@ def _filter_neg_risk(all_events: List[dict]) -> List[dict]:
     return result
 
 
-def _find_best_event_id(neg_risk_events: List[dict], prices: dict) -> Optional[str]:
+def _find_best_event_id(neg_risk_events: List[dict], prices: dict,
+                        midpoints: Optional[Dict[str, dict]] = None) -> Optional[str]:
     """Quick scan to find event with lowest price sum (best arb candidate)."""
     best_sum = float("inf")
     best_id = None
@@ -564,7 +663,12 @@ def _find_best_event_id(neg_risk_events: List[dict], prices: dict) -> Optional[s
         tokens = _get_first_tokens(event)
         if not tokens:
             continue
-        total = sum(prices.get(t, {}).get("ask", 0) or 0 for t in tokens)
+        total = 0.0
+        for t in tokens:
+            ask = prices.get(t, {}).get("ask", 0) or 0
+            if not ask and midpoints:
+                ask = (midpoints or {}).get(t, {}).get("mid", 0) or 0
+            total += ask
         if 0 < total < best_sum:
             best_sum = total
             best_id = str(event.get("id", ""))
@@ -594,7 +698,10 @@ def _print_console_summary(summary: dict):
     print(f"  Data completeness: {summary['data_completeness']['completeness_rate_pct']}%")
 
     dist = summary["price_sum_distribution"]
-    print(f"\nPrice sum distribution (YES asks across all outcomes):")
+    dead = summary.get("dead_tokens", 0)
+    if dead:
+        print(f"  Dead tokens (404): {dead}")
+    print(f"\nPrice sum distribution (across all outcomes):")
     print(f"  Min: {dist['min']:.4f}  Max: {dist['max']:.4f}  Median: {dist['median']:.4f}")
     print(f"  p10: {dist['p10']:.4f}  p90: {dist['p90']:.4f}")
     print(f"  Below $1.00: {dist['count_below_1']} ({dist['count_below_1_after_fees']} after fees)")
@@ -641,7 +748,14 @@ def main():
     parser = argparse.ArgumentParser(description="Polymarket API Diagnostic")
     parser.add_argument("--limit", type=int, default=None,
                         help="Max events to process (for quick test runs)")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--fast", action="store_true",
+                            help="Quick scan: midpoints only, no full ask/bid")
+    mode_group.add_argument("--full", action="store_true",
+                            help="Full scan: fetch ask/bid for ALL tokens (slow)")
     args = parser.parse_args()
+
+    mode = "fast" if args.fast else ("full" if args.full else "default")
 
     signal.signal(signal.SIGINT, _handle_interrupt)
     signal.signal(signal.SIGTERM, _handle_interrupt)
@@ -650,8 +764,9 @@ def main():
     _state["output_dir"] = os.path.join("data", "diagnostics", timestamp)
     os.makedirs(_state["output_dir"], exist_ok=True)
     _state["run_meta"]["run_started_at"] = datetime.now(timezone.utc).isoformat()
+    _state["run_meta"]["mode"] = mode
 
-    print(f"=== Polymarket API Diagnostic ({timestamp}) ===\n")
+    print(f"=== Polymarket API Diagnostic ({timestamp}) [mode={mode}] ===\n")
 
     try:
         # 1. Fetch events
@@ -659,28 +774,57 @@ def main():
 
         # 2. Filter to neg-risk with 2+ markets
         neg_risk_events = _filter_neg_risk(all_events)
-        print(f"Identified {len(neg_risk_events)} neg-risk events with 2+ markets\n")
+        total_tokens = sum(len(_get_first_tokens(e)) for e in neg_risk_events)
+        print(f"Identified {len(neg_risk_events)} neg-risk events with 2+ markets ({total_tokens} tokens)\n")
 
-        # 3. Fetch prices for all tokens
-        prices = step_fetch_prices(neg_risk_events)
+        # 3. Fetch midpoints for all tokens (always — it's 1 call per token)
+        midpoints = step_fetch_midpoints(neg_risk_events)
 
-        # 4. Quick pre-scan to find best opportunity event for order book fetch
-        best_event_id = _find_best_event_id(neg_risk_events, prices)
+        # 4. Fetch full ask/bid prices (depends on mode)
+        prices: Dict[str, dict] = {}
+        if mode == "fast":
+            print("--fast mode: skipping full ask/bid price fetch\n")
+        elif mode == "full":
+            prices = step_fetch_prices(neg_risk_events)
+        else:
+            # Default: midpoint filter, then full prices on candidates
+            candidates = _find_candidate_events(neg_risk_events, midpoints, threshold=1.05)
+            if candidates:
+                candidate_tokens = set()
+                for event in candidates:
+                    candidate_tokens.update(_get_first_tokens(event))
+                print(f"Midpoint filter: {len(candidates)} candidate events "
+                      f"(midpoint sum < $1.05) with {len(candidate_tokens)} tokens\n")
+                prices = step_fetch_prices(neg_risk_events, only_tokens=candidate_tokens)
+            else:
+                print("Midpoint filter: no candidate events with midpoint sum < $1.05\n")
 
-        # 5. Fetch order books
-        orderbooks = step_fetch_orderbooks(neg_risk_events, prices, best_event_id)
+        # 5. Quick pre-scan to find best opportunity event for order book fetch
+        # Use whichever price data we have (ask preferred, midpoint fallback)
+        best_event_id = _find_best_event_id(neg_risk_events, prices, midpoints)
 
-        # 6. Analyze
-        summary = step_analyze(neg_risk_events, prices, orderbooks)
+        # 6. Fetch order books (skip in --fast mode)
+        orderbooks: Dict[str, dict] = {}
+        if mode != "fast" and best_event_id:
+            orderbooks = step_fetch_orderbooks(neg_risk_events, prices, best_event_id)
+        elif mode == "fast":
+            print("--fast mode: skipping order book fetch\n")
 
-        # 7. Save everything
+        # 7. Analyze
+        summary = step_analyze(neg_risk_events, prices, orderbooks,
+                               midpoints=midpoints, mode=mode)
+        summary["dead_tokens"] = len(_dead_tokens)
+
+        # 8. Save everything
         _state["run_meta"]["run_finished_at"] = datetime.now(timezone.utc).isoformat()
         start = datetime.fromisoformat(_state["run_meta"]["run_started_at"])
         _state["run_meta"]["elapsed_seconds"] = (datetime.now(timezone.utc) - start).total_seconds()
+        _state["run_meta"]["dead_tokens"] = len(_dead_tokens)
 
         out = _state["output_dir"]
         for filename, data in [
             ("raw_events.json", _state["raw_events"]),
+            ("raw_midpoints.json", _state["raw_midpoints"]),
             ("raw_prices.json", _state["raw_prices"]),
             ("raw_orderbooks.json", _state["raw_orderbooks"]),
             ("summary.json", summary),
@@ -695,7 +839,8 @@ def main():
         print(f"\nResults saved to {out}/")
         print(f"Total API calls: {meta['api_calls']['total']} | "
               f"Elapsed: {meta['elapsed_seconds']:.1f}s | "
-              f"Rate limit sleeps: {meta['rate_limit_info']['sleeps_triggered']}")
+              f"Rate limit sleeps: {meta['rate_limit_info']['sleeps_triggered']} | "
+              f"Dead tokens: {len(_dead_tokens)}")
 
     except Exception as exc:
         print(f"\nFATAL: {exc}")
