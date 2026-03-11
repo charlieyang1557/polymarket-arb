@@ -11,7 +11,7 @@ import re
 from config.relationships import RELATIONSHIP_RULES
 from config.settings import RISK_CONFIG, TRADE_FEE_PCT
 from src.client import PolymarketClient
-from src.models import ArbitrageOpportunity, ArbitrageType, Event
+from src.models import ArbitrageOpportunity, Event
 from src.scanner.base import BaseScanner
 
 logger = logging.getLogger(__name__)
@@ -113,8 +113,8 @@ class LogicalScanner(BaseScanner):
             return None
 
         prices = self.client.get_prices([token_a, token_b])
-        ask_a = prices[token_a]["ask"]
-        ask_b = prices[token_b]["ask"]
+        ask_a = prices.get(token_a, {}).get("ask", 0.0)
+        ask_b = prices.get(token_b, {}).get("ask", 0.0)
 
         if ask_a <= 0 or ask_b <= 0:
             return None
@@ -141,16 +141,18 @@ class LogicalScanner(BaseScanner):
             market_a.question[:50], market_b.question[:50], net_profit_pct, rule_id,
         )
         return ArbitrageOpportunity(
-            opp_type=ArbitrageType.TYPE2_LOGICAL,
-            event_id=event_a.event_id,
-            event_title=f"{event_a.title} / {event_b.title}",
-            markets_involved=[market_a, market_b],
+            type="type2_logical",
+            event_ids=[event_a.event_id, event_b.event_id],
+            markets=[market_a, market_b],
             total_cost=ask_a,
-            gross_profit=edge,
-            total_fees=fees,
-            net_profit=net_profit,
-            net_profit_pct=net_profit_pct,
-            min_liquidity_usd=min_liquidity,
+            expected_profit=net_profit,
+            expected_profit_pct=net_profit_pct,
             confidence=0.7,  # rule-based match is less certain
-            notes=f"rule={rule_id}",
+            details={
+                "gross_profit": edge,
+                "total_fees": fees,
+                "min_liquidity_usd": min_liquidity,
+                "event_title": f"{event_a.title} / {event_b.title}",
+                "rule": rule_id,
+            },
         )

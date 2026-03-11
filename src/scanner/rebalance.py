@@ -10,7 +10,7 @@ import logging
 
 from config.settings import RISK_CONFIG, TRADE_FEE_PCT
 from src.client import PolymarketClient
-from src.models import ArbitrageOpportunity, ArbitrageType, Event, Market, Outcome
+from src.models import ArbitrageOpportunity, Event, Market, Outcome
 from src.scanner.base import BaseScanner
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ class RebalanceScanner(BaseScanner):
             return None
 
         gross_profit = 1.0 - total_ask
-        total_fees = total_ask * TRADE_FEE_PCT * len(populated_markets)
+        total_fees = total_ask * TRADE_FEE_PCT
         net_profit = gross_profit - total_fees
         net_profit_pct = net_profit / total_ask * 100
 
@@ -104,15 +104,17 @@ class RebalanceScanner(BaseScanner):
             event.title, total_ask, net_profit, net_profit_pct,
         )
         return ArbitrageOpportunity(
-            opp_type=ArbitrageType.TYPE1_REBALANCE,
-            event_id=event.event_id,
-            event_title=event.title,
-            markets_involved=populated_markets,
+            type="type1_rebalance",
+            event_ids=[event.event_id],
+            markets=populated_markets,
             total_cost=total_ask,
-            gross_profit=gross_profit,
-            total_fees=total_fees,
-            net_profit=net_profit,
-            net_profit_pct=net_profit_pct,
-            min_liquidity_usd=min_liquidity if min_liquidity != float("inf") else 0.0,
+            expected_profit=net_profit,
+            expected_profit_pct=net_profit_pct,
             confidence=1.0,
+            details={
+                "gross_profit": gross_profit,
+                "total_fees": total_fees,
+                "min_liquidity_usd": min_liquidity if min_liquidity != float("inf") else 0.0,
+                "event_title": event.title,
+            },
         )

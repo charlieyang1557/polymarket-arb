@@ -4,6 +4,7 @@ Polymarket API wrapper.
 - CLOB API (py-clob-client): prices, order books
 """
 
+import json
 import logging
 import time
 from functools import wraps
@@ -76,6 +77,20 @@ class PolymarketClient:
         resp.raise_for_status()
         return resp.json()
 
+    @staticmethod
+    def _parse_clob_token_ids(raw) -> list[str]:
+        """Gamma API returns clobTokenIds as a JSON-encoded string, not a list."""
+        if isinstance(raw, list):
+            return raw
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return []
+
     def get_all_active_events(self, force_refresh: bool = False) -> list[Event]:
         """Fetch all active events with their markets. Cached for METADATA_CACHE_TTL_SECONDS."""
         age = time.time() - self._cache_fetched_at
@@ -88,7 +103,7 @@ class PolymarketClient:
             markets = []
             for rm in raw.get("markets", []):
                 outcomes = []
-                for token in rm.get("clobTokenIds", []) or []:
+                for token in self._parse_clob_token_ids(rm.get("clobTokenIds", "[]")):
                     outcomes.append(Outcome(token_id=token, name="", best_ask=0.0, best_bid=0.0))
                 markets.append(Market(
                     market_id=rm.get("id", ""),
@@ -98,7 +113,7 @@ class PolymarketClient:
                     outcomes=outcomes,
                     active=rm.get("active", True),
                     neg_risk=rm.get("negRisk", False),
-                    volume_24h=float(rm.get("volume24hr", 0) or 0),
+                    volume_24h=float(rm.get("volumeNum", 0) or rm.get("volume24hr", 0) or 0),
                 ))
             events.append(Event(
                 event_id=str(raw.get("id", "")),
@@ -119,7 +134,7 @@ class PolymarketClient:
         for rm in raw.get("markets", []):
             outcomes = [
                 Outcome(token_id=t, name="", best_ask=0.0, best_bid=0.0)
-                for t in (rm.get("clobTokenIds") or [])
+                for t in self._parse_clob_token_ids(rm.get("clobTokenIds", "[]"))
             ]
             markets.append(Market(
                 market_id=rm.get("id", ""),
@@ -129,7 +144,7 @@ class PolymarketClient:
                 outcomes=outcomes,
                 active=rm.get("active", True),
                 neg_risk=rm.get("negRisk", False),
-                volume_24h=float(rm.get("volume24hr", 0) or 0),
+                volume_24h=float(rm.get("volumeNum", 0) or rm.get("volume24hr", 0) or 0),
             ))
         return markets
 
