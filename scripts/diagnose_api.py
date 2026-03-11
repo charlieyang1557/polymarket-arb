@@ -149,6 +149,20 @@ def _safe_float(val) -> Optional[float]:
         return None
 
 
+def _parse_clob_token_ids(raw) -> List[str]:
+    """Parse clobTokenIds which may be a JSON-encoded string or a list."""
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Step 1: Fetch Events
 # ---------------------------------------------------------------------------
@@ -237,7 +251,7 @@ def step_fetch_prices(neg_risk_events: List[dict]) -> dict:
         for m in event.get("markets", []):
             if not m.get("negRisk") or not m.get("active"):
                 continue
-            clob_ids = m.get("clobTokenIds") or []
+            clob_ids = _parse_clob_token_ids(m.get("clobTokenIds"))
             if clob_ids:
                 token_to_event[clob_ids[0]] = str(event.get("id", ""))
 
@@ -308,7 +322,7 @@ def step_fetch_orderbooks(neg_risk_events: List[dict], prices: dict, best_event_
         for m in event.get("markets", []):
             if not m.get("negRisk") or not m.get("active"):
                 continue
-            clob_ids = m.get("clobTokenIds") or []
+            clob_ids = _parse_clob_token_ids(m.get("clobTokenIds"))
             if clob_ids:
                 tokens.append((clob_ids[0], str(event.get("id", ""))))
 
@@ -357,7 +371,7 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict) ->
         for m in event.get("markets", []):
             if not m.get("negRisk") or not m.get("active"):
                 continue
-            clob_ids = m.get("clobTokenIds") or []
+            clob_ids = _parse_clob_token_ids(m.get("clobTokenIds"))
             if not clob_ids:
                 continue
             token_id = clob_ids[0]
@@ -562,7 +576,7 @@ def _get_first_tokens(event: dict) -> List[str]:
     for m in event.get("markets", []):
         if not m.get("negRisk") or not m.get("active"):
             continue
-        clob_ids = m.get("clobTokenIds") or []
+        clob_ids = _parse_clob_token_ids(m.get("clobTokenIds"))
         if clob_ids:
             tokens.append(clob_ids[0])
     return tokens
