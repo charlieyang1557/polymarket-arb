@@ -1,0 +1,9 @@
+py-clob-client
+requests
+aiohttp
+python-dotenv
+rich
+sqlite-utils
+pydantic
+# Optional: for Type 2 embedding-based similarity (Phase 2+)
+# sentence-transformers
