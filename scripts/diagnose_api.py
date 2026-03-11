@@ -508,7 +508,9 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
             "event_id": str(event.get("id", "")),
             "title": event.get("title", ""),
             "price_sum": round(total_price, 6),
-            "price_source": "midpoint" if mode == "fast" else "ask",
+            "price_source": "gamma" if mode == "fast" else ("clob_ask" if any(
+                prices.get(d.get("token_id", ""), {}).get("ask") for d in markets_detail
+            ) else "gamma"),
             "volume_24h": total_volume,
             "tokens_valid": valid_count,
             "tokens_total": len(tokens),
@@ -590,6 +592,7 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
                 "event_id": e["event_id"],
                 "event_title": e["title"],
                 "price_sum": e["price_sum"],
+                "price_source": e.get("price_source", "unknown"),
                 "gross_profit": round(gross, 6),
                 "net_profit_pct": round(net_pct, 4),
                 "markets": e["markets"],
@@ -619,6 +622,7 @@ def step_analyze(neg_risk_events: List[dict], prices: dict, orderbooks: dict,
         "volume_tiers": volume_tiers,
         "best_opportunity": best_opp,
         "nearest_miss": nearest_miss,
+        "_event_sums": event_sums,  # internal, used by console printer
     }
 
 
@@ -739,14 +743,25 @@ def _print_console_summary(summary: dict):
               f"avg sum={tier_data['avg_price_sum']:.4f}, "
               f"min sum={tier_data['min_price_sum']:.4f}")
 
+    # Tier breakdown
+    tier1_count = sum(1 for e in summary.get("_event_sums", [])
+                      if e.get("price_source") == "clob_ask")
+    tier2_count = sum(1 for e in summary.get("_event_sums", [])
+                      if e.get("price_source") == "gamma" and e["price_sum"] < 1.05 and e["price_sum"] > 0)
+    if tier1_count or tier2_count:
+        print(f"\nTier breakdown:")
+        print(f"  Tier 1 (CLOB verified): {tier1_count} events")
+        print(f"  Tier 2 (Gamma only):    {tier2_count} near-miss events")
+
     best = summary.get("best_opportunity")
     if best:
         is_real = best["is_real_opportunity"]
         label = "REAL OPPORTUNITY" if is_real else "Best candidate (below threshold)"
         print(f"\n{'*' * 50}")
         print(f"  {label}:")
+        source = best.get('price_source', 'unknown')
         print(f"  Event: {best['event_title']}")
-        print(f"  Price sum: {best['price_sum']:.4f}")
+        print(f"  Price sum: {best['price_sum']:.4f} (source: {source})")
         print(f"  Gross profit: {best['gross_profit']:.4f}")
         print(f"  Net profit: {best['net_profit_pct']:.2f}%")
         depth = best.get("depth")
@@ -805,24 +820,30 @@ def main():
         # 3. Extract prices from Gamma outcomePrices (zero API calls!)
         gamma_prices = step_extract_gamma_prices(neg_risk_events)
 
-        # 4. Fetch full ask/bid prices (depends on mode)
+        # 4. Two-tier price verification
         prices: Dict[str, dict] = {}
         if mode == "fast":
             print("--fast mode: using Gamma prices only, skipping CLOB ask/bid fetch\n")
         elif mode == "full":
             prices = step_fetch_prices(neg_risk_events)
         else:
-            # Default: Gamma filter, then CLOB ask/bid on candidates only
-            candidates = _find_candidate_events(neg_risk_events, gamma_prices, threshold=1.05)
-            if candidates:
-                candidate_tokens = set()
-                for event in candidates:
-                    candidate_tokens.update(_get_first_tokens(event))
-                print(f"Gamma price filter: {len(candidates)} candidate events "
-                      f"(gamma sum < $1.05) with {len(candidate_tokens)} tokens\n")
-                prices = step_fetch_prices(neg_risk_events, only_tokens=candidate_tokens)
+            # Tier 1: gamma sum < $0.98 → fetch real CLOB ask/bid (realistic arb candidates)
+            tier1 = _find_candidate_events(neg_risk_events, gamma_prices, threshold=0.98)
+            # Tier 2: gamma sum $0.98-$1.05 → log only, no CLOB calls
+            tier2 = _find_candidate_events(neg_risk_events, gamma_prices, threshold=1.05)
+            tier2 = [e for e in tier2 if e not in tier1]
+
+            print(f"Tier 1 (gamma < $0.98, CLOB verify): {len(tier1)} events")
+            print(f"Tier 2 (gamma $0.98-$1.05, log only): {len(tier2)} events\n")
+
+            if tier1:
+                tier1_tokens = set()
+                for event in tier1:
+                    tier1_tokens.update(_get_first_tokens(event))
+                print(f"Fetching CLOB ask/bid for {len(tier1_tokens)} Tier 1 tokens...\n")
+                prices = step_fetch_prices(neg_risk_events, only_tokens=tier1_tokens)
             else:
-                print("Gamma price filter: no candidate events with sum < $1.05\n")
+                print("No Tier 1 candidates — no CLOB calls needed\n")
 
         # 5. Quick pre-scan to find best opportunity event for order book fetch
         best_event_id = _find_best_event_id(neg_risk_events, prices, gamma_prices)

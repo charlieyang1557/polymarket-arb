@@ -62,6 +62,21 @@ class Database:
                 "closed_at": str,
             }, pk="id")
 
+        if "rejected_opportunities" not in self.db.table_names():
+            self.db["rejected_opportunities"].create({
+                "id": str,
+                "rejected_at": str,
+                "type": str,
+                "event_ids": str,       # JSON list
+                "market_ids": str,      # JSON list
+                "total_cost": float,
+                "expected_profit": float,
+                "expected_profit_pct": float,
+                "confidence": float,
+                "rejection_reason": str,  # low_liquidity, edge_too_small, risk_limit, etc.
+                "details": str,         # JSON dict
+            }, pk="id")
+
         if "risk_state" not in self.db.table_names():
             self.db["risk_state"].create({
                 "key": str,
@@ -93,6 +108,40 @@ class Database:
             order_by="detected_at desc",
         )
         return list(rows)
+
+    # ------------------------------------------------------------------
+    # Rejected opportunities
+    # ------------------------------------------------------------------
+
+    def save_rejected_opportunity(self, opp: ArbitrageOpportunity, reason: str):
+        self.db["rejected_opportunities"].insert({
+            "id": opp.id,
+            "rejected_at": _utcnow(),
+            "type": opp.type,
+            "event_ids": json.dumps(opp.event_ids),
+            "market_ids": json.dumps([m.market_id for m in opp.markets]),
+            "total_cost": opp.total_cost,
+            "expected_profit": opp.expected_profit,
+            "expected_profit_pct": opp.expected_profit_pct,
+            "confidence": opp.confidence,
+            "rejection_reason": reason,
+            "details": json.dumps(opp.details),
+        }, replace=True)
+
+    def get_rejected_opportunities(self, reason: str | None = None,
+                                   since: datetime | None = None) -> list[dict]:
+        clauses = []
+        params = []
+        if reason:
+            clauses.append("rejection_reason = ?")
+            params.append(reason)
+        if since:
+            clauses.append("rejected_at >= ?")
+            params.append(since.isoformat())
+        where = " AND ".join(clauses) if clauses else None
+        return list(self.db["rejected_opportunities"].rows_where(
+            where, params, order_by="rejected_at desc"
+        ))
 
     # ------------------------------------------------------------------
     # Trades
