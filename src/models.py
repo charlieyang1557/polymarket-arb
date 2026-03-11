@@ -15,11 +15,12 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Fields confirmed from Gamma/CLOB API responses — see data/diagnostics/2026-03-11_005032/
 class Outcome(BaseModel):
     token_id: str
     name: str = ""
-    yes_price: float = 0.0
-    no_price: float = 0.0
+    best_ask: float = 0.0
+    best_bid: float = 0.0
     volume_24h: float = 0.0
 
 
@@ -41,7 +42,6 @@ class Event(BaseModel):
     category: str = ""
     markets: list[Market] = Field(default_factory=list)
     active: bool = True
-    is_neg_risk: bool = False
 
 
 class OrderBookLevel(BaseModel):
