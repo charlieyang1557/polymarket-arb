@@ -126,7 +126,7 @@ Cancel and requote when:
 
 ### Aggress Fills
 
-When inventory triggers aggress (Layer 2), simulate immediate taker fill at current ask price. No queue — taker orders fill instantly. Taker fee applied.
+When inventory triggers AGGRESS_FLATTEN (Layer 2 escalation after skewing fails, or net > 20), simulate immediate taker fill at current ask price. No queue — taker orders fill instantly. Taker fee applied.
 
 Aggress fills do NOT create an `mm_orders` row (no resting order was placed). They create only an `mm_fills` row with `is_taker=1` and `order_id=NULL`. The `price` in `mm_fills` is the actual execution price (the ask we crossed into), not a resting order price.
 
@@ -173,10 +173,12 @@ class MarketState:
     yes_queue: list[int]      # cost basis FIFO (filled YES prices)
     no_queue: list[int]       # cost basis FIFO (filled NO prices)
     realized_pnl: float       # cents, after fees and pair settlement
-    unrealized_pnl: float     # cents, inventory marked to midpoint
+    unrealized_pnl: float     # cents, inventory marked to exit price (bid)
     total_fees: float         # cents
     last_seen_trade_id: str
     consecutive_losses: int
+    oldest_fill_time: datetime | None  # oldest unhedged fill, for L2 time-based checks
+    skew_activated_at: datetime | None  # when inventory skewing started, for 1h escalation
     paused_until: datetime | None  # for PAUSE_30MIN / PAUSE_60S
     midpoint_history: list[tuple[datetime, float]]  # last 6 ticks for L4 jump detection
     last_api_success: datetime  # for L4 disconnect detection
@@ -211,20 +213,25 @@ class GlobalState:
     peak_total_pnl: float     # highest total_pnl seen, for drawdown calc
 ```
 
-### Unrealized P&L Calculation
+### Unrealized P&L Calculation (Conservative Mark-to-Market)
 
 YES and NO queues pair off in FIFO order from the front: the first YES fill pairs with the first NO fill. Unhedged contracts are the tail of the longer queue.
 
+**Important:** We mark inventory to the *exit price* (what we'd actually get if forced to exit), NOT midpoint. In 5c spread markets, midpoint creates phantom profits.
+
+- Long YES inventory → valued at current `best_yes_bid` (what we could sell YES for)
+- Long NO inventory → valued at current `best_no_bid` (what we could sell NO for)
+
 ```python
-def unrealized_pnl(state: MarketState, midpoint: float) -> float:
+def unrealized_pnl(state: MarketState, best_yes_bid: int, best_no_bid: int) -> float:
     if len(state.yes_queue) > len(state.no_queue):
-        # Net long YES: unhedged YES contracts valued at midpoint
+        # Net long YES: valued at best YES bid (conservative exit price)
         unhedged = state.yes_queue[len(state.no_queue):]
-        return sum(midpoint - cost for cost in unhedged)
+        return sum(best_yes_bid - cost for cost in unhedged)
     elif len(state.no_queue) > len(state.yes_queue):
-        # Net long NO: unhedged NO contracts valued at (100 - midpoint)
+        # Net long NO: valued at best NO bid (conservative exit price)
         unhedged = state.no_queue[len(state.yes_queue):]
-        return sum((100 - midpoint) - cost for cost in unhedged)
+        return sum(best_no_bid - cost for cost in unhedged)
     return 0.0
 ```
 
@@ -245,10 +252,26 @@ Checked after every fill. Per-market.
 | Net Position | Action |
 |-------------|--------|
 | <= 10 | CONTINUE |
-| 11-20 | AGGRESS_FLATTEN (cross spread to reduce) |
+| 11-20 | SKEW_QUOTES (adjust quotes to attract offsetting flow) |
 | > 20 | STOP_AND_FLATTEN (cancel all resting, only flatten) |
 
-**Time-based force close:** If oldest unhedged position is > 2 hours old, FORCE_CLOSE at market price regardless of P&L.
+**Inventory-skewed quoting (SKEW_QUOTES):** When inventory is skewed (net > 10), instead of immediately crossing the spread (which is expensive in 5c spread markets):
+- **Heavy side:** Widen bid by 1-2c (less aggressive buying on the overweight side)
+- **Light side:** Tighten bid by 1-2c (more aggressive buying to attract offsetting flow)
+- Example: long +15 YES → lower YES bid by 1c (buy less YES), lower NO bid by 1c (make NO cheaper to attract NO sellers who offset our YES exposure)
+- Only escalate to AGGRESS_FLATTEN if inventory > 20 OR skewing hasn't reduced inventory after 1 hour
+
+| Net Position | Duration | Action |
+|-------------|----------|--------|
+| 11-20 | < 1 hour | SKEW_QUOTES |
+| 11-20 | >= 1 hour (skew hasn't worked) | AGGRESS_FLATTEN |
+| > 20 | any | STOP_AND_FLATTEN |
+
+**Time-based inventory management:**
+- If oldest unhedged position is > 2 hours old → activate inventory skewing (SKEW_QUOTES)
+- If oldest unhedged position is > 4 hours old → FORCE_CLOSE at market price regardless of P&L
+
+Rationale: Crossing a 5c spread costs 2-3 hours of profit. Give skewing time to work before paying that cost.
 
 ### Layer 3: P&L Circuit Breakers
 
@@ -284,7 +307,7 @@ Not enforced in code. After 48h paper run, human reviews:
 
 ```
 FULL_STOP > EXIT_MARKET > CANCEL_ALL > STOP_AND_FLATTEN >
-FORCE_CLOSE > AGGRESS_FLATTEN > PAUSE_60S > PAUSE_30MIN >
+FORCE_CLOSE > AGGRESS_FLATTEN > SKEW_QUOTES > PAUSE_60S > PAUSE_30MIN >
 SKIP_TICK > CONTINUE
 ```
 
@@ -526,3 +549,7 @@ After the run, query the database to answer:
 6. **Risk trigger frequency:** How often did each layer fire? Any FULL_STOP events?
 
 Decision gate: if cumulative P&L is positive and no FULL_STOP events, consider $50 live deployment per Layer 5 rules.
+
+## Implementation Notes
+
+**Live trading requires WebSocket migration before deployment** — 10s polling creates adverse selection risk during news events. A sudden price move can leave stale resting orders exposed for up to 10 seconds, resulting in fills at unfavorable prices. WebSocket streaming (`wss://ws-subscriptions-clob.polymarket.com/ws/market`) provides sub-second price updates and should be the data feed for any live deployment.
