@@ -19,6 +19,14 @@ def test_l1_rejects_fat_finger():
 def test_l1_accepts_valid():
     assert check_layer1(price=27, size=2, midpoint=28.0, max_size=5) is None
 
+def test_l1_accepts_no_bid():
+    # midpoint=28 -> NO ref = 72. Price 70 is within 10% of 72
+    assert check_layer1(price=70, size=2, midpoint=28.0, side="no") is None
+
+def test_l1_rejects_no_fat_finger():
+    # midpoint=28 -> NO ref = 72. Price 60 is outside 10% of 72 (7.2)
+    assert check_layer1(price=60, size=2, midpoint=28.0, side="no") is not None
+
 # Layer 2
 def test_l2_continue_under_10():
     ms = MarketState(ticker="X")

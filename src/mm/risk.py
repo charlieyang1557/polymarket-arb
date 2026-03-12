@@ -29,12 +29,17 @@ def highest_priority(actions: list[Action]) -> Action:
 # -- Layer 1: Per-Order Validation -----------------------------------------
 
 def check_layer1(price: int, size: int, midpoint: float,
-                 max_size: int = 5) -> str | None:
-    """Returns rejection reason string, or None if valid."""
+                 max_size: int = 5, side: str = "yes") -> str | None:
+    """Returns rejection reason string, or None if valid.
+
+    For YES bids, compare price against YES midpoint.
+    For NO bids, compare price against NO midpoint (100 - midpoint).
+    """
     if size > max_size:
         return f"size {size} > max {max_size}"
-    if midpoint > 0 and abs(price - midpoint) > midpoint * 0.10:
-        return f"price {price} outside ±10% of midpoint {midpoint:.1f}"
+    ref = midpoint if side == "yes" else (100 - midpoint)
+    if ref > 0 and abs(price - ref) > ref * 0.10:
+        return f"price {price} outside ±10% of {side} ref {ref:.1f}"
     return None
 
 

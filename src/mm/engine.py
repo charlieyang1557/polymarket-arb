@@ -126,12 +126,23 @@ class MMEngine:
             self._log_event(ms, 4, Action.SKIP_TICK, f"error: {e}")
             return
 
-        # Parse book
-        book = book_data.get("orderbook", book_data)
-        yes_bids = book.get("yes", [])
-        no_bids = book.get("no", [])
-        if not yes_bids or not no_bids:
+        # Parse book — API returns orderbook_fp with dollar strings
+        book_fp = book_data.get("orderbook_fp", {})
+        yes_bids_raw = book_fp.get("yes_dollars", [])
+        no_bids_raw = book_fp.get("no_dollars", [])
+        if not yes_bids_raw or not no_bids_raw:
+            # Fallback to legacy format
+            book = book_data.get("orderbook", book_data)
+            yes_bids_raw = book.get("yes", [])
+            no_bids_raw = book.get("no", [])
+        if not yes_bids_raw or not no_bids_raw:
             return
+
+        # Convert to [price_cents, quantity] integer pairs
+        yes_bids = [[round(float(p) * 100), int(float(q))]
+                     for p, q in yes_bids_raw]
+        no_bids = [[round(float(p) * 100), int(float(q))]
+                    for p, q in no_bids_raw]
 
         best_yes_bid = yes_bids[-1][0]
         best_no_bid = no_bids[-1][0]
@@ -419,7 +430,7 @@ class MMEngine:
             if order is None or order.remaining <= 0:
                 # Layer 1 validation
                 rejection = check_layer1(quote_price, self.order_size,
-                                         midpoint)
+                                         midpoint, side=side)
                 if rejection:
                     continue
 
