@@ -73,7 +73,9 @@ while elapsed < duration:
     sleep(interval / len(markets))
 ```
 
-API budget: 5 markets x 2 calls/tick x 6 ticks/min = 60 calls/min. Kalshi allows 1200 reads/min (Basic tier) = 5% utilization.
+API budget: 5 markets x 2 calls/tick x 6 ticks/min = 60 calls/min. Kalshi Basic tier allows 20 reads/sec (1200/min). With retries (max 3 per transient failure), worst case is 60 + 180 = 240 calls/min = 20% utilization. Well within limits.
+
+The staggered tick schedule adapts to market count: `sleep(interval / len(active_markets))`. Fewer markets = longer sleep per market.
 
 ## Fill Simulation
 
@@ -82,8 +84,10 @@ API budget: 5 markets x 2 calls/tick x 6 ticks/min = 60 calls/min. Kalshi allows
 When we "place" a simulated order at price P:
 1. Record `queue_pos = depth_at_P` from current orderbook (we are at the back)
 2. Each tick, fetch trades since `last_seen_trade_id`
-3. Count trade volume at price <= P (for YES bids) or <= P (for NO bids)
-4. Subtract from `queue_pos`
+3. Drain queue based on trade side:
+   - **YES bid at P:** Drain from trades where `yes_price_cents <= P` (someone sold YES at or below our bid)
+   - **NO bid at P:** Drain from trades where `no_price_cents <= P`, i.e. `(100 - yes_price_cents) <= P` (someone sold NO at or below our bid)
+4. Subtract drain volume from `queue_pos`
 5. When `queue_pos <= 0`, our contracts are "filled" (capped at order size)
 
 ```
@@ -100,13 +104,18 @@ Time T2: Trade feed shows 30 contracts traded at <= 26c
 
 ### Trade Deduplication
 
-Kalshi trades have unique `trade_id`. We store `last_seen_trade_id` per market and only process new trades each tick. Trades with timestamps before our order placement are ignored.
+Kalshi trades have unique `trade_id`. We store `last_seen_trade_id` per market. Each tick, fetch trades with `limit=500` (high limit to avoid missing trades between ticks) and filter client-side to only process trades newer than `last_seen_trade_id`. Trades with timestamps before our order placement are ignored.
+
+Note: The Kalshi `/markets/trades` endpoint does not support `since_trade_id` filtering — we fetch the full batch and filter client-side. With our target markets at 50-110 trades/hour, a `limit=500` window covers ~5-10 hours of trades, far exceeding our 10s tick interval.
 
 ### Partial Fills
 
-If queue drains past our position but not by enough to fill all contracts:
-- queue_pos = 2, our size = 5, drain = 4
-- Fill 2 contracts (drain that passed through us), 3 remain resting
+Fill formula: `filled = min(order.remaining, max(0, drain - queue_pos))` when `queue_pos > 0`. When `queue_pos` is already <= 0 from a prior tick's drain: `filled = min(order.remaining, drain)`.
+
+Example:
+- queue_pos = 2, our size = 5, drain this tick = 4
+- drain exceeds queue by 2: `min(5, max(0, 4 - 2))` = 2 contracts filled
+- remaining = 3, queue_pos = 0 (we are now at front of book)
 
 ### Requoting
 
@@ -118,6 +127,18 @@ Cancel and requote when:
 ### Aggress Fills
 
 When inventory triggers aggress (Layer 2), simulate immediate taker fill at current ask price. No queue — taker orders fill instantly. Taker fee applied.
+
+Aggress fills do NOT create an `mm_orders` row (no resting order was placed). They create only an `mm_fills` row with `is_taker=1` and `order_id=NULL`. The `price` in `mm_fills` is the actual execution price (the ask we crossed into), not a resting order price.
+
+### Market Resolution
+
+If a market resolves during our open position (detected by checking `result` field from `get_market()` once per minute, not every tick):
+- YES inventory settles at 100c if result="yes", 0c if result="no"
+- NO inventory settles at 100c if result="no", 0c if result="yes"
+- Calculate final P&L for all held inventory
+- Log to `mm_fills` with `side="settlement"` and the settlement price
+- Set `market.active = False` (EXIT_MARKET)
+- Log Layer 4 event: "market resolved"
 
 ### Metrics Tracked Per Order
 
@@ -156,8 +177,9 @@ class MarketState:
     total_fees: float         # cents
     last_seen_trade_id: str
     consecutive_losses: int
-    cumulative_pnl: float     # for Layer 3 per-market check
     paused_until: datetime | None  # for PAUSE_30MIN / PAUSE_60S
+    midpoint_history: list[tuple[datetime, float]]  # last 6 ticks for L4 jump detection
+    last_api_success: datetime  # for L4 disconnect detection
 ```
 
 ### GlobalState
@@ -166,21 +188,41 @@ class MarketState:
 @dataclass
 class GlobalState:
     markets: dict[str, MarketState]
-    daily_pnl: float          # cents, sum across all markets
-    peak_total_pnl: float     # for drawdown calculation
-    total_pnl: float
     start_time: datetime
+    session_id: str           # unique per run, stored in all DB rows
     db_error_count: int       # consecutive DB write failures
+
+    @property
+    def total_realized_pnl(self) -> float:
+        """Sum of realized_pnl across all markets (cents)."""
+        return sum(m.realized_pnl for m in self.markets.values())
+
+    @property
+    def total_unrealized_pnl(self) -> float:
+        """Sum of unrealized_pnl across all markets (cents)."""
+        return sum(m.unrealized_pnl for m in self.markets.values())
+
+    @property
+    def total_pnl(self) -> float:
+        """Realized + unrealized across all markets (cents)."""
+        return self.total_realized_pnl + self.total_unrealized_pnl
+
+    # peak_total_pnl: tracked as a float, updated each snapshot tick
+    peak_total_pnl: float     # highest total_pnl seen, for drawdown calc
 ```
 
 ### Unrealized P&L Calculation
 
+YES and NO queues pair off in FIFO order from the front: the first YES fill pairs with the first NO fill. Unhedged contracts are the tail of the longer queue.
+
 ```python
 def unrealized_pnl(state: MarketState, midpoint: float) -> float:
     if len(state.yes_queue) > len(state.no_queue):
+        # Net long YES: unhedged YES contracts valued at midpoint
         unhedged = state.yes_queue[len(state.no_queue):]
         return sum(midpoint - cost for cost in unhedged)
     elif len(state.no_queue) > len(state.yes_queue):
+        # Net long NO: unhedged NO contracts valued at (100 - midpoint)
         unhedged = state.no_queue[len(state.yes_queue):]
         return sum((100 - midpoint) - cost for cost in unhedged)
     return 0.0
@@ -214,7 +256,7 @@ Checked after every fill and every snapshot.
 
 - **Daily loss:** > $5 (500c) across all markets -> FULL_STOP
 - **Consecutive losses:** 3 round-trips with negative P&L in a row -> PAUSE_30MIN (per-market)
-- **Per-market cumulative:** < -$10 (-1000c) -> EXIT_MARKET
+- **Per-market cumulative loss:** `realized_pnl` < -$10 (-1000c) -> EXIT_MARKET
 - **Total drawdown:** Only triggers when peak > $1 (100c) AND drawdown > 50c AND drawdown > 5% of peak -> FULL_STOP
 
 The drawdown triple-gate prevents false triggers on small absolute amounts.
@@ -223,12 +265,12 @@ The drawdown triple-gate prevents false triggers on small absolute amounts.
 
 Checked every tick. Per-market.
 
-- **API disconnect:** > 30s since last successful response -> CANCEL_ALL (for that market)
+- **API disconnect:** > 30s since last successful API response for that market -> CANCEL_ALL. Note: `last_api_success` is only updated when we *attempt* an API call. If a market is paused (PAUSE_60S/PAUSE_30MIN), no API calls are made for it, so the disconnect timer does not advance — this is correct behavior (paused markets are intentionally idle).
 - **Price jump:** Midpoint moved > 5c in last 60s (6 ticks) -> PAUSE_60S (per-market)
 - **Crossed book:** Spread <= 0 -> SKIP_TICK
 - **DB write failures:** 10 consecutive failures -> FULL_STOP (disk full or similar)
 
-PAUSE_30MIN and PAUSE_60S are per-market. A price spike in Greenland does not pause quoting on House Control.
+PAUSE_30MIN and PAUSE_60S are per-market. A price spike in Greenland does not pause quoting on the other 4 markets. If ALL markets are simultaneously paused, the main loop idles harmlessly — `sleep()` continues, no API calls are made, no risk accumulates.
 
 ### Layer 5: Scaling Rules (Human Decision Gate)
 
@@ -254,13 +296,16 @@ On ANY error or unexpected state: STOP and CANCEL ALL. The bot should be harder 
 
 ## Database Schema
 
-Four new tables in the existing SQLite database.
+Four new tables in a **separate** SQLite database (`data/mm_paper.db` by default, configurable via `--db-path`). Not added to the existing `src/db.py` database — the MM bot uses its own `MMDatabase` helper class in `src/mm/engine.py` with raw `sqlite3` (no `sqlite-utils` dependency).
+
+All tables include a `session_id` column to distinguish multiple paper runs in the same DB file.
 
 ### mm_orders
 
 ```sql
 CREATE TABLE mm_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
     ticker TEXT NOT NULL,
     side TEXT NOT NULL,
     price INTEGER NOT NULL,
@@ -281,6 +326,7 @@ CREATE TABLE mm_orders (
 ```sql
 CREATE TABLE mm_fills (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
     order_id INTEGER REFERENCES mm_orders(id),
     ticker TEXT NOT NULL,
     side TEXT NOT NULL,
@@ -300,6 +346,7 @@ CREATE TABLE mm_fills (
 ```sql
 CREATE TABLE mm_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
     ts TEXT NOT NULL,
     ticker TEXT NOT NULL,
     best_yes_bid INTEGER,
@@ -319,7 +366,8 @@ CREATE TABLE mm_snapshots (
     no_queue_pos INTEGER,
     trade_volume_1min INTEGER,
     global_realized_pnl REAL,
-    global_unrealized_pnl REAL
+    global_unrealized_pnl REAL,
+    global_total_pnl REAL
 );
 ```
 
@@ -328,6 +376,7 @@ CREATE TABLE mm_snapshots (
 ```sql
 CREATE TABLE mm_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
     ts TEXT NOT NULL,
     ticker TEXT,
     layer INTEGER NOT NULL,
@@ -453,6 +502,17 @@ Where P = price in dollars (0 to 1). Maximum fee at P=0.50, near-zero at extreme
 Converted to cents for internal tracking:
 - `maker_fee_cents = 0.0175 * count * (price/100) * (1 - price/100) * 100`
 - `taker_fee_cents = 0.07 * count * (price/100) * (1 - price/100) * 100`
+
+**Worked example:** 2 contracts filled at 26c (maker):
+- P = 0.26, fee = `0.0175 * 2 * 0.26 * 0.74 * 100` = **0.67c** total (0.34c per contract)
+
+Same fill as taker:
+- fee = `0.07 * 2 * 0.26 * 0.74 * 100` = **2.69c** total (1.34c per contract)
+
+Round-trip on KXGREENLAND-29 (5c spread, maker both sides):
+- Buy YES at 26c: maker fee 0.34c
+- Buy NO at 69c: maker fee = `0.0175 * 1 * 0.69 * 0.31 * 100` = 0.37c
+- Settle for 100c. Gross = 100 - 26 - 69 = 5c. Net = 5 - 0.34 - 0.37 = **4.29c**
 
 ## Success Criteria for 48h Paper Run
 
