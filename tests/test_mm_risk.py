@@ -49,15 +49,23 @@ def test_l2_stop_over_20():
     ms.yes_queue = [26] * 25  # net +25
     assert check_layer2(ms) == Action.STOP_AND_FLATTEN
 
-def test_l2_skew_at_2h_old_position():
+def test_l2_no_skew_at_small_inventory():
+    # net=1 with 3h old position — too small to skew
     ms = MarketState(ticker="X")
     ms.yes_queue = [26]
+    ms.oldest_fill_time = datetime.now(timezone.utc) - timedelta(hours=3)
+    assert check_layer2(ms) == Action.CONTINUE
+
+def test_l2_skew_at_2h_old_position():
+    # net=5 with 3h old position — skew
+    ms = MarketState(ticker="X")
+    ms.yes_queue = [26] * 5
     ms.oldest_fill_time = datetime.now(timezone.utc) - timedelta(hours=3)
     assert check_layer2(ms) == Action.SKEW_QUOTES
 
 def test_l2_force_close_at_4h_old_position():
     ms = MarketState(ticker="X")
-    ms.yes_queue = [26]
+    ms.yes_queue = [26] * 5
     ms.oldest_fill_time = datetime.now(timezone.utc) - timedelta(hours=5)
     assert check_layer2(ms) == Action.FORCE_CLOSE
 

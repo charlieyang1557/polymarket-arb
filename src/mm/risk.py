@@ -50,7 +50,8 @@ def check_layer2(ms: MarketState) -> Action:
     now = datetime.now(timezone.utc)
 
     # Time-based checks on oldest unhedged position
-    if ms.oldest_fill_time:
+    # Only escalate if inventory is meaningful (> order size)
+    if ms.oldest_fill_time and net > 2:
         age = now - ms.oldest_fill_time
         if age > timedelta(hours=4):
             return Action.FORCE_CLOSE

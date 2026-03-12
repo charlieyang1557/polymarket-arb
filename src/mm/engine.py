@@ -162,13 +162,16 @@ class MMEngine:
                             f"spread={spread} mid={midpoint:.1f}")
             if l4 == Action.PAUSE_60S:
                 ms.paused_until = now + timedelta(seconds=60)
-            elif l4 >= Action.CANCEL_ALL:
+            elif l4 == Action.FULL_STOP:
                 self._cancel_orders(ms, "risk_l4")
-                if l4 == Action.FULL_STOP:
-                    for m in self.gs.markets.values():
-                        m.active = False
-                else:
-                    ms.active = False
+                for m in self.gs.markets.values():
+                    m.active = False
+            elif l4 == Action.EXIT_MARKET:
+                self._cancel_orders(ms, "risk_l4")
+                ms.active = False
+            elif l4 == Action.CANCEL_ALL:
+                # Cancel orders but DON'T deactivate — market resumes next tick
+                self._cancel_orders(ms, "risk_l4")
             return
 
         # -- 3. Filter new trades & drain queues --
