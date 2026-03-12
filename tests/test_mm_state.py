@@ -1,0 +1,44 @@
+# tests/test_mm_state.py
+from src.mm.state import maker_fee_cents, taker_fee_cents, unrealized_pnl_cents
+
+def test_maker_fee_at_26c():
+    # Spec worked example: 2 contracts at 26c = 0.67c
+    assert abs(maker_fee_cents(26, 2) - 0.6734) < 0.01
+
+def test_maker_fee_at_69c():
+    # Spec: 1 contract at 69c = 0.37c
+    assert abs(maker_fee_cents(69, 1) - 0.3745) < 0.01
+
+def test_taker_fee_at_26c():
+    # Spec: 2 contracts at 26c = 2.69c
+    assert abs(taker_fee_cents(26, 2) - 2.6936) < 0.01
+
+def test_maker_fee_at_50c_maximum():
+    # Max fee at P=0.50: 0.0175 * 1 * 0.5 * 0.5 * 100 = 0.4375c
+    assert abs(maker_fee_cents(50, 1) - 0.4375) < 0.01
+
+def test_unrealized_pnl_long_yes():
+    # Holding 2 YES at costs [26, 28], best_yes_bid=29
+    # Unrealized = (29-26) + (29-28) = 4 (conservative: bid not midpoint)
+    yes_q = [26, 28]
+    no_q = []
+    assert unrealized_pnl_cents(yes_q, no_q, best_yes_bid=29, best_no_bid=69) == 4.0
+
+def test_unrealized_pnl_long_no():
+    # Holding 1 NO at cost [69], best_no_bid=70
+    # Unrealized = 70-69 = 1
+    yes_q = []
+    no_q = [69]
+    assert unrealized_pnl_cents(yes_q, no_q, best_yes_bid=26, best_no_bid=70) == 1.0
+
+def test_unrealized_pnl_hedged():
+    # Fully hedged: 2 YES + 2 NO, no unhedged tail
+    assert unrealized_pnl_cents([26, 28], [69, 71],
+                                best_yes_bid=29, best_no_bid=70) == 0.0
+
+def test_unrealized_pnl_partial_hedge():
+    # 3 YES + 1 NO: first pair hedged, 2 YES unhedged
+    # Unhedged YES at costs [28, 30], best_yes_bid=31
+    # Unrealized = (31-28) + (31-30) = 4
+    assert unrealized_pnl_cents([26, 28, 30], [69],
+                                best_yes_bid=31, best_no_bid=69) == 4.0
