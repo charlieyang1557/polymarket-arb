@@ -172,20 +172,21 @@ class MMEngine:
             return
 
         # -- 3. Filter new trades & drain queues --
+        # Use created_time for dedup (trade_id is UUID, not chronological)
         all_trades = trade_data.get("trades", [])
         new_trades = [t for t in all_trades
-                      if t.get("trade_id", "") > ms.last_seen_trade_id]
+                      if t.get("created_time", "") > ms.last_seen_trade_id]
         if new_trades:
             ms.last_seen_trade_id = max(
-                t.get("trade_id", "") for t in new_trades)
+                t.get("created_time", "") for t in new_trades)
 
-        # Filter trades after order placement and drain queues
+        # Drain queues — only count trades after each order's placement
         for order in (ms.yes_order, ms.no_order):
             if order is None or order.remaining <= 0:
                 continue
+            placed_iso = order.placed_at.strftime("%Y-%m-%dT%H:%M:%S")
             relevant = [t for t in new_trades
-                        if t.get("created_time", "") >=
-                        order.placed_at.isoformat()]
+                        if t.get("created_time", "")[:19] >= placed_iso]
             d = drain_queue(order, relevant)
             if d > 0:
                 filled = process_fills(order, d)
