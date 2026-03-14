@@ -7,6 +7,11 @@ Usage:
     python scripts/paper_mm.py --tickers KXGREENLAND-29   # single market
     python scripts/paper_mm.py --duration 300             # 5 min test
     python scripts/paper_mm.py --size 3 --interval 15     # custom params
+
+Standard startup (bot + watchdog):
+    rm -f data/mm_paper.db data/mm_paper.db-wal data/mm_paper.db-shm
+    nohup python -u scripts/paper_mm.py > data/mm_paper_run.log 2>&1 &
+    nohup python -u scripts/monitor_drain.py > data/mm_monitor.log 2>&1 &
 """
 
 import argparse
@@ -81,7 +86,9 @@ def main():
 
     # Header
     n = len(tickers)
-    print(f"Paper MM | {n} markets | {args.size} contracts | "
+    MM_VERSION = "v2: OBI + continuous skew + dynamic spread"
+    print(f"Paper MM | {MM_VERSION}")
+    print(f"  {n} markets | {args.size} contracts | "
           f"{args.interval}s interval")
     print(f"Session: {session_id}")
     print(f"Started: {datetime.now(timezone.utc).isoformat()} | "

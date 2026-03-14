@@ -1,0 +1,185 @@
+{
+  "cursor": "EhIKED9NqLTveXa_PuXdng6iM4IaDAjGyMrNBhDg79-CAg",
+  "trades": [
+    {
+      "count_fp": "10.00",
+      "created_time": "2026-03-12T20:36:06.865511Z",
+      "no_price_dollars": "0.2300",
+      "taker_side": "no",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "31b2208a-4ba3-49ad-0b63-b1743a66324c",
+      "yes_price_dollars": "0.7700"
+    },
+    {
+      "count_fp": "5.00",
+      "created_time": "2026-03-12T20:25:19.97131Z",
+      "no_price_dollars": "0.2100",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "fe7ce624-74e8-58fc-113d-548c4735252c",
+      "yes_price_dollars": "0.7900"
+    },
+    {
+      "count_fp": "12.00",
+      "created_time": "2026-03-12T20:20:58.932414Z",
+      "no_price_dollars": "0.2300",
+      "taker_side": "no",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "a07237ca-1e7b-5399-e6f9-b0ffeba00cb0",
+      "yes_price_dollars": "0.7700"
+    },
+    {
+      "count_fp": "1.00",
+      "created_time": "2026-03-12T19:22:51.334957Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "f3409a5b-d8c5-7e9b-449b-f4698ccfb932",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "10.00",
+      "created_time": "2026-03-12T19:22:51.334957Z",
+      "no_price_dollars": "0.2100",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "cc8c035e-753a-7647-448b-73274e066079",
+      "yes_price_dollars": "0.7900"
+    },
+    {
+      "count_fp": "8.00",
+      "created_time": "2026-03-12T19:22:51.334957Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "02ceabe9-e53d-7975-48aa-baa375e2a010",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "12.00",
+      "created_time": "2026-03-12T19:22:51.334957Z",
+      "no_price_dollars": "0.2100",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "01434b37-3128-7a5c-6502-9a39ea43cc8c",
+      "yes_price_dollars": "0.7900"
+    },
+    {
+      "count_fp": "12.00",
+      "created_time": "2026-03-12T17:55:54.954946Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "01eb545a-e471-62d7-3f82-51b6297b22ae",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "1.00",
+      "created_time": "2026-03-12T17:26:16.611155Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "9ec4ddd6-4b95-55b7-d166-7a3c6d46ec62",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "5.00",
+      "created_time": "2026-03-12T15:41:20.744513Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "aafc9f6e-08f9-46f3-d29a-b2d13468ecc6",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "100.00",
+      "created_time": "2026-03-12T15:32:05.146903Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "cd8c3bd2-0d4d-444b-e81e-8a91faa8e1e6",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "100.00",
+      "created_time": "2026-03-12T15:28:03.34571Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "98c41114-bf45-7e2f-e3ba-5d95ac08e0ae",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "4.00",
+      "created_time": "2026-03-12T14:56:32.719397Z",
+      "no_price_dollars": "0.2400",
+      "taker_side": "no",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "c227c919-996d-6da8-78cd-c214a003f02b",
+      "yes_price_dollars": "0.7600"
+    },
+    {
+      "count_fp": "8.00",
+      "created_time": "2026-03-12T14:19:55.712124Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "29629274-d071-5013-2a4c-6f34a5bb978e",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "150.00",
+      "created_time": "2026-03-12T14:18:20.05525Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "ed07a79b-027d-73b7-7e13-514129ea4f8e",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "6.00",
+      "created_time": "2026-03-12T14:09:16.965164Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "2b66d463-8d0d-7523-2f8f-b145f3c79f0e",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "62.00",
+      "created_time": "2026-03-12T13:16:25.760195Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "e60c00f0-1105-521f-315b-8e4940167e6e",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "125.00",
+      "created_time": "2026-03-12T13:14:29.742989Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "b5c41770-b8a5-43f3-986d-f37c32392b8e",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "3.00",
+      "created_time": "2026-03-12T12:43:16.86784Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "a1725fe3-51bd-54a7-d578-88b5a1a04fc2",
+      "yes_price_dollars": "0.7800"
+    },
+    {
+      "count_fp": "1.00",
+      "created_time": "2026-03-12T11:32:22.542636Z",
+      "no_price_dollars": "0.2200",
+      "taker_side": "yes",
+      "ticker": "KXGREENLANDPRICE-29JAN21-NOACQ",
+      "trade_id": "3f4da8b4-ef79-76bf-3ee5-dd9e0ea23382",
+      "yes_price_dollars": "0.7800"
+    }
+  ]
+}

@@ -13,3 +13,6 @@ build/
 data/diagnostics/
 data/historical/raw_markets.json
 data/historical/sample_resolved*.json
+data/ws_logs/*.jsonl
+data/ws_logs/run_stdout.log
+data/kalshi_diagnostic/

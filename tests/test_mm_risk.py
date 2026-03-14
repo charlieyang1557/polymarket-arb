@@ -33,15 +33,10 @@ def test_l2_continue_under_10():
     ms.yes_queue = [26] * 5  # net +5
     assert check_layer2(ms) == Action.CONTINUE
 
-def test_l2_skew_11_to_20():
+def test_l2_aggress_11_to_20():
+    """Inv 11-20 → AGGRESS_FLATTEN (continuous skew handles smaller inv)."""
     ms = MarketState(ticker="X")
     ms.yes_queue = [26] * 15  # net +15
-    assert check_layer2(ms) == Action.SKEW_QUOTES
-
-def test_l2_aggress_after_skew_1h():
-    ms = MarketState(ticker="X")
-    ms.yes_queue = [26] * 15  # net +15
-    ms.skew_activated_at = datetime.now(timezone.utc) - timedelta(hours=1, minutes=1)
     assert check_layer2(ms) == Action.AGGRESS_FLATTEN
 
 def test_l2_stop_over_20():
@@ -56,12 +51,12 @@ def test_l2_no_skew_at_small_inventory():
     ms.oldest_fill_time = datetime.now(timezone.utc) - timedelta(hours=3)
     assert check_layer2(ms) == Action.CONTINUE
 
-def test_l2_skew_at_2h_old_position():
-    # net=5 with 3h old position — skew
+def test_l2_aggress_at_2h_old_position():
+    """Net=5 with 3h old position → AGGRESS_FLATTEN."""
     ms = MarketState(ticker="X")
     ms.yes_queue = [26] * 5
     ms.oldest_fill_time = datetime.now(timezone.utc) - timedelta(hours=3)
-    assert check_layer2(ms) == Action.SKEW_QUOTES
+    assert check_layer2(ms) == Action.AGGRESS_FLATTEN
 
 def test_l2_force_close_at_4h_old_position():
     ms = MarketState(ticker="X")
@@ -81,6 +76,28 @@ def test_l3_consecutive_losses_pause():
     ms = MarketState(ticker="X", consecutive_losses=3)
     gs.markets["X"] = ms
     assert check_layer3(ms, gs) == Action.PAUSE_30MIN
+
+
+def test_l3_pause_30min_resets_consecutive_losses():
+    """After PAUSE_30MIN is triggered and applied, consecutive_losses
+    must be reset so the bot doesn't loop forever re-triggering pause."""
+    gs = GlobalState()
+    ms = MarketState(ticker="X", consecutive_losses=4, realized_pnl=-10.0)
+    gs.markets["X"] = ms
+
+    # First check triggers PAUSE_30MIN
+    action = check_layer3(ms, gs)
+    assert action == Action.PAUSE_30MIN
+
+    # Simulate engine applying the pause: it should reset consecutive_losses
+    from src.mm.risk import apply_pause_30min
+    apply_pause_30min(ms)
+    assert ms.consecutive_losses == 0
+    assert ms.paused_until is not None
+
+    # After reset, L3 should NOT re-trigger PAUSE_30MIN
+    action2 = check_layer3(ms, gs)
+    assert action2 == Action.CONTINUE
 
 def test_l3_per_market_exit():
     gs = GlobalState()

@@ -56,16 +56,13 @@ def check_layer2(ms: MarketState) -> Action:
         if age > timedelta(hours=4):
             return Action.FORCE_CLOSE
         if age > timedelta(hours=2):
-            return Action.SKEW_QUOTES
+            return Action.AGGRESS_FLATTEN
 
+    # Emergency backstops (continuous skew handles inv < 20)
     if net > 20:
         return Action.STOP_AND_FLATTEN
     if net > 10:
-        # Check if skewing has been active > 1 hour without reducing inventory
-        if ms.skew_activated_at and \
-           (now - ms.skew_activated_at) > timedelta(hours=1):
-            return Action.AGGRESS_FLATTEN
-        return Action.SKEW_QUOTES
+        return Action.AGGRESS_FLATTEN
     return Action.CONTINUE
 
 
@@ -97,6 +94,14 @@ def check_layer3(ms: MarketState, gs: GlobalState) -> Action:
     return highest_priority(actions) if actions else Action.CONTINUE
 
 
+def apply_pause_30min(ms: MarketState):
+    """Apply PAUSE_30MIN action: set pause timer and reset consecutive_losses
+    so the bot doesn't loop forever re-triggering the same pause."""
+    now = datetime.now(timezone.utc)
+    ms.paused_until = now + timedelta(minutes=30)
+    ms.consecutive_losses = 0
+
+
 # -- Layer 4: System Risk -------------------------------------------------
 
 def check_layer4(ms: MarketState, spread: int,
@@ -114,12 +119,13 @@ def check_layer4(ms: MarketState, spread: int,
     if (now - ms.last_api_success) > timedelta(seconds=30):
         return Action.CANCEL_ALL
 
-    # Price jump > 5c in last 60s
+    # Price jump detection: 3c threshold in live-game, 5c in pre-game
+    threshold = 3 if ms.is_live_game else 5
     if len(ms.midpoint_history) >= 2:
         oldest_entry = ms.midpoint_history[0]
         newest_entry = ms.midpoint_history[-1]
         time_diff = (newest_entry[0] - oldest_entry[0]).total_seconds()
-        if time_diff <= 65 and abs(newest_entry[1] - oldest_entry[1]) > 5:
+        if time_diff <= 65 and abs(newest_entry[1] - oldest_entry[1]) > threshold:
             return Action.PAUSE_60S
 
     return Action.CONTINUE

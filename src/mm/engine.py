@@ -9,8 +9,9 @@ from datetime import datetime, timezone, timedelta
 from src.mm.state import (
     SimOrder, MarketState, GlobalState,
     maker_fee_cents, taker_fee_cents, unrealized_pnl_cents,
+    obi_microprice, skewed_quotes, dynamic_spread,
 )
-from src.mm.risk import Action, check_layer1, check_layer2, check_layer3, check_layer4, highest_priority
+from src.mm.risk import Action, check_layer1, check_layer2, check_layer3, check_layer4, highest_priority, apply_pause_30min
 from src.mm.db import MMDatabase
 from src.kalshi_client import KalshiClient
 
@@ -108,9 +109,12 @@ class MMEngine:
             return
 
         # -- 1. Fetch book + trades --
+        # Use min_ts to only fetch trades from last 5 minutes
+        min_ts = int(now.timestamp()) - 300
         try:
             book_data = self.client.get_orderbook(ms.ticker, depth=20)
-            trade_data = self.client.get_trades(ms.ticker, limit=500)
+            trade_data = self.client.get_trades(ms.ticker, limit=500,
+                                                 min_ts=min_ts)
             ms.last_api_success = now
         except _requests.exceptions.HTTPError as e:
             code = e.response.status_code if e.response else 0
@@ -148,7 +152,10 @@ class MMEngine:
         best_no_bid = no_bids[-1][0]
         yes_ask = 100 - best_no_bid
         spread = yes_ask - best_yes_bid
-        midpoint = (best_yes_bid + yes_ask) / 2
+        yes_depth = sum(q for _, q in yes_bids)
+        no_depth = sum(q for _, q in no_bids)
+        midpoint = obi_microprice(best_yes_bid, yes_ask,
+                                  yes_depth, no_depth)
 
         # Update midpoint history (keep last 7 entries ~70s)
         ms.midpoint_history.append((now, midpoint))
@@ -175,13 +182,67 @@ class MMEngine:
             return
 
         # -- 3. Filter new trades & drain queues --
-        # Use created_time for dedup (trade_id is UUID, not chronological)
         all_trades = trade_data.get("trades", [])
-        new_trades = [t for t in all_trades
-                      if t.get("created_time", "") > ms.last_seen_trade_id]
+
+        # On first tick, just set the watermark — don't process historical trades
+        if not ms.last_seen_trade_ts:
+            if all_trades:
+                ms.last_seen_trade_ts = max(
+                    t.get("created_time", "") for t in all_trades)
+                ms.last_seen_trade_ids = {
+                    t["trade_id"] for t in all_trades
+                    if t.get("created_time", "") == ms.last_seen_trade_ts
+                }
+            else:
+                ms.last_seen_trade_ts = now.strftime(
+                    "%Y-%m-%dT%H:%M:%S.000000Z")
+            new_trades = []
+        else:
+            # Include trades strictly newer than watermark,
+            # PLUS trades at the watermark timestamp with unseen trade_ids
+            wm = ms.last_seen_trade_ts
+            new_trades = [
+                t for t in all_trades
+                if t.get("created_time", "") > wm
+                or (t.get("created_time", "") == wm
+                    and t.get("trade_id") not in ms.last_seen_trade_ids)
+            ]
+            if new_trades:
+                new_max = max(t.get("created_time", "") for t in new_trades)
+                if new_max > wm:
+                    # Advance watermark
+                    ms.last_seen_trade_ts = new_max
+                    ms.last_seen_trade_ids = {
+                        t["trade_id"] for t in new_trades
+                        if t.get("created_time", "") == new_max
+                    }
+                else:
+                    # Same timestamp — just add the new trade_ids
+                    ms.last_seen_trade_ids.update(
+                        t["trade_id"] for t in new_trades
+                    )
+
+        # Populate trade_timestamps for live-game detection
+        for t in new_trades:
+            ct = t.get("created_time", "")
+            if ct:
+                try:
+                    ts = datetime.fromisoformat(
+                        ct.replace("Z", "+00:00"))
+                    ms.trade_timestamps.append(ts)
+                except (ValueError, TypeError):
+                    pass
+        # Prune old timestamps (keep last 10 min)
+        cutoff = now - timedelta(minutes=10)
+        ms.trade_timestamps = [
+            ts for ts in ms.trade_timestamps if ts > cutoff]
+
+        # Log trade activity when trades arrive
         if new_trades:
-            ms.last_seen_trade_id = max(
-                t.get("created_time", "") for t in new_trades)
+            total_vol = sum(float(t.get("count_fp", 0) or 0) for t in new_trades)
+            mode = "LIVE" if ms.is_live_game else "PRE"
+            print(f"    TRADES {ms.ticker}: {len(new_trades)} new, "
+                  f"vol={total_vol:.0f} mode={mode}")
 
         # Drain queues — only count trades after each order's placement
         for order in (ms.yes_order, ms.no_order):
@@ -192,13 +253,24 @@ class MMEngine:
                         if t.get("created_time", "")[:19] >= placed_iso]
             d = drain_queue(order, relevant)
             if d > 0:
+                print(f"    DRAIN {ms.ticker} {order.side}@{order.price}: "
+                      f"drain={d} qpos={order.queue_pos}→"
+                      f"{max(0, order.queue_pos - d)}")
                 filled = process_fills(order, d)
                 if filled > 0:
+                    print(f"    FILL {ms.ticker} {order.side}@{order.price}: "
+                          f"{filled} contracts filled!")
                     self._record_fill(ms, order, filled, best_yes_bid,
                                       best_no_bid)
+                    # Post-fill cooldown (30s in live-game, 0 in pre-game)
+                    cooldown = ms.post_fill_cooldown_s
+                    if cooldown > 0:
+                        ms.paused_until = now + timedelta(seconds=cooldown)
+                        print(f"    COOLDOWN {ms.ticker}: {cooldown}s "
+                              f"post-fill pause (live-game)")
 
         # Track trade volume at our price levels for snapshot
-        ms.trade_volume_1min = sum(
+        ms.trade_volume_1min += sum(
             int(float(t.get("count_fp", 0) or 0))
             for t in new_trades)
 
@@ -250,7 +322,7 @@ class MMEngine:
             ms.active = False
             return
         if action == Action.PAUSE_30MIN:
-            ms.paused_until = now + timedelta(minutes=30)
+            apply_pause_30min(ms)
             self._cancel_orders(ms, "pause_30min")
             return
         if action in (Action.STOP_AND_FLATTEN, Action.FORCE_CLOSE):
@@ -262,25 +334,17 @@ class MMEngine:
             self._aggress_flatten(ms, best_yes_bid, yes_ask,
                                   best_no_bid, midpoint)
 
-        # Track skew activation for 1-hour escalation
-        if action == Action.SKEW_QUOTES:
-            if ms.skew_activated_at is None:
-                ms.skew_activated_at = now
-        elif abs(ms.net_inventory) <= 10:
-            ms.skew_activated_at = None  # reset when inventory normalizes
-
-        # -- 6. Place/update simulated orders --
+        # -- 6. Place/update simulated orders (continuous skew always active) --
         if action <= Action.AGGRESS_FLATTEN:
-            skew = action == Action.SKEW_QUOTES
             self._manage_quotes(ms, best_yes_bid, best_no_bid,
-                                yes_ask, midpoint, yes_bids, no_bids,
-                                skew=skew)
+                                yes_ask, midpoint, yes_bids, no_bids)
 
         # -- 7. Snapshot every 6th tick (~60s) --
         self.tick_count += 1
         if self.tick_count % 6 == 0:
             self._write_snapshot(ms, best_yes_bid, yes_ask, spread,
                                  midpoint)
+            ms.trade_volume_1min = 0  # reset after snapshot
 
         # -- 8. Check market resolution (every 6th tick) --
         if self.tick_count % 6 == 0:
@@ -396,35 +460,29 @@ class MMEngine:
 
     def _manage_quotes(self, ms: MarketState, best_yes_bid: int,
                        best_no_bid: int, yes_ask: int, midpoint: float,
-                       yes_bids: list, no_bids: list,
-                       skew: bool = False):
+                       yes_bids: list, no_bids: list):
         """Place or update simulated resting orders.
 
-        If skew=True (inventory > 10), adjust prices to attract
-        offsetting flow rather than crossing the spread.
+        Uses continuous inventory skew (always active, proportional to
+        net_inventory) instead of binary threshold.
         """
         now = datetime.now(timezone.utc)
-        net = ms.net_inventory  # positive = long YES
 
-        for side, best_bid, bids in [("yes", best_yes_bid, yes_bids),
-                                     ("no", best_no_bid, no_bids)]:
+        # Dynamic spread from realized volatility
+        vol_offset = dynamic_spread(ms.midpoint_history, now) - spread
+        vol_offset = max(0, vol_offset)  # only widen, never tighten below market
+
+        # Continuous skew: gamma=0.5c per contract of inventory
+        yes_quote, no_quote = skewed_quotes(
+            fair=midpoint, best_yes_bid=best_yes_bid,
+            best_no_bid=best_no_bid,
+            net_inventory=ms.net_inventory, gamma=0.5,
+            quote_offset=vol_offset)
+
+        for side, quote_price, best_bid, bids in [
+                ("yes", yes_quote, best_yes_bid, yes_bids),
+                ("no", no_quote, best_no_bid, no_bids)]:
             order = ms.yes_order if side == "yes" else ms.no_order
-            quote_price = best_bid
-
-            # Inventory skewing: adjust quotes to attract offsetting flow
-            if skew and net != 0:
-                if net > 0:
-                    # Long YES: lower YES bid (buy less), lower NO bid
-                    if side == "yes":
-                        quote_price = max(1, best_bid - 2)
-                    else:
-                        quote_price = max(1, best_bid - 1)
-                else:
-                    # Long NO: lower NO bid (buy less), lower YES bid
-                    if side == "no":
-                        quote_price = max(1, best_bid - 2)
-                    else:
-                        quote_price = max(1, best_bid - 1)
 
             # Requote if order is stale (>2c from target price)
             if order and abs(order.price - quote_price) > 2:

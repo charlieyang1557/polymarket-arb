@@ -1,0 +1,185 @@
+{
+  "cursor": "EhIKECbfbM-W23sPSl_LJJbzzicaCwjNhsnNBhDAktYE",
+  "trades": [
+    {
+      "count_fp": "4.00",
+      "created_time": "2026-03-12T20:06:18.466663Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "c9ba2fa7-1b13-5823-b6ac-7f2cee24af40",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "423.00",
+      "created_time": "2026-03-12T17:18:20.314858Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "f90f2355-c0ff-5f47-347b-d192a1da0a98",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "1.00",
+      "created_time": "2026-03-12T17:18:20.314858Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "b0a1f87e-9232-5d22-3a20-d77133c18177",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "1.00",
+      "created_time": "2026-03-12T17:18:20.314858Z",
+      "no_price_dollars": "0.7800",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "9d5af9e1-3ff5-5479-0e8d-7229290ba082",
+      "yes_price_dollars": "0.2200"
+    },
+    {
+      "count_fp": "375.00",
+      "created_time": "2026-03-12T17:18:20.314858Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "617438a6-aced-5ff8-3285-12fbff00c5c1",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "6.00",
+      "created_time": "2026-03-12T17:07:10.216453Z",
+      "no_price_dollars": "0.7900",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "53ae6664-0eb6-5d9b-65e7-17a285dfd01c",
+      "yes_price_dollars": "0.2100"
+    },
+    {
+      "count_fp": "3.00",
+      "created_time": "2026-03-12T15:53:49.39067Z",
+      "no_price_dollars": "0.7900",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "1066e0e4-face-6f1f-29d9-e9200acd9208",
+      "yes_price_dollars": "0.2100"
+    },
+    {
+      "count_fp": "1.00",
+      "created_time": "2026-03-12T15:45:18.060453Z",
+      "no_price_dollars": "0.7900",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "cdccc059-ecf6-4a17-4702-d9db41002464",
+      "yes_price_dollars": "0.2100"
+    },
+    {
+      "count_fp": "1.00",
+      "created_time": "2026-03-12T14:18:51.302855Z",
+      "no_price_dollars": "0.7900",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "8ad4bfdd-85a8-7624-d25a-68c3efa59917",
+      "yes_price_dollars": "0.2100"
+    },
+    {
+      "count_fp": "6.00",
+      "created_time": "2026-03-12T14:18:51.302855Z",
+      "no_price_dollars": "0.8000",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "4d9d6eaf-6ca7-7d77-ddd4-c1ef9678c515",
+      "yes_price_dollars": "0.2000"
+    },
+    {
+      "count_fp": "81.00",
+      "created_time": "2026-03-12T12:51:39.553595Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "b7fdd09e-66c4-6b14-f284-a72f379169e4",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "125.00",
+      "created_time": "2026-03-12T12:51:39.553595Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "b5978125-d1d1-6ed0-e7fa-5672df909e91",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "4.00",
+      "created_time": "2026-03-12T12:47:55.272805Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "102f3627-51d8-6c8c-0175-93f719107640",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "100.00",
+      "created_time": "2026-03-12T12:18:28.525801Z",
+      "no_price_dollars": "0.7900",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "4d742332-642b-7e8b-fe9a-8334e992dcfb",
+      "yes_price_dollars": "0.2100"
+    },
+    {
+      "count_fp": "7.00",
+      "created_time": "2026-03-12T12:18:28.525801Z",
+      "no_price_dollars": "0.7900",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "391cc5fd-eae7-7da3-c46f-6b60bdb637fb",
+      "yes_price_dollars": "0.2100"
+    },
+    {
+      "count_fp": "17.00",
+      "created_time": "2026-03-12T12:18:28.525801Z",
+      "no_price_dollars": "0.8000",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "1719d183-a0b3-749f-cfd7-3f5a836399e1",
+      "yes_price_dollars": "0.2000"
+    },
+    {
+      "count_fp": "41.00",
+      "created_time": "2026-03-12T05:11:02.462031Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "2aeb4f7b-af24-586c-ff6f-1c0d8f52d344",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "74.00",
+      "created_time": "2026-03-12T04:41:42.129085Z",
+      "no_price_dollars": "0.7700",
+      "taker_side": "yes",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "03fcd39c-a824-4364-15fa-39803cb71e2c",
+      "yes_price_dollars": "0.2300"
+    },
+    {
+      "count_fp": "25.00",
+      "created_time": "2026-03-12T04:38:37.0098Z",
+      "no_price_dollars": "0.7900",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "9ac1abaa-7c0d-7fa5-4151-ac520f0f0ba4",
+      "yes_price_dollars": "0.2100"
+    },
+    {
+      "count_fp": "49.00",
+      "created_time": "2026-03-12T04:38:37.0098Z",
+      "no_price_dollars": "0.7900",
+      "taker_side": "no",
+      "ticker": "KXTRUMPREMOVE",
+      "trade_id": "26df6ccf-96db-7b0f-4a5f-cb2496f3ce27",
+      "yes_price_dollars": "0.2100"
+    }
+  ]
+}
