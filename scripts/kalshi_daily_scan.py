@@ -211,17 +211,35 @@ def main():
         print(f"{i:2d} {flag} {c['ticker']:<45} "
               f"{c['spread']:4d} {sym_s:>5} {c['volume_24h']:7d}")
 
-    # Save targets
+    # Save targets — merge with existing, dedup by ticker
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     targets = passing[:args.max_markets]
     target_file = OUTPUT_DIR / "daily_targets.json"
+
+    existing = []
+    if target_file.exists():
+        try:
+            existing = json.load(open(target_file))
+        except (json.JSONDecodeError, IOError):
+            existing = []
+
+    existing_tickers = {t["ticker"] for t in existing}
+    merged = list(existing)
+    added = 0
+    for t in targets:
+        if t["ticker"] not in existing_tickers:
+            merged.append(t)
+            existing_tickers.add(t["ticker"])
+            added += 1
+
     with open(target_file, "w") as f:
-        json.dump(targets, f, indent=2)
-    print(f"\n  Saved {len(targets)} targets to {target_file}")
+        json.dump(merged, f, indent=2)
+    print(f"\n  Targets: {len(existing)} existing + {added} new = {len(merged)} total")
+    print(f"  Saved to {target_file}")
 
     # Also write a simple ticker list
     ticker_file = OUTPUT_DIR / "daily_targets.txt"
-    tickers = [t["ticker"] for t in targets]
+    tickers = [t["ticker"] for t in merged]
     with open(ticker_file, "w") as f:
         f.write(",".join(tickers))
     print(f"  Ticker list: {ticker_file}")
