@@ -174,6 +174,18 @@ class MMEngine:
         if len(ms.midpoint_history) > 7:
             ms.midpoint_history.pop(0)
 
+        # -- Pre-game only: exit when live game detected --
+        if ms.is_live_game:
+            self._cancel_orders(ms, "game_started")
+            ms.active = False
+            inv = ms.net_inventory
+            msg = (f"GAME STARTED — exiting {ms.ticker} "
+                   f"inv={inv} pnl={ms.realized_pnl:.1f}c")
+            print(f"  >>> {msg}")
+            discord_notify(f"**Paper MM** {msg}")
+            self._log_event(ms, 4, Action.EXIT_MARKET, msg)
+            return
+
         # -- 2. Layer 4 system checks --
         l4 = check_layer4(ms, spread, self.gs.db_error_count)
         if l4 != Action.CONTINUE:
