@@ -19,6 +19,7 @@ import requests as _requests  # for discord
 
 logger = logging.getLogger(__name__)
 
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 MAX_INVENTORY = 10  # single-side cap
 
 
