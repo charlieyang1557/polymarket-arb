@@ -2,6 +2,7 @@
 """Data model for the paper market maker."""
 
 from __future__ import annotations
+import math
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -48,9 +49,13 @@ def skewed_quotes(fair: float, best_yes_bid: int, best_no_bid: int,
 
     Returns (yes_bid_price, no_bid_price) as integers, clamped to >= 1.
     """
-    skew = int(net_inventory * gamma)
-    yes_price = max(1, best_yes_bid - quote_offset - skew)
-    no_price = max(1, best_no_bid - quote_offset + skew)
+    skew_raw = net_inventory * gamma
+    # Both sides are bids. Floor both to be conservative:
+    # - Lower YES bid = cheaper entry on YES
+    # - Lower NO bid = higher effective YES ask (100 - no_bid)
+    # This guarantees >= 1c gross per round-trip with fractional skew.
+    yes_price = max(1, math.floor(best_yes_bid - quote_offset - skew_raw))
+    no_price = max(1, math.floor(best_no_bid - quote_offset + skew_raw))
     return yes_price, no_price
 
 

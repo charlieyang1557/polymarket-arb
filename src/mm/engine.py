@@ -19,6 +19,18 @@ import requests as _requests  # for discord
 
 logger = logging.getLogger(__name__)
 
+MAX_INVENTORY = 10  # single-side cap
+
+
+def should_skip_side(side: str, net_inventory: int,
+                     max_inventory: int = MAX_INVENTORY) -> bool:
+    """Skip quoting on the side that would increase inventory past cap."""
+    if side == "yes" and net_inventory >= max_inventory:
+        return True
+    if side == "no" and net_inventory <= -max_inventory:
+        return True
+    return False
+
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 
 
@@ -483,6 +495,11 @@ class MMEngine:
         for side, quote_price, best_bid, bids in [
                 ("yes", yes_quote, best_yes_bid, yes_bids),
                 ("no", no_quote, best_no_bid, no_bids)]:
+            # Single-side inventory cap
+            if should_skip_side(side, ms.net_inventory):
+                self._cancel_order(ms, side, "inv_cap")
+                continue
+
             order = ms.yes_order if side == "yes" else ms.no_order
 
             # Requote if order is stale (>2c from target price)

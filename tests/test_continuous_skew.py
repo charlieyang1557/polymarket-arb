@@ -76,13 +76,12 @@ def test_skew_with_quote_offset():
 
 
 def test_skew_small_inventory():
-    """At inv=1, skew=0.5c → rounds to 0, no visible effect."""
+    """At inv=1, skew=0.5c → floor makes YES visible, NO unchanged."""
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=47, best_no_bid=53,
         net_inventory=1, gamma=GAMMA, quote_offset=0)
-    # skew = 0.5c → int(0.5) = 0 (truncates, not rounds)
-    # This is fine — sub-cent skew doesn't affect integer prices
-    assert yes_price == 47
+    # skew=0.5: floor(47-0.5)=46, floor(53+0.5)=53
+    assert yes_price == 46
     assert no_price == 53
 
 

@@ -1,0 +1,96 @@
+# tests/test_inventory_cap.py
+"""Tests for bid floor rounding and single-side inventory cap."""
+import math
+from src.mm.state import skewed_quotes
+from src.mm.engine import should_skip_side
+
+
+# -- Floor rounding (both sides are bids → both floor) --
+
+def test_skew_yes_bid_floors():
+    """YES bid with fractional skew floors down."""
+    # inv=3, gamma=0.5 → skew=1.5
+    # YES bid: floor(47 - 1.5) = floor(45.5) = 45
+    yes_price, _ = skewed_quotes(
+        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        net_inventory=3, gamma=0.5, quote_offset=0)
+    assert yes_price == 45
+
+
+def test_skew_no_bid_floors():
+    """NO bid with fractional skew floors down (conservative)."""
+    # inv=3, gamma=0.5 → skew=1.5
+    # NO bid: floor(53 + 1.5) = floor(54.5) = 54
+    _, no_price = skewed_quotes(
+        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        net_inventory=3, gamma=0.5, quote_offset=0)
+    assert no_price == 54
+
+
+def test_skew_negative_inv_floors():
+    """Negative inv: both sides still floor."""
+    # inv=-3, gamma=0.5 → skew=-1.5
+    # YES bid: floor(47 - (-1.5)) = floor(48.5) = 48
+    # NO bid:  floor(53 + (-1.5)) = floor(51.5) = 51
+    yes_price, no_price = skewed_quotes(
+        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        net_inventory=-3, gamma=0.5, quote_offset=0)
+    assert yes_price == 48
+    assert no_price == 51
+
+
+def test_integer_skew_unchanged():
+    """Integer skew (no fractional part) → floor same as int."""
+    yes_price, no_price = skewed_quotes(
+        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        net_inventory=4, gamma=0.5, quote_offset=0)
+    assert yes_price == 45  # 47 - 2
+    assert no_price == 55   # 53 + 2
+
+
+def test_roundtrip_profit_guaranteed():
+    """YES cost + NO cost should always sum to <= 99 (>= 1c gross per pair).
+
+    With floor on both bids, fractional skew always rounds in our favor.
+    """
+    for inv in range(-15, 16):
+        yes_price, no_price = skewed_quotes(
+            fair=48.0, best_yes_bid=47, best_no_bid=53,
+            net_inventory=inv, gamma=0.5, quote_offset=0)
+        gross = 100 - yes_price - no_price
+        assert gross >= 0, f"Negative gross at inv={inv}: {yes_price}+{no_price}={yes_price+no_price}"
+
+
+def test_fractional_skew_visible_at_inv_1():
+    """At inv=1, skew=0.5 → floor(47-0.5)=46, floor(53+0.5)=53."""
+    yes_price, no_price = skewed_quotes(
+        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        net_inventory=1, gamma=0.5, quote_offset=0)
+    assert yes_price == 46  # floor(46.5) = 46
+    assert no_price == 53   # floor(53.5) = 53
+
+
+# -- Single-side inventory cap --
+
+def test_skip_yes_at_max_inventory():
+    """Long YES at max → skip YES (don't buy more), keep NO."""
+    assert should_skip_side("yes", net_inventory=10, max_inventory=10) is True
+    assert should_skip_side("no", net_inventory=10, max_inventory=10) is False
+
+
+def test_skip_no_at_negative_max():
+    """Long NO at -max → skip NO (don't buy more), keep YES."""
+    assert should_skip_side("no", net_inventory=-10, max_inventory=10) is True
+    assert should_skip_side("yes", net_inventory=-10, max_inventory=10) is False
+
+
+def test_no_skip_below_max():
+    """Below max on both sides → quote both."""
+    assert should_skip_side("yes", net_inventory=5, max_inventory=10) is False
+    assert should_skip_side("no", net_inventory=5, max_inventory=10) is False
+
+
+def test_no_skip_at_zero():
+    """Zero inventory → quote both."""
+    assert should_skip_side("yes", net_inventory=0, max_inventory=10) is False
+    assert should_skip_side("no", net_inventory=0, max_inventory=10) is False
