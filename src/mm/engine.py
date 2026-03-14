@@ -469,7 +469,8 @@ class MMEngine:
         now = datetime.now(timezone.utc)
 
         # Dynamic spread from realized volatility
-        vol_offset = dynamic_spread(ms.midpoint_history, now) - spread
+        market_spread = yes_ask - best_yes_bid
+        vol_offset = dynamic_spread(ms.midpoint_history, now) - market_spread
         vol_offset = max(0, vol_offset)  # only widen, never tighten below market
 
         # Continuous skew: gamma=0.5c per contract of inventory
