@@ -24,13 +24,13 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.kalshi_client import KalshiClient, PROD_BASE
 from src.mm.state import MarketState, GlobalState
 from src.mm.engine import MMEngine, discord_notify
 from src.mm.db import MMDatabase
-
-load_dotenv()
 
 DEFAULT_TICKERS = [
     "KXGREENLAND-29",
