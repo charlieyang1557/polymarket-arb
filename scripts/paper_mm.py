@@ -21,6 +21,7 @@ import sys
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -200,6 +201,18 @@ def main():
         f"pnl={gs.total_pnl:.1f}c | session={session_id}")
 
     db.close()
+
+    # Auto-generate session summary
+    try:
+        from scripts.session_summary import generate_summary
+        summary = generate_summary(args.db_path, session_id)
+        sessions_dir = Path(".claude/sessions")
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        summary_path = sessions_dir / f"{session_id}.md"
+        summary_path.write_text(summary)
+        print(f"\nSession summary: {summary_path}")
+    except Exception as e:
+        print(f"  Warning: session summary failed: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
