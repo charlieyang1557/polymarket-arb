@@ -132,6 +132,10 @@ def deep_check(client: KalshiClient, candidates: list[dict],
             yes_depth = sum(s for _, s in yes_levels) if yes_levels else 0
             no_depth = sum(s for _, s in no_levels) if no_levels else 0
 
+            # L1 (best level) queue depth
+            yes_best_depth = yes_levels[0][1] if yes_levels else 0
+            no_best_depth = no_levels[0][1] if no_levels else 0
+
             if yes_depth > 0 and no_depth > 0:
                 sym = yes_depth / no_depth
             elif yes_depth > 0:
@@ -144,7 +148,13 @@ def deep_check(client: KalshiClient, candidates: list[dict],
             c["symmetry"] = round(sym, 3)
             c["yes_depth"] = yes_depth
             c["no_depth"] = no_depth
-            c["passes"] = (0.2 <= sym <= 5.0 and c["spread"] >= 3)
+            c["yes_best_depth"] = yes_best_depth
+            c["no_best_depth"] = no_best_depth
+            max_best_depth = max(yes_best_depth, no_best_depth)
+            c["passes"] = (0.2 <= sym <= 5.0
+                           and c["spread"] >= 3
+                           and c["spread"] < 15
+                           and max_best_depth < 20000)
             checked.append(c)
 
         except Exception as e:
@@ -197,10 +207,11 @@ def main():
 
     # Show results
     passing = [c for c in checked if c.get("passes")]
-    print(f"\n  Passing filters (spread >= 3c, sym 0.2-5.0): {len(passing)}")
+    print(f"\n  Passing filters (spread 3-14c, sym 0.2-5.0, L1 queue <20K): {len(passing)}")
     print()
 
-    header = f"{'#':>2} {'Pass':>4} {'Ticker':<45} {'Sprd':>4} {'Sym':>5} {'Vol':>7}"
+    header = (f"{'#':>2} {'Pass':>4} {'Ticker':<45} {'Sprd':>4} {'Sym':>5} "
+              f"{'yQ1':>5} {'nQ1':>5} {'Vol':>7}")
     print(header)
     print("-" * len(header))
 
@@ -208,8 +219,11 @@ def main():
         flag = " OK " if c.get("passes") else "FAIL"
         sym = c.get("symmetry", 0)
         sym_s = f"{sym:.2f}" if sym < 100 else ">100"
+        ybd = c.get("yes_best_depth", 0)
+        nbd = c.get("no_best_depth", 0)
         print(f"{i:2d} {flag} {c['ticker']:<45} "
-              f"{c['spread']:4d} {sym_s:>5} {c['volume_24h']:7d}")
+              f"{c['spread']:4d} {sym_s:>5} {ybd:5d} {nbd:5d} "
+              f"{c['volume_24h']:7d}")
 
     # Save targets — merge with existing, dedup by ticker
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

@@ -32,8 +32,6 @@ def should_skip_side(side: str, net_inventory: int,
         return True
     return False
 
-DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
-
 
 # -- Fill simulation helpers -----------------------------------------------
 
@@ -132,9 +130,10 @@ class MMEngine:
         except _requests.exceptions.HTTPError as e:
             code = e.response.status_code if e.response else 0
             if code in (401, 403, 404):
-                self._log_event(ms, 4, Action.EXIT_MARKET,
-                                f"fatal HTTP {code}")
+                reason = f"fatal HTTP {code}"
+                self._log_event(ms, 4, Action.EXIT_MARKET, reason)
                 ms.active = False
+                ms.deactivation_reason = reason
                 return
             self._log_event(ms, 4, Action.SKIP_TICK,
                             f"transient HTTP {code}")
@@ -153,7 +152,26 @@ class MMEngine:
             yes_bids_raw = book.get("yes", [])
             no_bids_raw = book.get("no", [])
         if not yes_bids_raw or not no_bids_raw:
+            ms.consecutive_skip_ticks += 1
+            if ms.consecutive_skip_ticks >= 30:
+                self._cancel_orders(ms, "orderbook_dead")
+                ms.active = False
+                ms.deactivation_reason = "orderbook_dead"
+                reason = (f"orderbook dead ({ms.consecutive_skip_ticks} "
+                          f"consecutive empty ticks) — deactivating {ms.ticker}")
+                print(f"  >>> {reason}")
+                discord_notify(f"**Paper MM** {reason}")
+                self._log_event(ms, 4, Action.EXIT_MARKET, reason)
+            elif ms.consecutive_skip_ticks == 1:
+                # Log only on first skip, not every tick
+                empty_side = ("yes" if not yes_bids_raw else "") + \
+                             (" no" if not no_bids_raw else "")
+                self._log_event(ms, 4, Action.SKIP_TICK,
+                                f"empty orderbook side(s):{empty_side.strip()}")
             return
+
+        # Good book received — reset skip counter
+        ms.consecutive_skip_ticks = 0
 
         # Convert to [price_cents, quantity] integer pairs
         yes_bids = [[round(float(p) * 100), int(float(q))]
@@ -178,13 +196,13 @@ class MMEngine:
         # -- Pre-game only: exit when live game detected --
         if ms.is_live_game:
             self._cancel_orders(ms, "game_started")
+            reason = (f"GAME STARTED — exiting {ms.ticker} "
+                      f"inv={ms.net_inventory} pnl={ms.realized_pnl:.1f}c")
             ms.active = False
-            inv = ms.net_inventory
-            msg = (f"GAME STARTED — exiting {ms.ticker} "
-                   f"inv={inv} pnl={ms.realized_pnl:.1f}c")
-            print(f"  >>> {msg}")
-            discord_notify(f"**Paper MM** {msg}")
-            self._log_event(ms, 4, Action.EXIT_MARKET, msg)
+            ms.deactivation_reason = reason
+            print(f"  >>> {reason}")
+            discord_notify(f"**Paper MM** {reason}")
+            self._log_event(ms, 4, Action.EXIT_MARKET, reason)
             return
 
         # -- 2. Layer 4 system checks --
@@ -196,11 +214,17 @@ class MMEngine:
                 ms.paused_until = now + timedelta(seconds=60)
             elif l4 == Action.FULL_STOP:
                 self._cancel_orders(ms, "risk_l4")
+                reason = f"FULL_STOP triggered by {ms.ticker} (L4)"
                 for m in self.gs.markets.values():
                     m.active = False
+                    m.deactivation_reason = reason
+                    if m.ticker != ms.ticker:
+                        self._log_event(m, 4, Action.FULL_STOP,
+                                        f"collateral shutdown: {reason}")
             elif l4 == Action.EXIT_MARKET:
                 self._cancel_orders(ms, "risk_l4")
                 ms.active = False
+                ms.deactivation_reason = f"EXIT_MARKET (L4)"
             elif l4 == Action.CANCEL_ALL:
                 # Cancel orders but DON'T deactivate — market resumes next tick
                 self._cancel_orders(ms, "risk_l4")
@@ -338,13 +362,19 @@ class MMEngine:
         action = highest_priority(actions)
 
         if action == Action.FULL_STOP:
+            reason = f"FULL_STOP triggered by {ms.ticker} (L2/L3)"
             for m in self.gs.markets.values():
                 self._cancel_orders(m, "full_stop")
                 m.active = False
+                m.deactivation_reason = reason
+                if m.ticker != ms.ticker:
+                    self._log_event(m, 4, Action.FULL_STOP,
+                                    f"collateral shutdown: {reason}")
             return
         if action == Action.EXIT_MARKET:
             self._cancel_orders(ms, "exit_market")
             ms.active = False
+            ms.deactivation_reason = f"EXIT_MARKET (L2/L3)"
             return
         if action == Action.PAUSE_30MIN:
             apply_pause_30min(ms)
@@ -597,7 +627,11 @@ class MMEngine:
         except Exception as e:
             self.gs.db_error_count += 1
 
-        if layer >= 2:
+        # Discord only for critical events (not SKIP_TICK, PAUSE_60S, etc.)
+        _discord_actions = {
+            Action.FULL_STOP, Action.PAUSE_30MIN, Action.EXIT_MARKET,
+        }
+        if action in _discord_actions:
             discord_notify(
                 f"**Paper MM Risk** [{action.name}] {ms.ticker}: {reason}")
 
@@ -677,8 +711,9 @@ class MMEngine:
 
         ms.yes_queue.clear()
         ms.no_queue.clear()
+        reason = f"market resolved: {result}"
         ms.active = False
+        ms.deactivation_reason = reason
         self._cancel_orders(ms, "market_resolved")
-        self._log_event(ms, 4, Action.EXIT_MARKET,
-                        f"market resolved: {result}")
+        self._log_event(ms, 4, Action.EXIT_MARKET, reason)
         print(f"  *** MARKET RESOLVED: {ms.ticker} -> {result}")

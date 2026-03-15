@@ -123,6 +123,8 @@ class MarketState:
         default_factory=lambda: datetime.now(timezone.utc))
     trade_volume_1min: int = 0  # trades at our price level in last 60s
     trade_timestamps: list[datetime] = field(default_factory=list)
+    deactivation_reason: str | None = None  # reason market was deactivated
+    consecutive_skip_ticks: int = 0  # consecutive empty orderbook ticks
 
     @property
     def is_live_game(self) -> bool:
