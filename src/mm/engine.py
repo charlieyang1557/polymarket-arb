@@ -522,6 +522,23 @@ class MMEngine:
         net_inventory) instead of binary threshold.
         """
         now = datetime.now(timezone.utc)
+        net_inventory = ms.net_inventory
+
+        # -- Soft-close: reduce-only quoting when freq 30-50 trades/5min --
+        if ms.is_soft_close:
+            print(f"  SOFT-CLOSE {ms.ticker}: freq in 30-50 range, "
+                  f"reduce-only mode (inv={net_inventory})")
+            if net_inventory == 0:
+                # Flat — cancel both, don't risk new inventory
+                self._cancel_orders(ms, "soft_close_flat")
+                return
+            elif net_inventory > 0:
+                # Long YES — cancel YES side (would increase), keep NO
+                self._cancel_order(ms, "yes", "soft_close_reduce")
+            else:
+                # Long NO — cancel NO side (would increase), keep YES
+                self._cancel_order(ms, "no", "soft_close_reduce")
+            return
 
         # Dynamic spread from realized volatility
         market_spread = yes_ask - best_yes_bid

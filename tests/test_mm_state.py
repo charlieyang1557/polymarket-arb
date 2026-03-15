@@ -1,5 +1,6 @@
 # tests/test_mm_state.py
-from src.mm.state import maker_fee_cents, taker_fee_cents, unrealized_pnl_cents
+from datetime import datetime, timezone, timedelta
+from src.mm.state import MarketState, maker_fee_cents, taker_fee_cents, unrealized_pnl_cents
 
 def test_maker_fee_at_26c():
     # Spec worked example: 2 contracts at 26c = 0.67c
@@ -42,3 +43,36 @@ def test_unrealized_pnl_partial_hedge():
     # Unrealized = (31-28) + (31-30) = 4
     assert unrealized_pnl_cents([26, 28, 30], [69],
                                 best_yes_bid=31, best_no_bid=69) == 4.0
+
+
+# -- Soft-close tests --
+
+def test_is_soft_close_below_threshold():
+    ms = MarketState(ticker="X")
+    now = datetime.now(timezone.utc)
+    ms.trade_timestamps = [now - timedelta(seconds=i * 10) for i in range(25)]
+    assert ms.is_soft_close is False
+
+def test_is_soft_close_at_threshold():
+    ms = MarketState(ticker="X")
+    now = datetime.now(timezone.utc)
+    ms.trade_timestamps = [now - timedelta(seconds=i * 5) for i in range(35)]
+    assert ms.is_soft_close is True
+
+def test_is_soft_close_not_live_game():
+    ms = MarketState(ticker="X")
+    now = datetime.now(timezone.utc)
+    ms.trade_timestamps = [now - timedelta(seconds=i * 5) for i in range(40)]
+    assert ms.is_soft_close is True
+    assert ms.is_live_game is False
+
+def test_is_soft_close_false_when_live():
+    ms = MarketState(ticker="X")
+    now = datetime.now(timezone.utc)
+    ms.trade_timestamps = [now - timedelta(seconds=i * 3) for i in range(60)]
+    assert ms.is_live_game is True
+    assert ms.is_soft_close is False
+
+def test_is_soft_close_empty():
+    ms = MarketState(ticker="X")
+    assert ms.is_soft_close is False

@@ -136,6 +136,16 @@ class MarketState:
         return len(recent) > 50
 
     @property
+    def is_soft_close(self) -> bool:
+        """Soft-close if >30 trades in last 5 min but not yet live-game (>50)."""
+        if not self.trade_timestamps:
+            return False
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+        recent = [t for t in self.trade_timestamps if t > cutoff]
+        count = len(recent)
+        return 30 < count <= 50
+
+    @property
     def post_fill_cooldown_s(self) -> int:
         """Seconds to wait after a fill. 30s in live-game, 0 in pre-game."""
         return 30 if self.is_live_game else 0
