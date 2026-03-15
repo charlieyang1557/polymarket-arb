@@ -104,6 +104,8 @@ def main():
     sleep_time = args.interval / max(len(active_tickers), 1)
     start = time.time()
     cycle = 0
+    last_summary_time = start
+    SUMMARY_INTERVAL = 43200  # 12h in seconds
 
     try:
         while not shutdown and (time.time() - start) < args.duration:
@@ -131,6 +133,31 @@ def main():
                     engine._cancel_orders(ms, f"unexpected_error: {e}")
 
             cycle += 1
+
+            # Periodic 12h summary
+            now_ts = time.time()
+            if now_ts - last_summary_time >= SUMMARY_INTERVAL:
+                elapsed_h = (now_ts - start) / 3600
+                active_count = len(active_tickers)
+                total_count = len(tickers)
+                summary = (
+                    f"**Paper MM 12h Summary** | {elapsed_h:.1f}h elapsed | "
+                    f"{active_count}/{total_count} markets active | "
+                    f"pnl={gs.total_pnl:.1f}c (peak={gs.peak_total_pnl:.1f}c) | "
+                    f"session={session_id}")
+                print(f"\n{'=' * 70}")
+                print(f"12H SUMMARY ({elapsed_h:.1f}h)")
+                print(f"  Active: {active_count}/{total_count} markets")
+                print(f"  Total P&L: {gs.total_pnl:.1f}c | "
+                      f"Peak: {gs.peak_total_pnl:.1f}c")
+                for t, ms in gs.markets.items():
+                    status = "ACTIVE" if ms.active else f"EXIT({ms.deactivation_reason})"
+                    print(f"  {t}: inv={ms.net_inventory} "
+                          f"pnl={ms.realized_pnl:.1f}c [{status}]")
+                print(f"{'=' * 70}\n")
+                discord_notify(summary)
+                last_summary_time = now_ts
+
             time.sleep(sleep_time)
     except Exception as e:
         print(f"\nFATAL ERROR: {e}", file=sys.stderr)

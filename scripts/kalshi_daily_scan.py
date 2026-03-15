@@ -175,8 +175,8 @@ def main():
                         help="Auto-start paper_mm.py with selected targets")
     parser.add_argument("--max-markets", type=int, default=3,
                         help="Max markets to trade (default: 3)")
-    parser.add_argument("--duration", type=int, default=43200,
-                        help="Paper MM duration in seconds (default: 12h)")
+    parser.add_argument("--duration", type=int, default=172800,
+                        help="Paper MM duration in seconds (default: 48h)")
     args = parser.parse_args()
 
     api_key = os.getenv("KALSHI_API_KEY")
@@ -280,7 +280,7 @@ def main():
     elif targets:
         ticker_str = ",".join(t["ticker"] for t in targets)
         print(f"\n  To run paper MM manually:")
-        print(f"  python scripts/paper_mm.py --tickers {ticker_str} --duration 43200")
+        print(f"  python scripts/paper_mm.py --tickers {ticker_str} --duration 172800")
 
 
 if __name__ == "__main__":

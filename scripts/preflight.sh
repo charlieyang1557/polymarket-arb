@@ -1,12 +1,21 @@
 #!/bin/bash
 # Pre-flight check before paper MM launch
-# Exits non-zero if any check fails — crontab should not launch if this fails
-set -e
+# On failure: sends Discord alert, exits non-zero (crontab aborts launch)
+# Human fixes the issue, re-runs: bash scripts/preflight.sh && python scripts/kalshi_daily_scan.py --run --max-markets 15
 
 cd /Users/yutianyang/polymarket-arb
 PYTHON=/Users/yutianyang/miniconda3/bin/python
 LOG=data/preflight.log
 echo "=== PRE-FLIGHT $(date) ===" > "$LOG"
+
+# Helper: send Discord alert on failure
+notify_fail() {
+    $PYTHON -c "
+from dotenv import load_dotenv; load_dotenv()
+from src.mm.engine import discord_notify
+discord_notify('**PREFLIGHT FAILED** $1 — fix and re-run manually: bash scripts/preflight.sh && python scripts/kalshi_daily_scan.py --run --max-markets 15')
+" 2>/dev/null
+}
 
 # 1. Git clean
 echo "[1/6] Git status..." >> "$LOG"
@@ -14,6 +23,7 @@ if git diff --quiet scripts/ src/ tests/; then
     echo "  PASS: no uncommitted changes" >> "$LOG"
 else
     echo "  FAIL: uncommitted changes detected" >> "$LOG"
+    notify_fail "uncommitted changes in scripts/src/tests"
     exit 1
 fi
 
@@ -27,6 +37,7 @@ if $PYTHON -m pytest tests/ -q \
     echo "  PASS: all tests pass" >> "$LOG"
 else
     echo "  FAIL: tests failed" >> "$LOG"
+    notify_fail "test suite failed"
     exit 1
 fi
 
@@ -41,6 +52,7 @@ if [ "$DISCORD_CHECK" = "OK" ]; then
     echo "  PASS: webhook loaded" >> "$LOG"
 else
     echo "  FAIL: webhook missing" >> "$LOG"
+    # Can't notify via Discord if webhook is missing
     exit 1
 fi
 
@@ -51,7 +63,6 @@ from dotenv import load_dotenv; load_dotenv()
 import os
 from src.kalshi_client import KalshiClient, PROD_BASE
 c = KalshiClient(os.getenv('KALSHI_API_KEY'), os.getenv('KALSHI_PRIVATE_KEY_PATH'), PROD_BASE)
-# Just test auth by getting exchange status
 import requests
 r = requests.get(PROD_BASE + '/exchange/status', timeout=10)
 print('OK' if r.status_code == 200 else f'FAIL:{r.status_code}')
@@ -60,6 +71,7 @@ if echo "$API_CHECK" | grep -q "OK"; then
     echo "  PASS: API reachable" >> "$LOG"
 else
     echo "  FAIL: API error: $API_CHECK" >> "$LOG"
+    notify_fail "Kalshi API unreachable"
     exit 1
 fi
 
