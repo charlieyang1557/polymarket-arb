@@ -564,10 +564,10 @@ def main():
 
     # Also save a compact version with just the key metrics
     compact = []
-    for c in ranked:
+    for i, c in enumerate(ranked):
         vol = max(c.get("volume_from_trades", 0), c.get("volume_24h", 0))
         compact.append({
-            "rank": ranked.index(c) + 1,
+            "rank": i + 1,
             "ticker": c["ticker"],
             "title": c["title"],
             "category": c["category"],

@@ -124,7 +124,7 @@ class MMEngine:
         min_ts = int(now.timestamp()) - 300
         try:
             book_data = self.client.get_orderbook(ms.ticker, depth=20)
-            trade_data = self.client.get_trades(ms.ticker, limit=500,
+            trade_data = self.client.get_trades(ms.ticker, limit=100,
                                                  min_ts=min_ts)
             ms.last_api_success = now
         except _requests.exceptions.HTTPError as e:
@@ -682,35 +682,20 @@ class MMEngine:
     def _settle_market(self, ms: MarketState, result: str):
         """Settle all inventory on market resolution."""
         now = datetime.now(timezone.utc)
-        # Settle YES inventory
-        for cost in ms.yes_queue:
-            settle_price = 100 if result == "yes" else 0
-            pnl = settle_price - cost
-            ms.realized_pnl += pnl
-            try:
-                self.db.insert_fill(
-                    order_id=None, ticker=ms.ticker, side="settlement",
-                    price=settle_price, size=1, fee=0, is_taker=0,
-                    inventory_after=0, filled_at=now.isoformat(),
-                    pair_pnl=pnl)
-            except Exception:
-                pass
-        # Settle NO inventory
-        for cost in ms.no_queue:
-            settle_price = 100 if result == "no" else 0
-            pnl = settle_price - cost
-            ms.realized_pnl += pnl
-            try:
-                self.db.insert_fill(
-                    order_id=None, ticker=ms.ticker, side="settlement",
-                    price=settle_price, size=1, fee=0, is_taker=0,
-                    inventory_after=0, filled_at=now.isoformat(),
-                    pair_pnl=pnl)
-            except Exception:
-                pass
-
-        ms.yes_queue.clear()
-        ms.no_queue.clear()
+        for side_name, queue in [("yes", ms.yes_queue), ("no", ms.no_queue)]:
+            for cost in queue:
+                settle_price = 100 if result == side_name else 0
+                pnl = settle_price - cost
+                ms.realized_pnl += pnl
+                try:
+                    self.db.insert_fill(
+                        order_id=None, ticker=ms.ticker, side="settlement",
+                        price=settle_price, size=1, fee=0, is_taker=0,
+                        inventory_after=0, filled_at=now.isoformat(),
+                        pair_pnl=pnl)
+                except Exception:
+                    pass
+            queue.clear()
         reason = f"market resolved: {result}"
         ms.active = False
         ms.deactivation_reason = reason

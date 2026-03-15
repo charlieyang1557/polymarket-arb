@@ -37,25 +37,6 @@ def test_is_live_game_empty():
     assert ms.is_live_game is False
 
 
-# -- Mode-aware spread: quote_price_for_side --
-
-def test_quote_price_pregame():
-    """Pre-game: quote at best bid (aggressive)."""
-    ms = MarketState(ticker="X")
-    ms.trade_timestamps = []  # no trades = pre-game
-    # best_yes_bid=47, pre-game → quote at 47
-    assert ms.quote_offset == 0
-
-
-def test_quote_price_live_game():
-    """Live-game: quote 2c below best bid (wider spread)."""
-    ms = MarketState(ticker="X")
-    now = datetime.now(timezone.utc)
-    ms.trade_timestamps = [now - timedelta(seconds=i * 3) for i in range(60)]
-    assert ms.is_live_game is True
-    assert ms.quote_offset == 2
-
-
 # -- L4 tighter threshold in live-game mode --
 
 def test_l4_price_jump_pregame_5c_threshold():

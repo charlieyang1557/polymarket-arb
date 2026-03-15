@@ -136,11 +136,6 @@ class MarketState:
         return len(recent) > 50
 
     @property
-    def quote_offset(self) -> int:
-        """Cents below best bid to quote. 0=aggressive (pre-game), 2=wider (live)."""
-        return 2 if self.is_live_game else 0
-
-    @property
     def post_fill_cooldown_s(self) -> int:
         """Seconds to wait after a fill. 30s in live-game, 0 in pre-game."""
         return 30 if self.is_live_game else 0

@@ -233,7 +233,8 @@ def main():
     existing = []
     if target_file.exists():
         try:
-            existing = json.load(open(target_file))
+            with open(target_file) as f:
+                existing = json.load(f)
         except (json.JSONDecodeError, IOError):
             existing = []
 
