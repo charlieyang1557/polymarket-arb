@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.kalshi_client import KalshiClient, PROD_BASE
+from src.mm.engine import discord_notify
 
 load_dotenv()
 OUTPUT_DIR = Path("data/kalshi_diagnostic")
@@ -261,6 +262,7 @@ def main():
 
     if not targets:
         print("\n  No markets pass all filters. Try again later.")
+        discord_notify("**Scanner** 0 markets pass filters — no bot launched")
         return
 
     print(f"\n  Selected targets:")
