@@ -48,8 +48,8 @@ def main():
     parser = argparse.ArgumentParser(description="Paper trading market maker")
     parser.add_argument("--tickers", default=",".join(DEFAULT_TICKERS),
                         help="Comma-separated market tickers")
-    parser.add_argument("--duration", type=int, default=172800,
-                        help="Seconds to run (default: 48h)")
+    parser.add_argument("--duration", type=int, default=86400,
+                        help="Seconds to run (default: 24h)")
     parser.add_argument("--size", type=int, default=2,
                         help="Contracts per order (default: 2)")
     parser.add_argument("--interval", type=int, default=10,

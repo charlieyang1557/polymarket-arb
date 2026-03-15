@@ -176,8 +176,8 @@ def main():
                         help="Auto-start paper_mm.py with selected targets")
     parser.add_argument("--max-markets", type=int, default=3,
                         help="Max markets to trade (default: 3)")
-    parser.add_argument("--duration", type=int, default=172800,
-                        help="Paper MM duration in seconds (default: 48h)")
+    parser.add_argument("--duration", type=int, default=86400,
+                        help="Paper MM duration in seconds (default: 24h)")
     args = parser.parse_args()
 
     api_key = os.getenv("KALSHI_API_KEY")
