@@ -39,6 +39,65 @@ def get_session_id(conn: sqlite3.Connection, session_id: str | None) -> str:
     return row[0] if row else ""
 
 
+def compute_pnl_split(conn, session_id, ticker):
+    """Decompose P&L into spread (paired round-trips) vs inventory (residual)."""
+    fills = conn.execute(
+        "SELECT side, price, size, fee FROM mm_fills "
+        "WHERE session_id=? AND ticker=? AND side != 'settlement' "
+        "ORDER BY filled_at",
+        (session_id, ticker)).fetchall()
+
+    yes_costs = []
+    no_costs = []
+    for row in fills:
+        side, price, size, fee = row[0], row[1], row[2], row[3]
+        per_fee = fee / size if size > 0 else 0
+        if "yes" in side:
+            yes_costs.extend([(price, per_fee)] * size)
+        elif "no" in side:
+            no_costs.extend([(price, per_fee)] * size)
+
+    n_pairs = min(len(yes_costs), len(no_costs))
+    spread_pnl = 0.0
+    for i in range(n_pairs):
+        yc, yf = yes_costs[i]
+        nc, nf = no_costs[i]
+        spread_pnl += 100 - yc - nc - yf - nf
+
+    remaining_yes = len(yes_costs) - n_pairs
+    remaining_no = len(no_costs) - n_pairs
+
+    snap = conn.execute(
+        "SELECT unrealized_pnl FROM mm_snapshots "
+        "WHERE session_id=? AND ticker=? ORDER BY ts DESC LIMIT 1",
+        (session_id, ticker)).fetchone()
+    unrealized = snap[0] if snap else 0.0
+
+    if remaining_yes > 0:
+        leftover = yes_costs[n_pairs:]
+        residual_side = "YES"
+        residual_count = remaining_yes
+        residual_avg = sum(p for p, _ in leftover) / len(leftover)
+    elif remaining_no > 0:
+        leftover = no_costs[n_pairs:]
+        residual_side = "NO"
+        residual_count = remaining_no
+        residual_avg = sum(p for p, _ in leftover) / len(leftover)
+    else:
+        residual_side = None
+        residual_count = 0
+        residual_avg = 0
+
+    return {
+        "spread_pnl": round(spread_pnl, 1),
+        "inventory_pnl": round(unrealized, 1),
+        "round_trips": n_pairs,
+        "residual_count": residual_count,
+        "residual_side": residual_side,
+        "residual_avg_cost": round(residual_avg, 0),
+    }
+
+
 def generate_summary(db_path: str, session_id: str | None = None) -> str:
     """Generate markdown summary from DB data."""
     conn = sqlite3.connect(db_path)
@@ -165,8 +224,6 @@ def generate_summary(db_path: str, session_id: str | None = None) -> str:
         "WHERE session_id=? AND layer=3 GROUP BY action, trigger_reason",
         (sid,)).fetchall()
 
-    conn.close()
-
     # Build markdown
     avg_queue = (sum(queue_times) / len(queue_times)) if queue_times else 0
 
@@ -203,6 +260,39 @@ def generate_summary(db_path: str, session_id: str | None = None) -> str:
         f"- L4 pauses: {l4_events}",
         f"- Game exits: {game_exits}",
         f"- Market deactivations: {deactivations}",
+        "",
+        "## P&L Decomposition (Spread vs Inventory)",
+        "| Market | Round-trips | Spread P&L | Residual | Inventory P&L | Mix |",
+        "|--------|------------|------------|----------|--------------|-----|",
+    ])
+    total_spread = 0.0
+    total_inv = 0.0
+    for ticker in tickers:
+        split = compute_pnl_split(conn, sid, ticker)
+        total_spread += split["spread_pnl"]
+        total_inv += split["inventory_pnl"]
+        residual_str = (f"{split['residual_count']} {split['residual_side']} "
+                        f"@ {split['residual_avg_cost']:.0f}c"
+                        if split["residual_side"] else "flat")
+        abs_total = abs(split["spread_pnl"]) + abs(split["inventory_pnl"])
+        if abs_total > 0:
+            pct = f"{split['spread_pnl'] / abs_total * 100:.0f}%/{split['inventory_pnl'] / abs_total * 100:.0f}%"
+        else:
+            pct = "n/a"
+        lines.append(
+            f"| {ticker} | {split['round_trips']} | "
+            f"{split['spread_pnl']:+.1f}c | {residual_str} | "
+            f"{split['inventory_pnl']:+.1f}c | {pct} |")
+    abs_grand = abs(total_spread) + abs(total_inv)
+    if abs_grand > 0:
+        grand_pct = f"{total_spread / abs_grand * 100:.0f}% spread / {total_inv / abs_grand * 100:.0f}% inv"
+    else:
+        grand_pct = "n/a"
+    lines.append(f"| **Total** | | **{total_spread:+.1f}c** | | **{total_inv:+.1f}c** | {grand_pct} |")
+
+    conn.close()
+
+    lines.extend([
         "",
         "## What Worked",
         "<!-- Fill in manually or auto-detect -->",
