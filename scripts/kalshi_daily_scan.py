@@ -152,14 +152,42 @@ def deep_check(client: KalshiClient, candidates: list[dict],
             c["yes_best_depth"] = yes_best_depth
             c["no_best_depth"] = no_best_depth
             max_best_depth = max(yes_best_depth, no_best_depth)
+
+            # Fetch trade frequency
+            try:
+                trade_data = client.get_trades(ticker, limit=200)
+                trades = trade_data.get("trades", [])
+                now_utc = datetime.now(timezone.utc)
+                cutoff_1h = now_utc - timedelta(hours=1)
+                recent = []
+                for t in trades:
+                    try:
+                        ts = datetime.fromisoformat(
+                            t["created_time"].replace("Z", "+00:00"))
+                        if ts >= cutoff_1h:
+                            recent.append(ts)
+                    except (KeyError, ValueError):
+                        continue
+                if len(recent) >= 2:
+                    span_h = max(
+                        (max(recent) - min(recent)).total_seconds() / 3600,
+                        0.01)
+                    c["trades_per_hour"] = round(len(recent) / span_h, 1)
+                else:
+                    c["trades_per_hour"] = float(len(recent))
+            except Exception:
+                c["trades_per_hour"] = 0.0
+
             c["passes"] = (0.2 <= sym <= 5.0
                            and c["spread"] >= 3
                            and c["spread"] < 15
-                           and max_best_depth < 20000)
+                           and max_best_depth < 20000
+                           and c["trades_per_hour"] >= 100)
             checked.append(c)
 
         except Exception as e:
             c["symmetry"] = 0.0
+            c["trades_per_hour"] = 0.0
             c["passes"] = False
             c["error"] = str(e)
             checked.append(c)
@@ -205,14 +233,16 @@ def main():
     # Phase 2: Check orderbook symmetry
     print("\n  Checking orderbook symmetry...")
     checked = deep_check(client, candidates)
+    checked.sort(key=lambda c: (c.get("trades_per_hour", 0),
+                                c.get("volume_24h", 0)), reverse=True)
 
     # Show results
     passing = [c for c in checked if c.get("passes")]
-    print(f"\n  Passing filters (spread 3-14c, sym 0.2-5.0, L1 queue <20K): {len(passing)}")
+    print(f"\n  Passing filters (spread 3-14c, sym 0.2-5.0, L1 queue <20K, freq >=100/hr): {len(passing)}")
     print()
 
     header = (f"{'#':>2} {'Pass':>4} {'Ticker':<45} {'Sprd':>4} {'Sym':>5} "
-              f"{'yQ1':>5} {'nQ1':>5} {'Vol':>7}")
+              f"{'yQ1':>5} {'nQ1':>5} {'Trd/h':>6} {'Vol':>7}")
     print(header)
     print("-" * len(header))
 
@@ -222,9 +252,10 @@ def main():
         sym_s = f"{sym:.2f}" if sym < 100 else ">100"
         ybd = c.get("yes_best_depth", 0)
         nbd = c.get("no_best_depth", 0)
+        tph = c.get("trades_per_hour", 0)
         print(f"{i:2d} {flag} {c['ticker']:<45} "
               f"{c['spread']:4d} {sym_s:>5} {ybd:5d} {nbd:5d} "
-              f"{c['volume_24h']:7d}")
+              f"{tph:6.0f} {c['volume_24h']:7d}")
 
     # Save targets — merge with existing, dedup by ticker
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
