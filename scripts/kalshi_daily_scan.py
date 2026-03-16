@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -26,6 +27,74 @@ from src.mm.engine import discord_notify
 
 load_dotenv()
 OUTPUT_DIR = Path("data/kalshi_diagnostic")
+
+
+def net_spread_cents(spread: int, midpoint: float) -> int:
+    """Net spread after maker fees on both legs.
+
+    maker_fee per side = ceil(0.0175 * P * (1-P) * 100) in cents.
+    net_spread = spread - 2 * maker_fee.
+    """
+    p = midpoint / 100
+    fee_per_side = math.ceil(0.0175 * p * (1 - p) * 100)
+    return spread - 2 * fee_per_side
+
+
+def rank_candidates(candidates: list[dict]) -> list[dict]:
+    """Rank-based composite scoring for passing candidates.
+
+    Ranks each metric independently (average rank for ties),
+    then averages the three ranks. Lower composite = better.
+    """
+    passing = [c for c in candidates if c.get("passes")]
+    failing = [c for c in candidates if not c.get("passes")]
+
+    if not passing:
+        return failing + passing
+
+    # Rank with average ties
+    def avg_rank(values, ascending=True):
+        """Return average ranks. ascending=True means lowest value = rank 1."""
+        indexed = sorted(enumerate(values),
+                         key=lambda x: x[1] if ascending else -x[1])
+        ranks = [0.0] * len(values)
+        i = 0
+        while i < len(indexed):
+            # Find tie group
+            j = i
+            while j < len(indexed) and indexed[j][1] == indexed[i][1]:
+                j += 1
+            avg_r = sum(range(i + 1, j + 1)) / (j - i)
+            for k in range(i, j):
+                ranks[indexed[k][0]] = avg_r
+            i = j
+        return ranks
+
+    net_spreads = [c["net_spread"] for c in passing]
+    queues = [c["binding_queue"] for c in passing]
+    freqs = [c["trades_per_hour"] for c in passing]
+
+    spread_ranks = avg_rank(net_spreads, ascending=False)  # highest = rank 1
+    queue_ranks = avg_rank(queues, ascending=True)          # lowest = rank 1
+    freq_ranks = avg_rank(freqs, ascending=False)           # highest = rank 1
+
+    for i, c in enumerate(passing):
+        c["rank_spread"] = spread_ranks[i]
+        c["rank_queue"] = queue_ranks[i]
+        c["rank_freq"] = freq_ranks[i]
+        c["composite_rank"] = round(
+            (spread_ranks[i] + queue_ranks[i] + freq_ranks[i]) / 3, 2)
+
+    # Sort passing by composite (lowest = best)
+    passing.sort(key=lambda c: c["composite_rank"])
+
+    # TODO: After 100+ fills, consider merging queue and
+    # frequency into a single "Expected Time to Fill" metric:
+    # ETF = max_queue_depth / (trades_per_minute)
+    # This captures the physical relationship between these
+    # two dimensions. Need actual fill data to calibrate.
+
+    return passing + failing
 
 
 def scan_today_sports(client: KalshiClient) -> list[dict]:
@@ -120,9 +189,10 @@ def scan_today_sports(client: KalshiClient) -> list[dict]:
 
 def deep_check(client: KalshiClient, candidates: list[dict],
                max_check: int = 20) -> list[dict]:
-    """Fetch orderbooks to check symmetry for top candidates."""
+    """Fetch orderbooks and trades, apply pre-filters."""
     from scripts.kalshi_mm_scanner import _parse_book_levels
 
+    now = datetime.now(timezone.utc)
     checked = []
     for c in candidates[:max_check]:
         ticker = c["ticker"]
@@ -151,14 +221,18 @@ def deep_check(client: KalshiClient, candidates: list[dict],
             c["no_depth"] = no_depth
             c["yes_best_depth"] = yes_best_depth
             c["no_best_depth"] = no_best_depth
-            max_best_depth = max(yes_best_depth, no_best_depth)
+
+            # Binding queue = max(yes, no) — round-trip speed = slowest leg
+            c["binding_queue"] = max(yes_depth, no_depth)
+
+            # Net spread after fees
+            c["net_spread"] = net_spread_cents(c["spread"], c["midpoint"])
 
             # Fetch trade frequency
             try:
                 trade_data = client.get_trades(ticker, limit=200)
                 trades = trade_data.get("trades", [])
-                now_utc = datetime.now(timezone.utc)
-                cutoff_1h = now_utc - timedelta(hours=1)
+                cutoff_1h = now - timedelta(hours=1)
                 recent = []
                 for t in trades:
                     try:
@@ -178,16 +252,33 @@ def deep_check(client: KalshiClient, candidates: list[dict],
             except Exception:
                 c["trades_per_hour"] = 0.0
 
-            c["passes"] = (0.2 <= sym <= 5.0
-                           and c["spread"] >= 3
+            # Time to expiration filter
+            hours_to_exp = 999
+            exp = c.get("expected_expiration", "")
+            if exp:
+                try:
+                    exp_dt = datetime.fromisoformat(
+                        exp.replace("Z", "+00:00"))
+                    hours_to_exp = (exp_dt - now).total_seconds() / 3600
+                except (ValueError, TypeError):
+                    pass
+            c["hours_to_exp"] = round(hours_to_exp, 1)
+
+            # Pre-filters (binary)
+            max_best_depth = max(yes_best_depth, no_best_depth)
+            c["passes"] = (c["net_spread"] > 0
                            and c["spread"] < 15
+                           and 0.2 <= sym <= 5.0
                            and max_best_depth < 20000
-                           and c["trades_per_hour"] >= 10)
+                           and c["trades_per_hour"] >= 10
+                           and hours_to_exp > 1)
             checked.append(c)
 
         except Exception as e:
             c["symmetry"] = 0.0
             c["trades_per_hour"] = 0.0
+            c["net_spread"] = 0
+            c["binding_queue"] = 0
             c["passes"] = False
             c["error"] = str(e)
             checked.append(c)
@@ -230,32 +321,47 @@ def main():
         print("  Games may not be listed yet (check after 9 AM ET).")
         return
 
-    # Phase 2: Check orderbook symmetry
-    print("\n  Checking orderbook symmetry...")
+    # Phase 2: Deep check (orderbook + trades + filters)
+    print("\n  Checking orderbooks + trade frequency...")
     checked = deep_check(client, candidates)
-    checked.sort(key=lambda c: (c.get("trades_per_hour", 0),
-                                c.get("volume_24h", 0)), reverse=True)
 
-    # Show results
-    passing = [c for c in checked if c.get("passes")]
-    print(f"\n  Passing filters (spread 3-14c, sym 0.2-5.0, L1 queue <20K, freq >=10/hr): {len(passing)}")
+    # Phase 3: Rank passing candidates
+    ranked = rank_candidates(checked)
+
+    passing = [c for c in ranked if c.get("passes")]
+    print(f"\n  Passing filters (net_spread>0, sprd<15, sym 0.2-5.0, "
+          f"queue<20K, freq>=10/hr, exp>1h): {len(passing)}")
     print()
 
-    header = (f"{'#':>2} {'Pass':>4} {'Ticker':<45} {'Sprd':>4} {'Sym':>5} "
-              f"{'yQ1':>5} {'nQ1':>5} {'Trd/h':>6} {'Vol':>7}")
+    # Table header
+    header = (f"{'#':>2} {'Pass':>4} {'Ticker':<40} {'Sprd':>4} {'Net':>4} "
+              f"{'Sym':>5} {'BndQ':>6} {'Trd/h':>6} {'Exp':>5} "
+              f"{'Rank':>5}")
     print(header)
     print("-" * len(header))
 
-    for i, c in enumerate(checked, 1):
+    for i, c in enumerate(ranked, 1):
         flag = " OK " if c.get("passes") else "FAIL"
         sym = c.get("symmetry", 0)
         sym_s = f"{sym:.2f}" if sym < 100 else ">100"
-        ybd = c.get("yes_best_depth", 0)
-        nbd = c.get("no_best_depth", 0)
         tph = c.get("trades_per_hour", 0)
-        print(f"{i:2d} {flag} {c['ticker']:<45} "
-              f"{c['spread']:4d} {sym_s:>5} {ybd:5d} {nbd:5d} "
-              f"{tph:6.0f} {c['volume_24h']:7d}")
+        net = c.get("net_spread", 0)
+        bq = c.get("binding_queue", 0)
+        exp_h = c.get("hours_to_exp", 0)
+        rank_s = f"{c['composite_rank']:.1f}" if "composite_rank" in c else "-"
+        print(f"{i:2d} {flag} {c['ticker']:<40} "
+              f"{c['spread']:4d} {net:4d} {sym_s:>5} {bq:6d} "
+              f"{tph:6.0f} {exp_h:5.1f} {rank_s:>5}")
+
+    # Show rank detail for passing markets
+    if passing:
+        print(f"\n  Rank detail (passing):")
+        for c in passing:
+            print(f"    {c['ticker']:<40} "
+                  f"rk_sprd={c['rank_spread']:.1f} "
+                  f"rk_queue={c['rank_queue']:.1f} "
+                  f"rk_freq={c['rank_freq']:.1f} → "
+                  f"composite={c['composite_rank']:.2f}")
 
     # Save targets — merge with existing, dedup by ticker
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -314,7 +420,7 @@ def main():
     elif targets:
         ticker_str = ",".join(t["ticker"] for t in targets)
         print(f"\n  To run paper MM manually:")
-        print(f"  python scripts/paper_mm.py --tickers {ticker_str} --duration 172800")
+        print(f"  python scripts/paper_mm.py --tickers {ticker_str} --duration 86400")
 
 
 if __name__ == "__main__":
