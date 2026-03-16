@@ -266,6 +266,7 @@ def deep_check(client: KalshiClient, candidates: list[dict],
 
             # Pre-filters (binary)
             max_best_depth = max(yes_best_depth, no_best_depth)
+            c["max_best_depth"] = max_best_depth
             c["passes"] = (c["net_spread"] > 0
                            and c["spread"] < 15
                            and 0.2 <= sym <= 5.0
@@ -335,7 +336,7 @@ def main():
 
     # Table header
     header = (f"{'#':>2} {'Pass':>4} {'Ticker':<40} {'Sprd':>4} {'Net':>4} "
-              f"{'Sym':>5} {'BndQ':>6} {'Trd/h':>6} {'Exp':>5} "
+              f"{'Sym':>5} {'L1Q':>6} {'TotQ':>6} {'Trd/h':>6} {'Exp':>5} "
               f"{'Rank':>5}")
     print(header)
     print("-" * len(header))
@@ -346,11 +347,12 @@ def main():
         sym_s = f"{sym:.2f}" if sym < 100 else ">100"
         tph = c.get("trades_per_hour", 0)
         net = c.get("net_spread", 0)
-        bq = c.get("binding_queue", 0)
+        l1q = c.get("max_best_depth", 0)
+        totq = c.get("binding_queue", 0)
         exp_h = c.get("hours_to_exp", 0)
         rank_s = f"{c['composite_rank']:.1f}" if "composite_rank" in c else "-"
         print(f"{i:2d} {flag} {c['ticker']:<40} "
-              f"{c['spread']:4d} {net:4d} {sym_s:>5} {bq:6d} "
+              f"{c['spread']:4d} {net:4d} {sym_s:>5} {l1q:6d} {totq:6d} "
               f"{tph:6.0f} {exp_h:5.1f} {rank_s:>5}")
 
     # Show rank detail for passing markets

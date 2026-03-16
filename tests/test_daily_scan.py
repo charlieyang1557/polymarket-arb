@@ -112,6 +112,45 @@ def test_deep_check_passes_good_market():
     assert result[0].get("passes") is True
 
 
+def test_deep_check_fails_huge_l1_queue():
+    """Market with L1 best depth >= 20000 should fail."""
+    client = MagicMock()
+    client.get_orderbook.return_value = {
+        "orderbook_fp": {
+            "yes_dollars": [["0.45", "25000"], ["0.46", "300"]],
+            "no_dollars": [["0.52", "200"], ["0.53", "300"]],
+        }
+    }
+    now = datetime.now(timezone.utc)
+    trades = [{"trade_id": f"t{i}",
+               "created_time": (now - timedelta(seconds=i * 36)).strftime(
+                   "%Y-%m-%dT%H:%M:%S.000000Z"),
+               "count_fp": "2", "yes_price_dollars": "0.46"}
+              for i in range(100)]
+    client.get_trades.return_value = {"trades": trades}
+
+    candidates = [{"ticker": "BIGQ", "spread": 5, "midpoint": 48,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0].get("passes") is False
+    assert result[0]["yes_best_depth"] == 25000
+    # Also verify max_best_depth is exposed for display
+    assert result[0]["max_best_depth"] == 25000
+
+
+def test_deep_check_exposes_max_best_depth():
+    """max_best_depth should be stored on candidate for display."""
+    client = _mock_client(100)
+    candidates = [{"ticker": "TEST", "spread": 5, "midpoint": 48,
+                   "volume_24h": 1000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert "max_best_depth" in result[0]
+    # L1 is 200 on both sides → max = 200
+    assert result[0]["max_best_depth"] == 200
+
+
 def test_deep_check_fails_low_freq():
     client = _mock_client(5)
     candidates = [{"ticker": "SLOW", "spread": 5, "midpoint": 48,
