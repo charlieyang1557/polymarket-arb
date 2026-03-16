@@ -182,7 +182,7 @@ def deep_check(client: KalshiClient, candidates: list[dict],
                            and c["spread"] >= 3
                            and c["spread"] < 15
                            and max_best_depth < 20000
-                           and c["trades_per_hour"] >= 100)
+                           and c["trades_per_hour"] >= 10)
             checked.append(c)
 
         except Exception as e:
@@ -238,7 +238,7 @@ def main():
 
     # Show results
     passing = [c for c in checked if c.get("passes")]
-    print(f"\n  Passing filters (spread 3-14c, sym 0.2-5.0, L1 queue <20K, freq >=100/hr): {len(passing)}")
+    print(f"\n  Passing filters (spread 3-14c, sym 0.2-5.0, L1 queue <20K, freq >=10/hr): {len(passing)}")
     print()
 
     header = (f"{'#':>2} {'Pass':>4} {'Ticker':<45} {'Sprd':>4} {'Sym':>5} "

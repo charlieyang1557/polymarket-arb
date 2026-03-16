@@ -48,7 +48,7 @@ def test_deep_check_passes_with_high_freq():
 
 
 def test_deep_check_fails_with_low_freq():
-    client = _mock_client(50)
+    client = _mock_client(5)
     candidates = [{"ticker": "SLOW", "spread": 5, "midpoint": 48, "volume_24h": 5000}]
     result = deep_check(client, candidates, max_check=1)
     assert result[0].get("passes") is False
