@@ -151,6 +151,80 @@ def test_deep_check_exposes_max_best_depth():
     assert result[0]["max_best_depth"] == 200
 
 
+def test_deep_check_fails_wide_net_spread():
+    """Net spread > 8 should fail — wide spreads have asymmetric liquidity."""
+    client = _mock_client(100)
+    # spread=14 at midpoint 50 → net = 14 - 2*1 = 12 > 8
+    candidates = [{"ticker": "WIDE", "spread": 14, "midpoint": 50,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0]["net_spread"] == 12
+    assert result[0].get("passes") is False
+
+
+def test_deep_check_passes_net_spread_at_boundary():
+    """Net spread == 8 should still pass (upper bound inclusive)."""
+    client = _mock_client(100)
+    # spread=10 at midpoint 50 → net = 10 - 2*1 = 8
+    candidates = [{"ticker": "BOUNDARY", "spread": 10, "midpoint": 50,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0]["net_spread"] == 8
+    assert result[0].get("passes") is True
+
+
+def test_deep_check_fails_empty_yes_book():
+    """Market with no YES levels should fail."""
+    client = MagicMock()
+    client.get_orderbook.return_value = {
+        "orderbook_fp": {
+            "yes_dollars": [],
+            "no_dollars": [["0.52", "200"], ["0.53", "300"]],
+        }
+    }
+    now = datetime.now(timezone.utc)
+    trades = [{"trade_id": f"t{i}",
+               "created_time": (now - timedelta(seconds=i * 36)).strftime(
+                   "%Y-%m-%dT%H:%M:%S.000000Z"),
+               "count_fp": "2", "yes_price_dollars": "0.46"}
+              for i in range(100)]
+    client.get_trades.return_value = {"trades": trades}
+
+    candidates = [{"ticker": "NOYES", "spread": 5, "midpoint": 48,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0]["yes_best_depth"] == 0
+    assert result[0].get("passes") is False
+
+
+def test_deep_check_fails_empty_no_book():
+    """Market with no NO levels should fail."""
+    client = MagicMock()
+    client.get_orderbook.return_value = {
+        "orderbook_fp": {
+            "yes_dollars": [["0.45", "200"], ["0.46", "300"]],
+            "no_dollars": [],
+        }
+    }
+    now = datetime.now(timezone.utc)
+    trades = [{"trade_id": f"t{i}",
+               "created_time": (now - timedelta(seconds=i * 36)).strftime(
+                   "%Y-%m-%dT%H:%M:%S.000000Z"),
+               "count_fp": "2", "yes_price_dollars": "0.46"}
+              for i in range(100)]
+    client.get_trades.return_value = {"trades": trades}
+
+    candidates = [{"ticker": "NONO", "spread": 5, "midpoint": 48,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0]["no_best_depth"] == 0
+    assert result[0].get("passes") is False
+
+
 def test_deep_check_fails_low_freq():
     client = _mock_client(5)
     candidates = [{"ticker": "SLOW", "spread": 5, "midpoint": 48,
