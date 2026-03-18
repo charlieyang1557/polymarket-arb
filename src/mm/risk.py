@@ -76,11 +76,11 @@ def check_layer3(ms: MarketState, gs: GlobalState) -> Action:
     if gs.total_realized_pnl < -500:
         actions.append(Action.FULL_STOP)
 
-    # Drawdown triple-gate
+    # Drawdown gate: only trigger when session is net-negative
     peak = gs.peak_total_pnl
     current = gs.total_pnl
     drawdown = peak - current
-    if peak > 100 and drawdown > 50 and drawdown / peak > 0.05:
+    if current < 0 and peak > 100 and drawdown > 50 and drawdown / peak > 0.05:
         actions.append(Action.FULL_STOP)
 
     # Per-market cumulative loss

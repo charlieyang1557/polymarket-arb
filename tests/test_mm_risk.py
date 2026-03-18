@@ -109,10 +109,40 @@ def test_l3_per_market_exit():
     assert check_layer3(ms, gs) == Action.EXIT_MARKET
 
 def test_l3_drawdown_triple_gate():
+    """Drawdown while in NET LOSS should trigger FULL_STOP."""
     gs = GlobalState(peak_total_pnl=200)
-    ms = MarketState(ticker="X", realized_pnl=80)
+    ms = MarketState(ticker="X", realized_pnl=-600)
     gs.markets["X"] = ms
-    # peak=200, current=80, drawdown=120 > 50c, > 5% of 200
+    # peak=200, current=-600, drawdown=800 > 50c, > 5% of 200, AND current < 0
+    assert check_layer3(ms, gs) == Action.FULL_STOP
+
+def test_l3_drawdown_no_trigger_while_profitable():
+    """FULL_STOP must NOT trigger when total PnL is still positive.
+
+    Regression: rpnl=+69.4c triggered FULL_STOP because drawdown gate
+    didn't check whether we were actually losing money.
+    """
+    gs = GlobalState(peak_total_pnl=200)
+    ms = MarketState(ticker="X", realized_pnl=69.4)
+    gs.markets["X"] = ms
+    # peak=200, current=69.4, drawdown=130.6 > 50, > 5% of 200
+    # BUT current > 0 → should NOT trigger FULL_STOP
+    assert check_layer3(ms, gs) != Action.FULL_STOP
+
+def test_l3_drawdown_no_trigger_at_plus_100c():
+    """Even large drawdown from peak should not stop a profitable session."""
+    gs = GlobalState(peak_total_pnl=500)
+    ms = MarketState(ticker="X", realized_pnl=100)
+    gs.markets["X"] = ms
+    # peak=500, current=100, drawdown=400 > 50, > 5%
+    # BUT still profitable → no FULL_STOP
+    assert check_layer3(ms, gs) != Action.FULL_STOP
+
+def test_l3_daily_loss_triggers_at_negative_600c():
+    """FULL_STOP triggers when realized PnL is -600c (below -500 limit)."""
+    gs = GlobalState()
+    ms = MarketState(ticker="X", realized_pnl=-600)
+    gs.markets["X"] = ms
     assert check_layer3(ms, gs) == Action.FULL_STOP
 
 def test_l3_drawdown_no_trigger_small_peak():
