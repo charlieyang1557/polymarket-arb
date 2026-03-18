@@ -411,6 +411,13 @@ def main():
     for t in targets:
         print(f"    {t['ticker']} — {t['title']}")
 
+    # Discord summary
+    lines = [f"**Scanner** {len(passing)} pass / {len(checked)} checked"]
+    for t in targets:
+        net = t.get('net_spread', 0)
+        tph = t.get('trades_per_hour', 0)
+        lines.append(f"  `{t['ticker']}` net={net}c freq={tph:.0f}/hr")
+
     # Auto-launch paper MM if requested
     if args.run and targets:
         ticker_str = ",".join(t["ticker"] for t in targets)
@@ -422,10 +429,14 @@ def main():
         print(f"  {cmd}")
         os.system(cmd)
         print("  Paper MM started in background. Monitor: tail -f data/mm_paper_run.log")
+        lines.append("Bot launched ✅")
     elif targets:
         ticker_str = ",".join(t["ticker"] for t in targets)
         print(f"\n  To run paper MM manually:")
         print(f"  python scripts/paper_mm.py --tickers {ticker_str} --duration 86400")
+        lines.append("Scan only — no bot launched")
+
+    discord_notify("\n".join(lines))
 
 
 if __name__ == "__main__":
