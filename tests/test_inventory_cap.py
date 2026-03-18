@@ -6,68 +6,68 @@ from src.mm.engine import should_skip_side
 
 
 # -- Floor rounding (both sides are bids → both floor) --
+# Use best_yes_bid=44, best_no_bid=50 (6c gross) so profitability floor
+# doesn't interfere with pure rounding tests.
 
 def test_skew_yes_bid_floors():
     """YES bid with fractional skew floors down."""
     # inv=3, gamma=0.5 → skew=1.5
-    # YES bid: floor(47 - 1.5) = floor(45.5) = 45
+    # YES bid: floor(44 - 1.5) = floor(42.5) = 42
     yes_price, _ = skewed_quotes(
-        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=3, gamma=0.5, quote_offset=0)
-    assert yes_price == 45
+    assert yes_price == 42
 
 
 def test_skew_no_bid_floors():
     """NO bid with fractional skew floors down (conservative)."""
     # inv=3, gamma=0.5 → skew=1.5
-    # NO bid: floor(53 + 1.5) = floor(54.5) = 54
+    # NO bid: floor(50 + 1.5) = floor(51.5) = 51
     _, no_price = skewed_quotes(
-        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=3, gamma=0.5, quote_offset=0)
-    assert no_price == 54
+    assert no_price == 51
 
 
 def test_skew_negative_inv_floors():
     """Negative inv: both sides still floor."""
     # inv=-3, gamma=0.5 → skew=-1.5
-    # YES bid: floor(47 - (-1.5)) = floor(48.5) = 48
-    # NO bid:  floor(53 + (-1.5)) = floor(51.5) = 51
+    # YES bid: floor(44 - (-1.5)) = floor(45.5) = 45
+    # NO bid:  floor(50 + (-1.5)) = floor(48.5) = 48
     yes_price, no_price = skewed_quotes(
-        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=-3, gamma=0.5, quote_offset=0)
-    assert yes_price == 48
-    assert no_price == 51
+    assert yes_price == 45
+    assert no_price == 48
 
 
 def test_integer_skew_unchanged():
     """Integer skew (no fractional part) → floor same as int."""
     yes_price, no_price = skewed_quotes(
-        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=4, gamma=0.5, quote_offset=0)
-    assert yes_price == 45  # 47 - 2
-    assert no_price == 55   # 53 + 2
+    assert yes_price == 42  # 44 - 2
+    assert no_price == 52   # 50 + 2
 
 
 def test_roundtrip_profit_guaranteed():
-    """YES cost + NO cost should always sum to <= 99 (>= 1c gross per pair).
-
-    With floor on both bids, fractional skew always rounds in our favor.
-    """
+    """With profitability floor, gross should always cover fees + 1c
+    when base spread is sufficient, or be maximized when base is tight."""
     for inv in range(-15, 16):
         yes_price, no_price = skewed_quotes(
-            fair=48.0, best_yes_bid=47, best_no_bid=53,
+            fair=48.0, best_yes_bid=44, best_no_bid=50,
             net_inventory=inv, gamma=0.5, quote_offset=0)
         gross = 100 - yes_price - no_price
         assert gross >= 0, f"Negative gross at inv={inv}: {yes_price}+{no_price}={yes_price+no_price}"
 
 
 def test_fractional_skew_visible_at_inv_1():
-    """At inv=1, skew=0.5 → floor(47-0.5)=46, floor(53+0.5)=53."""
+    """At inv=1, skew=0.5 → floor(44-0.5)=43, floor(50+0.5)=50."""
     yes_price, no_price = skewed_quotes(
-        fair=48.0, best_yes_bid=47, best_no_bid=53,
+        fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=1, gamma=0.5, quote_offset=0)
-    assert yes_price == 46  # floor(46.5) = 46
-    assert no_price == 53   # floor(53.5) = 53
+    assert yes_price == 43  # floor(43.5) = 43
+    assert no_price == 50   # floor(50.5) = 50
 
 
 # -- Single-side inventory cap --

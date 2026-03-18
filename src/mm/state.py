@@ -56,6 +56,17 @@ def skewed_quotes(fair: float, best_yes_bid: int, best_no_bid: int,
     # This guarantees >= 1c gross per round-trip with fractional skew.
     yes_price = max(1, math.floor(best_yes_bid - quote_offset - skew_raw))
     no_price = max(1, math.floor(best_no_bid - quote_offset + skew_raw))
+
+    # Profitability floor: reduce skew until round-trip covers fees + 1c
+    mid = (yes_price + no_price) / 2
+    min_fees = 2 * math.ceil(0.0175 * mid / 100 * (1 - mid / 100) * 100)
+    while (100 - yes_price - no_price) < min_fees + 1 and abs(skew_raw) > 0.1:
+        skew_raw *= 0.8
+        yes_price = max(1, math.floor(best_yes_bid - quote_offset - skew_raw))
+        no_price = max(1, math.floor(best_no_bid - quote_offset + skew_raw))
+        mid = (yes_price + no_price) / 2
+        min_fees = 2 * math.ceil(0.0175 * mid / 100 * (1 - mid / 100) * 100)
+
     return yes_price, no_price
 
 
