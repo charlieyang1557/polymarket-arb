@@ -421,7 +421,7 @@ def main():
     # Auto-launch paper MM if requested
     if args.run and targets:
         ticker_str = ",".join(t["ticker"] for t in targets)
-        cmd = (f"nohup python -u scripts/paper_mm.py "
+        cmd = (f"nohup {sys.executable} -u scripts/paper_mm.py "
                f"--tickers {ticker_str} "
                f"--duration {args.duration} --size 2 --interval 10 "
                f"> data/mm_paper_run.log 2>&1 &")
