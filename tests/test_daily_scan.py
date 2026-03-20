@@ -89,7 +89,7 @@ def test_deep_check_adds_net_spread():
                    "expected_expiration": "2099-12-31T23:59:59Z"}]
     result = deep_check(client, candidates, max_check=1)
     assert "net_spread" in result[0]
-    assert result[0]["net_spread"] > 0
+    assert result[0]["net_spread"] >= 2
 
 
 def test_deep_check_adds_binding_queue():

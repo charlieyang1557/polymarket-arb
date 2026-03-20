@@ -281,7 +281,7 @@ def deep_check(client: KalshiClient, candidates: list[dict],
             # Pre-filters (binary)
             max_best_depth = max(yes_best_depth, no_best_depth)
             c["max_best_depth"] = max_best_depth
-            c["passes"] = (c["net_spread"] > 0
+            c["passes"] = (c["net_spread"] >= 2
                            and c["net_spread"] <= 8
                            and c["spread"] < 15
                            and yes_best_depth > 0
