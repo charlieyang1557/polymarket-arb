@@ -10,11 +10,28 @@ venv/
 dist/
 build/
 .DS_Store
+
+# Runtime data
+data/*.log
+data/*.pid
+data/*.db
+data/*.db-wal
+data/*.db-shm
 data/diagnostics/
 data/historical/raw_markets.json
 data/historical/sample_resolved*.json
+data/kalshi_diagnostic/
 data/ws_logs/*.jsonl
 data/ws_logs/run_stdout.log
-data/kalshi_diagnostic/
+
+# Claude Code local state
+.claude/sessions/
+.claude/hooks.json
+.claude/hooks/
+.claude/scheduled_tasks.lock
 claude-code-session*.md
 claude-code-workflow*.md
+
+# Misc
+polymarket-arb-blueprint-v2.md
+scripts/__pycache__/
