@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from datetime import datetime, timezone, timedelta
 from scripts.kalshi_daily_scan import (
     deep_check, net_spread_cents, rank_candidates,
+    ALLOWED_SPORT_PREFIXES, is_allowed_sport,
 )
 
 
@@ -320,3 +321,39 @@ def test_rank_candidates_mixed_strengths():
     assert ranked[0]["ticker"] == "FREQ_KING"
     assert ranked[1]["ticker"] == "ALL_ROUNDER"
     assert ranked[2]["ticker"] == "SPREAD_KING"
+
+
+# -- Sport prefix filter --------------------------------------------------
+
+def test_allowed_sport_nba():
+    assert is_allowed_sport("KXNBASPREAD-26MAR19DETWAS-DET25") is True
+
+def test_allowed_sport_ncaa_mens():
+    assert is_allowed_sport("KXNCAAMBSPREAD-26MAR19IDHOHOU-HOU22") is True
+
+def test_allowed_sport_ncaa_womens():
+    assert is_allowed_sport("KXNCAAWBSPREAD-26MAR19FOO-BAR1") is True
+
+def test_allowed_sport_nhl():
+    assert is_allowed_sport("KXNHLSPREAD-26MAR19FOO-BAR1") is True
+
+def test_allowed_sport_mlb():
+    assert is_allowed_sport("KXMLBSPREAD-26MAR19FOO-BAR1") is True
+
+def test_rejected_esport_lol():
+    """E-sports rejected: live game detection doesn't work."""
+    assert is_allowed_sport("KXLOLTOTALMAPS-26MAR19LYGEN-4") is False
+
+def test_rejected_esport_csgo():
+    assert is_allowed_sport("KXCSGOTOTALMAPS-26MAR19FOO-BAR") is False
+
+def test_rejected_unknown_prefix():
+    assert is_allowed_sport("KXCRICKETSPREAD-26MAR19FOO-BAR") is False
+
+def test_allowed_prefixes_list():
+    """Verify the allowed list contains expected sports."""
+    assert "KXNBA" in ALLOWED_SPORT_PREFIXES
+    assert "KXNCAAMB" in ALLOWED_SPORT_PREFIXES
+    assert "KXNCAAWB" in ALLOWED_SPORT_PREFIXES
+    assert "KXNHL" in ALLOWED_SPORT_PREFIXES
+    assert "KXMLB" in ALLOWED_SPORT_PREFIXES

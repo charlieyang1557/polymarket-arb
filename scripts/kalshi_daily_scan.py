@@ -25,6 +25,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.kalshi_client import KalshiClient, PROD_BASE
 from src.mm.engine import discord_notify
 
+# Only allow sports where our live-game detection (>50 trades/5min) works.
+# E-sports have too little volume — bot can't detect game start.
+ALLOWED_SPORT_PREFIXES = ("KXNBA", "KXNCAAMB", "KXNCAAWB", "KXNHL",
+                          "KXMLB", "KXWBC", "KXNCAAFB")
+
+
+def is_allowed_sport(ticker: str) -> bool:
+    """Check if ticker belongs to an allowed sport."""
+    return any(ticker.startswith(p) for p in ALLOWED_SPORT_PREFIXES)
+
 load_dotenv()
 OUTPUT_DIR = Path("data/kalshi_diagnostic")
 
@@ -122,6 +132,10 @@ def scan_today_sports(client: KalshiClient) -> list[dict]:
 
             for m in ev.get("markets", []):
                 ticker = m.get("ticker", "")
+
+                # Only allowed sports (no e-sports — live detection fails)
+                if not is_allowed_sport(ticker):
+                    continue
 
                 # Only spread and total markets (symmetric liquidity)
                 if "SPREAD" not in ticker and "TOTAL" not in ticker:
