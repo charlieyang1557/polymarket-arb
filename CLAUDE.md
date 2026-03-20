@@ -125,6 +125,7 @@ Bugs discovered and fixed (do not repeat):
 7. `FULL_STOP` on profitable session → added `current < 0` guard on drawdown gate
 8. Skew pushing round-trip to 0 gross → profitability floor in `skewed_quotes()`
 9. Scanner selecting net_spread=0 markets → net spread filter with <=8c cap
+10. Scanner uses bare `python` in nohup launch → cron has no python in PATH → use `sys.executable` for subprocess launches
 
 Cross-tick negative round-trips (YES+NO > 100c) are STOP-LOSSES, not bugs. Do NOT try to prevent them with cost-basis tracking.
 
