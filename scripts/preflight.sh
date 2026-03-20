@@ -3,8 +3,8 @@
 # On failure: sends Discord alert, exits non-zero (crontab aborts launch)
 # Human fixes the issue, re-runs: bash scripts/preflight.sh && python scripts/kalshi_daily_scan.py --run --max-markets 15
 
-cd /Users/yutianyang/polymarket-arb
-PYTHON=/Users/yutianyang/miniconda3/bin/python
+cd "$(dirname "$0")/.."
+PYTHON=python
 LOG=data/preflight.log
 echo "=== PRE-FLIGHT $(date) ===" > "$LOG"
 

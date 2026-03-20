@@ -1,0 +1,20 @@
+=== PRE-FLIGHT Thu Mar 19 05:57:00 PDT 2026 ===
+[1/6] Git status...
+  PASS: no uncommitted changes
+[2/6] Running tests...
+........................................................................ [ 40%]
+........................................................................ [ 80%]
+..................................                                       [100%]
+178 passed in 3.90s
+  PASS: all tests pass
+[3/6] Discord webhook...
+  PASS: webhook loaded
+[4/6] Kalshi API...
+  PASS: API reachable
+[5/6] Discord send test...
+  PASS: notification sent
+[6/6] Cleaning old processes...
+  PASS: cleaned
+
+PRE-FLIGHT COMPLETE — all checks passed
+PRE-FLIGHT COMPLETE

@@ -1,0 +1,108 @@
+============================================================
+Kalshi Daily Sports MM Scanner
+Time: 2026-03-18T20:00:01.002300+00:00
+============================================================
+Scanning for sports markets expiring 2026-03-18 or 2026-03-19
+  Scanned 4734 events
+
+  Found 1202 spread/total markets today
+
+  Checking orderbooks + trade frequency...
+
+  Passing filters (net_spread>0, sprd<15, sym 0.2-5.0, queue<20K, freq>=10/hr, exp>1h): 5
+
+ # Pass Ticker                                   Sprd  Net   Sym    L1Q   TotQ  Trd/h   Exp  Rank
+-------------------------------------------------------------------------------------------------
+ 1  OK  KXUCLSPREAD-26MAR18TOTATM-ATM1              7    5  1.40    300   1531    112   4.0   1.3
+ 2  OK  KXUCLSPREAD-26MAR18BMUATA-BMU2              6    4  1.58    300   2743    150   4.0   1.7
+ 3  OK  KXUCLTOTAL-26MAR18TOTATM-3                  5    3  0.72   3805   9994     58   4.0   3.3
+ 4  OK  KXUCLTOTAL-26MAR18LFCGAL-2                  3    1  0.78    500   4820     54   4.0   3.8
+ 5  OK  KXNCAAMBSPREAD-26MAR18GWUVU-UVU1            3    1  1.17   1181 119574     17   7.0   4.8
+ 6 FAIL KXNBASPREAD-26MAR18OKCBKN-OKC19             2    0  1.11  57500 521310     55   6.5     -
+ 7 FAIL KXNCAAMBSPREAD-26MAR18NAVYWAKE-WAKE12       2    0  1.52   6000  94640     24   6.0     -
+ 8 FAIL KXNBASPREAD-26MAR18ATLDAL-ATL8              2    0  0.81  27362 805108     63   7.5     -
+ 9 FAIL KXUCLSPREAD-26MAR18LFCGAL-LFC1              2    0  0.05    400 101606    236   4.0     -
+10 FAIL KXUCLSPREAD-26MAR18BMUATA-BMU1             15   13  0.86    300   5264    252   4.0     -
+11 FAIL KXUCLTOTAL-26MAR18TOTATM-2                  4    2  0.12    800  72336    148   4.0     -
+12 FAIL KXNBATOTAL-26MAR18GSWBOS-217                2    0  0.73  10205 479933     54   6.0     -
+13 FAIL KXNCAAMBSPREAD-26MAR18KENTILST-ILST6        2    0  2.21  97550 210502      8   7.0     -
+14 FAIL KXNCAAMBSPREAD-26MAR18MURRNEV-NEV8          3    1  0.55  90383 212439     37   9.0     -
+15 FAIL KXNCAAMBSPREAD-26MAR18DAYBRAD-DAY1          2    0  0.68  13762 120011     28   8.0     -
+16 FAIL KXNCAAMBSPREAD-26MAR19USFLOU-LOU3           2    0  0.69  30185 138995     22  24.0     -
+17 FAIL KXUCLSPREAD-26MAR18TOTATM-ATM2             19   17  1.21    300    844     44   4.0     -
+18 FAIL KXUCLTOTAL-26MAR18LFCGAL-3                  2    0  1.29    430   8408    126   4.0     -
+19 FAIL KXNBATOTAL-26MAR18GSWBOS-199                2    0  0.59    500  55825     10   6.0     -
+20 FAIL KXNCAAMBTOTAL-26MAR18GWUVU-169              6    4  0.56 136850 230310      0   7.0     -
+
+  Rank detail (passing):
+    KXUCLSPREAD-26MAR18TOTATM-ATM1           rk_sprd=1.0 rk_queue=1.0 rk_freq=2.0 → composite=1.33
+    KXUCLSPREAD-26MAR18BMUATA-BMU2           rk_sprd=2.0 rk_queue=2.0 rk_freq=1.0 → composite=1.67
+    KXUCLTOTAL-26MAR18TOTATM-3               rk_sprd=3.0 rk_queue=4.0 rk_freq=3.0 → composite=3.33
+    KXUCLTOTAL-26MAR18LFCGAL-2               rk_sprd=4.5 rk_queue=3.0 rk_freq=4.0 → composite=3.83
+    KXNCAAMBSPREAD-26MAR18GWUVU-UVU1         rk_sprd=4.5 rk_queue=5.0 rk_freq=5.0 → composite=4.83
+
+  Targets: 41 existing + 5 new = 46 total
+  Saved to data/kalshi_diagnostic/daily_targets.json
+  Ticker list: data/kalshi_diagnostic/daily_targets.txt
+
+  Selected targets:
+    KXUCLSPREAD-26MAR18TOTATM-ATM1 — Atletico wins by over 1.5 goals?
+    KXUCLSPREAD-26MAR18BMUATA-BMU2 — Bayern Munich wins by over 2.5 goals?
+    KXUCLTOTAL-26MAR18TOTATM-3 — Atletico at Tottenham: Totals
+    KXUCLTOTAL-26MAR18LFCGAL-2 — Galatasaray at Liverpool: Totals
+    KXNCAAMBSPREAD-26MAR18GWUVU-UVU1 — Utah Valley wins by over 1.5 Points?
+
+  To run paper MM manually:
+  python scripts/paper_mm.py --tickers KXUCLSPREAD-26MAR18TOTATM-ATM1,KXUCLSPREAD-26MAR18BMUATA-BMU2,KXUCLTOTAL-26MAR18TOTATM-3,KXUCLTOTAL-26MAR18LFCGAL-2,KXNCAAMBSPREAD-26MAR18GWUVU-UVU1 --duration 86400
+============================================================
+Kalshi Daily Sports MM Scanner
+Time: 2026-03-19T20:00:01.154412+00:00
+============================================================
+Scanning for sports markets expiring 2026-03-19 or 2026-03-20
+  Scanned 4602 events
+
+  Found 1260 spread/total markets today
+
+  Checking orderbooks + trade frequency...
+
+  Passing filters (net_spread>0, sprd<15, sym 0.2-5.0, queue<20K, freq>=10/hr, exp>1h): 3
+
+ # Pass Ticker                                   Sprd  Net   Sym    L1Q   TotQ  Trd/h   Exp  Rank
+-------------------------------------------------------------------------------------------------
+ 1  OK  KXUELTOTAL-26MAR19AVLLIL-2                  4    2  0.94    430   4217     77   4.0   1.3
+ 2  OK  KXUELSPREAD-26MAR19AVLLIL-AVL1              3    1  3.20    300   2968     77   4.0   1.8
+ 3  OK  KXNBASPREAD-26MAR19CLECHI-CLE24             3    1  1.33    500  21675     32   7.0   2.8
+ 4 FAIL KXNBASPREAD-26MAR19LALMIA-MIA4              2    0  0.99    100  95128     64   7.0     -
+ 5 FAIL KXNCAAMB1HSPREAD-26MAR19MCNSVAN-VAN5       23   21  0.00 262600 306515    174   2.2     -
+ 6 FAIL KXNBATOTAL-26MAR19DETWAS-244                3    1  1.34   1600  31317      1   6.0     -
+ 7 FAIL KXNBASPREAD-26MAR19DETWAS-DET28             2    0  0.93   1191  17116      0   6.0     -
+ 8 FAIL KXNBASPREAD-26MAR19CLECHI-CLE12             2    0  0.91    100 180606     11   7.0     -
+ 9 FAIL KXNCAAMB1HTOTAL-26MAR19MCNSVAN-69          62   60  >100  94300 109231    139   2.2     -
+10 FAIL KXNBASPREAD-26MAR19CLECHI-CLE27             2    0  1.02   1509  22239     16   7.0     -
+11 FAIL KXUELSPREAD-26MAR19RBBPAN-RBB1              2    0  0.67   1156   5392    122   4.0     -
+12 FAIL KXNCAAMBSPREAD-26MAR20UCFUCLA-UCLA9         2    0 37.84 1692000 1904363      1  24.0     -
+13 FAIL KXNBASPREAD-26MAR19LALMIA-MIA1              2    0  0.94    100  21908      8   7.0     -
+14 FAIL KXNBASPREAD-26MAR19DETWAS-DET25             2    0  0.83   2329  25556      1   6.0     -
+15 FAIL KXNCAAMBSPREAD-26MAR20LIUARIZ-ARIZ45        4    2  0.10  88223 207387      0  24.0     -
+16 FAIL KXNBATOTAL-26MAR19PHXSAS-225                2    0  0.64    300 127473      5   7.0     -
+17 FAIL KXUELSPREAD-26MAR19FCPVFB-FCP1             26   24  0.44    550   2452     50   4.0     -
+18 FAIL KXNCAAMBSPREAD-26MAR20UCFUCLA-UCLA6         2    0  0.80 180817 333273     14  24.0     -
+19 FAIL KXNCAAMBSPREAD-26MAR20CBUKU-KU13            2    0  1.17     20 141128      9  24.0     -
+20 FAIL KXNCAAMBSPREAD-26MAR20UNISJU-SJU8           2    0  4.22 147905 403976     13  24.0     -
+
+  Rank detail (passing):
+    KXUELTOTAL-26MAR19AVLLIL-2               rk_sprd=1.0 rk_queue=2.0 rk_freq=1.0 → composite=1.33
+    KXUELSPREAD-26MAR19AVLLIL-AVL1           rk_sprd=2.5 rk_queue=1.0 rk_freq=2.0 → composite=1.83
+    KXNBASPREAD-26MAR19CLECHI-CLE24          rk_sprd=2.5 rk_queue=3.0 rk_freq=3.0 → composite=2.83
+
+  Targets: 50 existing + 3 new = 53 total
+  Saved to data/kalshi_diagnostic/daily_targets.json
+  Ticker list: data/kalshi_diagnostic/daily_targets.txt
+
+  Selected targets:
+    KXUELTOTAL-26MAR19AVLLIL-2 — Lille at Aston Villa: Totals
+    KXUELSPREAD-26MAR19AVLLIL-AVL1 — Aston Villa wins by over 1.5 goals?
+    KXNBASPREAD-26MAR19CLECHI-CLE24 — Cleveland wins by over 24.5 Points?
+
+  To run paper MM manually:
+  python scripts/paper_mm.py --tickers KXUELTOTAL-26MAR19AVLLIL-2,KXUELSPREAD-26MAR19AVLLIL-AVL1,KXNBASPREAD-26MAR19CLECHI-CLE24 --duration 86400
