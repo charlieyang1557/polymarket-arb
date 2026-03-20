@@ -23,6 +23,23 @@ DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 MAX_INVENTORY = 10  # single-side cap
 
 
+def clamp_order_size(side: str, net_inventory: int, order_size: int,
+                     max_inventory: int = MAX_INVENTORY) -> int:
+    """Clamp order size so a fill cannot overshoot max_inventory.
+
+    The side that INCREASES inventory magnitude gets clamped.
+    The side that DECREASES it keeps full size.
+    """
+    if side == "yes" and net_inventory >= 0:
+        # YES increases positive inv
+        return max(0, min(order_size, max_inventory - net_inventory))
+    if side == "no" and net_inventory <= 0:
+        # NO increases negative inv magnitude
+        return max(0, min(order_size, max_inventory - abs(net_inventory)))
+    # Decreasing side — no clamp needed
+    return order_size
+
+
 def should_skip_side(side: str, net_inventory: int,
                      max_inventory: int = MAX_INVENTORY) -> bool:
     """Skip quoting on the side that would increase inventory past cap."""
@@ -568,8 +585,14 @@ class MMEngine:
                 order = None
 
             if order is None or order.remaining <= 0:
+                # Clamp size so fill can't overshoot max inventory
+                size = clamp_order_size(side, net_inventory,
+                                        self.order_size)
+                if size <= 0:
+                    continue
+
                 # Layer 1 validation
-                rejection = check_layer1(quote_price, self.order_size,
+                rejection = check_layer1(quote_price, size,
                                          midpoint, side=side)
                 if rejection:
                     continue
@@ -580,14 +603,14 @@ class MMEngine:
                     queue_pos = 50  # fallback
 
                 new_order = SimOrder(
-                    side=side, price=quote_price, size=self.order_size,
-                    remaining=self.order_size, queue_pos=queue_pos,
+                    side=side, price=quote_price, size=size,
+                    remaining=size, queue_pos=queue_pos,
                     placed_at=now)
 
                 try:
                     db_id = self.db.insert_order(
-                        ms.ticker, side, quote_price, self.order_size,
-                        self.order_size, queue_pos, "resting",
+                        ms.ticker, side, quote_price, size,
+                        size, queue_pos, "resting",
                         now.isoformat())
                     new_order.db_id = db_id
                     self.gs.db_error_count = 0

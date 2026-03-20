@@ -2,7 +2,7 @@
 """Tests for bid floor rounding and single-side inventory cap."""
 import math
 from src.mm.state import skewed_quotes
-from src.mm.engine import should_skip_side
+from src.mm.engine import should_skip_side, clamp_order_size
 
 
 # -- Floor rounding (both sides are bids → both floor) --
@@ -94,3 +94,43 @@ def test_no_skip_at_zero():
     """Zero inventory → quote both."""
     assert should_skip_side("yes", net_inventory=0, max_inventory=10) is False
     assert should_skip_side("no", net_inventory=0, max_inventory=10) is False
+
+
+# -- Order size clamping --
+
+def test_clamp_yes_near_max():
+    """inv=9, max=10, order_size=2 → YES clamped to 1 (would overshoot)."""
+    assert clamp_order_size("yes", net_inventory=9, order_size=2, max_inventory=10) == 1
+
+def test_clamp_no_near_negative_max():
+    """inv=-9, max=10, order_size=2 → NO clamped to 1."""
+    assert clamp_order_size("no", net_inventory=-9, order_size=2, max_inventory=10) == 1
+
+def test_clamp_no_change_at_zero():
+    """inv=0 → both sides full size."""
+    assert clamp_order_size("yes", net_inventory=0, order_size=2, max_inventory=10) == 2
+    assert clamp_order_size("no", net_inventory=0, order_size=2, max_inventory=10) == 2
+
+def test_clamp_decreasing_side_uncapped():
+    """inv=9, YES increases inv → clamp. NO decreases inv → full size."""
+    assert clamp_order_size("no", net_inventory=9, order_size=2, max_inventory=10) == 2
+
+def test_clamp_at_max_returns_zero():
+    """inv=10 → YES size=0 (should_skip_side handles this, but clamp is consistent)."""
+    assert clamp_order_size("yes", net_inventory=10, order_size=2, max_inventory=10) == 0
+
+def test_clamp_negative_inv_yes_uncapped():
+    """inv=-5, YES decreases magnitude → full size."""
+    assert clamp_order_size("yes", net_inventory=-5, order_size=2, max_inventory=10) == 2
+
+def test_clamp_negative_inv_no_capped():
+    """inv=-1, max=3, NO increases magnitude → clamp to min(2, 3-1)=2."""
+    assert clamp_order_size("no", net_inventory=-1, order_size=2, max_inventory=3) == 2
+
+def test_clamp_inv_neg1_max3_no_size2():
+    """inv=-1, max=3, order_size=2 → NO clamp to 2 (|-1|+2=3 ≤ 3)."""
+    assert clamp_order_size("no", net_inventory=-1, order_size=2, max_inventory=3) == 2
+
+def test_clamp_inv_neg2_max3_no_size2():
+    """inv=-2, max=3, order_size=2 → NO clamp to 1 (|-2|+1=3 ≤ 3)."""
+    assert clamp_order_size("no", net_inventory=-2, order_size=2, max_inventory=3) == 1
