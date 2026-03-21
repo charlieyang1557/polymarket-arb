@@ -15,6 +15,7 @@ Standard startup (bot + watchdog):
 """
 
 import argparse
+import json
 import os
 import signal
 import sys
@@ -71,8 +72,23 @@ def main():
     db = MMDatabase(args.db_path, session_id)
     gs = GlobalState(session_id=session_id)
 
+    # Load game schedule for time-based exit
+    schedule = {}
+    targets_file = Path("data/kalshi_diagnostic/daily_targets.json")
+    try:
+        with open(targets_file) as f:
+            for t in json.load(f):
+                start = t.get("game_start_utc")
+                if start and t.get("ticker"):
+                    schedule[t["ticker"]] = datetime.fromisoformat(
+                        start.replace("Z", "+00:00"))
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        pass
+
     for ticker in tickers:
-        gs.markets[ticker] = MarketState(ticker=ticker)
+        gs.markets[ticker] = MarketState(
+            ticker=ticker,
+            game_start_utc=schedule.get(ticker))
 
     engine = MMEngine(client, db, gs, order_size=args.size)
 

@@ -3,6 +3,20 @@ from datetime import datetime, timezone, timedelta
 from src.mm.risk import Action, check_layer1, check_layer2, check_layer3, check_layer4, highest_priority
 from src.mm.state import MarketState, SimOrder, GlobalState
 
+# -- MarketState.game_start_utc -----------------------------------------------
+
+def test_market_state_has_game_start_utc():
+    """MarketState should accept game_start_utc as a datetime."""
+    start = datetime(2026, 3, 21, 1, 25, tzinfo=timezone.utc)
+    ms = MarketState(ticker="X", game_start_utc=start)
+    assert ms.game_start_utc == start
+
+
+def test_market_state_game_start_utc_default_none():
+    """game_start_utc defaults to None."""
+    ms = MarketState(ticker="X")
+    assert ms.game_start_utc is None
+
 def test_action_priority():
     assert highest_priority([Action.CONTINUE, Action.PAUSE_60S, Action.SKIP_TICK]) == Action.PAUSE_60S
     assert highest_priority([Action.CONTINUE]) == Action.CONTINUE

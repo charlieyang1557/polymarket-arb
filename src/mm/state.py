@@ -137,6 +137,7 @@ class MarketState:
     deactivation_reason: str | None = None  # reason market was deactivated
     consecutive_skip_ticks: int = 0  # consecutive empty orderbook ticks
     session_initial_midpoint: float | None = None  # set on first tick for drift detection
+    game_start_utc: datetime | None = None  # from schedule, for time-based exit
 
     @property
     def is_live_game(self) -> bool:
