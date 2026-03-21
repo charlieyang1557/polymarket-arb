@@ -14,6 +14,7 @@ import argparse
 import json
 import math
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -48,6 +49,16 @@ def net_spread_cents(spread: int, midpoint: float) -> int:
     p = midpoint / 100
     fee_per_side = math.ceil(0.0175 * p * (1 - p) * 100)
     return spread - 2 * fee_per_side
+
+
+def is_bot_running() -> tuple[bool, str | None]:
+    """Check if paper_mm.py is already running via pgrep."""
+    result = subprocess.run(["pgrep", "-f", "paper_mm.py"],
+                            capture_output=True)
+    if result.returncode == 0:
+        pid = result.stdout.decode().strip().split("\n")[0]
+        return True, pid
+    return False, None
 
 
 SCHEDULE_PATH = "data/game_schedule.json"
@@ -338,6 +349,8 @@ def main():
         description="Daily sports MM target scanner")
     parser.add_argument("--run", action="store_true",
                         help="Auto-start paper_mm.py with selected targets")
+    parser.add_argument("--smart-run", action="store_true",
+                        help="Like --run but skip launch if bot already running")
     parser.add_argument("--max-markets", type=int, default=3,
                         help="Max markets to trade (default: 3)")
     parser.add_argument("--duration", type=int, default=86400,
@@ -468,17 +481,27 @@ def main():
         lines.append(f"  `{t['ticker']}` net={net}c freq={tph:.0f}/hr")
 
     # Auto-launch paper MM if requested
-    if args.run and targets:
-        ticker_str = ",".join(t["ticker"] for t in targets)
-        cmd = (f"nohup {sys.executable} -u scripts/paper_mm.py "
-               f"--tickers {ticker_str} "
-               f"--duration {args.duration} --size 2 --interval 10 "
-               f"> data/mm_paper_run.log 2>&1 &")
-        print(f"\n  Launching paper MM...")
-        print(f"  {cmd}")
-        os.system(cmd)
-        print("  Paper MM started in background. Monitor: tail -f data/mm_paper_run.log")
-        lines.append("Bot launched ✅")
+    should_launch = args.run or args.smart_run
+    if should_launch and targets:
+        bot_running, bot_pid = is_bot_running()
+        if bot_running and args.smart_run:
+            print(f"\n  Bot already running (PID={bot_pid}). Skipping launch.")
+            print("  New markets saved for next session.")
+            lines.append(f"Afternoon scan: bot already running (PID={bot_pid}). "
+                         f"New markets saved for next session.")
+        else:
+            if not bot_running:
+                print("\n  No bot running. Launching new session.")
+            ticker_str = ",".join(t["ticker"] for t in targets)
+            cmd = (f"nohup {sys.executable} -u scripts/paper_mm.py "
+                   f"--tickers {ticker_str} "
+                   f"--duration {args.duration} --size 2 --interval 10 "
+                   f"> data/mm_paper_run.log 2>&1 &")
+            print(f"\n  Launching paper MM...")
+            print(f"  {cmd}")
+            os.system(cmd)
+            print("  Paper MM started in background. Monitor: tail -f data/mm_paper_run.log")
+            lines.append("Bot launched ✅")
     elif targets:
         ticker_str = ",".join(t["ticker"] for t in targets)
         print(f"\n  To run paper MM manually:")

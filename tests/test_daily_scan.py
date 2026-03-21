@@ -5,12 +5,13 @@ import os
 import math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone, timedelta
 from scripts.kalshi_daily_scan import (
     deep_check, net_spread_cents, rank_candidates,
     ALLOWED_SPORT_PREFIXES, is_allowed_sport,
     load_game_schedule, attach_game_start,
+    is_bot_running,
 )
 
 
@@ -450,3 +451,33 @@ def test_attach_game_start_adds_field(tmp_path):
     attach_game_start(candidates, schedule)
     assert candidates[0]["game_start_utc"] == "2026-03-21T01:00:00Z"
     assert "game_start_utc" not in candidates[1]
+
+
+# -- is_bot_running -----------------------------------------------------------
+
+def test_is_bot_running_returns_true_when_running():
+    """pgrep returns 0 → bot is running, returns (True, pid)."""
+    mock_result = MagicMock(returncode=0, stdout=b"12345\n")
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        running, pid = is_bot_running()
+        assert running is True
+        assert pid == "12345"
+        mock_run.assert_called_once()
+
+
+def test_is_bot_running_returns_false_when_not_running():
+    """pgrep returns 1 → bot not running."""
+    mock_result = MagicMock(returncode=1, stdout=b"")
+    with patch("subprocess.run", return_value=mock_result):
+        running, pid = is_bot_running()
+        assert running is False
+        assert pid is None
+
+
+def test_is_bot_running_handles_multiple_pids():
+    """Multiple PIDs → returns first (oldest)."""
+    mock_result = MagicMock(returncode=0, stdout=b"12345\n67890\n")
+    with patch("subprocess.run", return_value=mock_result):
+        running, pid = is_bot_running()
+        assert running is True
+        assert pid == "12345"
