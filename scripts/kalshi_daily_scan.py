@@ -284,6 +284,7 @@ def deep_check(client: KalshiClient, candidates: list[dict],
             c["passes"] = (c["net_spread"] >= 2
                            and c["net_spread"] <= 8
                            and c["spread"] < 15
+                           and 35 <= c["midpoint"] <= 65
                            and yes_best_depth > 0
                            and no_best_depth > 0
                            and 0.2 <= sym <= 5.0

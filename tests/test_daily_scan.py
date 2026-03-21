@@ -357,3 +357,46 @@ def test_allowed_prefixes_list():
     assert "KXNCAAWB" in ALLOWED_SPORT_PREFIXES
     assert "KXNHL" in ALLOWED_SPORT_PREFIXES
     assert "KXMLB" in ALLOWED_SPORT_PREFIXES
+
+
+# -- Midpoint filter ----------------------------------------------------------
+
+def test_deep_check_fails_high_midpoint():
+    """Market with midpoint 67c (alt-line) should fail."""
+    client = _mock_client(100)
+    candidates = [{"ticker": "ALTLINE", "spread": 5, "midpoint": 67,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0].get("passes") is False
+
+
+def test_deep_check_fails_low_midpoint():
+    """Market with midpoint 30c (extreme underdog) should fail."""
+    client = _mock_client(100)
+    candidates = [{"ticker": "UNDERDOG", "spread": 5, "midpoint": 30,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0].get("passes") is False
+
+
+def test_deep_check_passes_midpoint_at_boundaries():
+    """Midpoints at 35c and 65c should pass (inclusive)."""
+    client = _mock_client(100)
+    for mid in (35, 65):
+        candidates = [{"ticker": f"BOUNDARY{mid}", "spread": 5, "midpoint": mid,
+                       "volume_24h": 5000,
+                       "expected_expiration": "2099-12-31T23:59:59Z"}]
+        result = deep_check(client, candidates, max_check=1)
+        assert result[0].get("passes") is True, f"midpoint={mid} should pass"
+
+
+def test_deep_check_passes_midpoint_50():
+    """Midpoint 50c (main line) should pass."""
+    client = _mock_client(100)
+    candidates = [{"ticker": "MAINLINE", "spread": 5, "midpoint": 50,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0].get("passes") is True

@@ -119,6 +119,13 @@ def check_layer4(ms: MarketState, spread: int,
     if (now - ms.last_api_success) > timedelta(seconds=30):
         return Action.CANCEL_ALL
 
+    # Session drift: 10c+ from initial midpoint → EXIT_MARKET
+    if ms.session_initial_midpoint is not None and ms.midpoint_history:
+        current_mid = ms.midpoint_history[-1][1]
+        drift = abs(current_mid - ms.session_initial_midpoint)
+        if drift > 10:
+            return Action.EXIT_MARKET
+
     # Price jump detection: 3c threshold in live-game, 5c in pre-game
     threshold = 3 if ms.is_live_game else 5
     if len(ms.midpoint_history) >= 2:

@@ -168,3 +168,49 @@ def test_l4_crossed_book():
 def test_l4_db_errors():
     ms = MarketState(ticker="X")
     assert check_layer4(ms, spread=5, db_error_count=10) == Action.FULL_STOP
+
+
+# -- Layer 4: Session drift circuit breaker -----------------------------------
+
+def test_l4_drift_exit_at_11c():
+    """10c+ drift from session initial midpoint → EXIT_MARKET."""
+    ms = MarketState(ticker="X")
+    ms.session_initial_midpoint = 50.0
+    now = datetime.now(timezone.utc)
+    ms.midpoint_history = [(now, 61.0)]  # 11c drift
+    assert check_layer4(ms, spread=5, db_error_count=0) == Action.EXIT_MARKET
+
+
+def test_l4_drift_exit_negative_direction():
+    """Drift in negative direction also triggers."""
+    ms = MarketState(ticker="X")
+    ms.session_initial_midpoint = 50.0
+    now = datetime.now(timezone.utc)
+    ms.midpoint_history = [(now, 39.0)]  # -11c drift
+    assert check_layer4(ms, spread=5, db_error_count=0) == Action.EXIT_MARKET
+
+
+def test_l4_drift_no_exit_at_9c():
+    """9c drift should NOT trigger exit."""
+    ms = MarketState(ticker="X")
+    ms.session_initial_midpoint = 50.0
+    now = datetime.now(timezone.utc)
+    ms.midpoint_history = [(now, 59.0)]  # 9c drift
+    assert check_layer4(ms, spread=5, db_error_count=0) == Action.CONTINUE
+
+
+def test_l4_drift_exit_at_exactly_10c():
+    """Exactly 10c drift should NOT trigger (> 10, not >=)."""
+    ms = MarketState(ticker="X")
+    ms.session_initial_midpoint = 50.0
+    now = datetime.now(timezone.utc)
+    ms.midpoint_history = [(now, 60.0)]  # exactly 10c
+    assert check_layer4(ms, spread=5, db_error_count=0) == Action.CONTINUE
+
+
+def test_l4_drift_no_trigger_without_initial():
+    """No session_initial_midpoint set → no drift check."""
+    ms = MarketState(ticker="X")
+    now = datetime.now(timezone.utc)
+    ms.midpoint_history = [(now, 60.0)]
+    assert check_layer4(ms, spread=5, db_error_count=0) == Action.CONTINUE

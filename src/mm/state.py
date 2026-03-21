@@ -136,6 +136,7 @@ class MarketState:
     trade_timestamps: list[datetime] = field(default_factory=list)
     deactivation_reason: str | None = None  # reason market was deactivated
     consecutive_skip_ticks: int = 0  # consecutive empty orderbook ticks
+    session_initial_midpoint: float | None = None  # set on first tick for drift detection
 
     @property
     def is_live_game(self) -> bool:

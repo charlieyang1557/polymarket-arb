@@ -205,6 +205,10 @@ class MMEngine:
         midpoint = obi_microprice(best_yes_bid, yes_ask,
                                   yes_depth, no_depth)
 
+        # Set session initial midpoint on first tick (for drift detection)
+        if ms.session_initial_midpoint is None:
+            ms.session_initial_midpoint = midpoint
+
         # Update midpoint history (keep last 7 entries ~70s)
         ms.midpoint_history.append((now, midpoint))
         if len(ms.midpoint_history) > 7:

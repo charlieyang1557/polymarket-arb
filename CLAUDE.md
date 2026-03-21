@@ -75,6 +75,7 @@ Layer 4: System checks
   - DB errors ≥10 → FULL_STOP
   - Pre-game exit on live game detection (>50 trades/5min)
   - Soft-close at trade freq 30-50 (reduce-only mode)
+  - Session drift >10c from initial midpoint → EXIT_MARKET (pricing model invalid)
   - Auto-deactivate after 30 consecutive empty orderbook ticks
 ```
 
@@ -84,6 +85,7 @@ Layer 4: System checks
 Pre-filters (binary pass/fail):
   - net_spread > 0 and <= 8, where net_spread = market_spread - 2 * ceil(0.0175 * P * (1-P) * 100). This is gross spread minus estimated round-trip maker fees.
   - spread < 15
+  - midpoint 35c - 65c (filters alt-lines/blowout bets with toxic adverse selection)
   - symmetry 0.2 - 5.0
   - L1 queue depth < 20,000
   - trades_per_hour >= 10
