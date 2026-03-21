@@ -74,6 +74,7 @@ Layer 4: System checks
   - API disconnect >30s → CANCEL_ALL
   - DB errors ≥10 → FULL_STOP
   - Pre-game exit on live game detection (>50 trades/5min)
+  - Time-based exit from game schedule: SOFT_CLOSE at 15min, EXIT_MARKET at game time
   - Soft-close at trade freq 30-50 (reduce-only mode)
   - Session drift >10c from initial midpoint → EXIT_MARKET (pricing model invalid)
   - Auto-deactivate after 30 consecutive empty orderbook ticks

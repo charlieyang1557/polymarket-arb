@@ -228,3 +228,42 @@ def test_l4_drift_no_trigger_without_initial():
     now = datetime.now(timezone.utc)
     ms.midpoint_history = [(now, 60.0)]
     assert check_layer4(ms, spread=5, db_error_count=0) == Action.CONTINUE
+
+
+# -- Layer 4: Time-based game start exit --------------------------------------
+
+def test_l4_time_based_exit_at_game_start():
+    """Game time reached → EXIT_MARKET."""
+    now = datetime.now(timezone.utc)
+    ms = MarketState(ticker="X",
+                     game_start_utc=now - timedelta(seconds=10))
+    assert check_layer4(ms, spread=5, db_error_count=0) == Action.EXIT_MARKET
+
+
+def test_l4_time_based_soft_close_15min_before():
+    """15 min before game → SOFT_CLOSE (reduce-only via flag)."""
+    now = datetime.now(timezone.utc)
+    ms = MarketState(ticker="X",
+                     game_start_utc=now + timedelta(minutes=10))
+    action = check_layer4(ms, spread=5, db_error_count=0)
+    assert action == Action.SOFT_CLOSE
+
+
+def test_l4_time_based_no_trigger_2hrs_before():
+    """2 hours before game → CONTINUE."""
+    now = datetime.now(timezone.utc)
+    ms = MarketState(ticker="X",
+                     game_start_utc=now + timedelta(hours=2))
+    assert check_layer4(ms, spread=5, db_error_count=0) == Action.CONTINUE
+
+
+def test_l4_frequency_fallback_when_no_schedule():
+    """No game_start_utc → time-based check skipped, frequency still works."""
+    ms = MarketState(ticker="X")
+    now = datetime.now(timezone.utc)
+    # Simulate >50 trades in 5min for is_live_game
+    ms.trade_timestamps = [now - timedelta(seconds=i) for i in range(60)]
+    assert ms.is_live_game is True
+    # No game_start_utc, so L4 shouldn't trigger EXIT_MARKET from time
+    # (live-game exit is handled separately in engine, not L4)
+    assert check_layer4(ms, spread=5, db_error_count=0) == Action.CONTINUE

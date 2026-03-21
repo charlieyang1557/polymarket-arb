@@ -228,7 +228,7 @@ class MMEngine:
 
         # -- 2. Layer 4 system checks --
         l4 = check_layer4(ms, spread, self.gs.db_error_count)
-        if l4 != Action.CONTINUE:
+        if l4 not in (Action.CONTINUE, Action.SOFT_CLOSE):
             self._log_event(ms, 4, l4,
                             f"spread={spread} mid={midpoint:.1f}")
             if l4 == Action.PAUSE_60S:
@@ -246,10 +246,28 @@ class MMEngine:
                 self._cancel_orders(ms, "risk_l4")
                 ms.active = False
                 ms.deactivation_reason = f"EXIT_MARKET (L4)"
+                if ms.game_start_utc:
+                    reason = (f"TIME-BASED EXIT: game should have started — "
+                              f"exiting {ms.ticker} inv={ms.net_inventory} "
+                              f"pnl={ms.realized_pnl:.1f}c")
+                    print(f"  >>> {reason}")
+                    discord_notify(f"**Paper MM** {reason}")
             elif l4 == Action.CANCEL_ALL:
                 # Cancel orders but DON'T deactivate — market resumes next tick
                 self._cancel_orders(ms, "risk_l4")
             return
+
+        # Time-based soft-close: reduce-only mode before game start
+        time_soft_close = (l4 == Action.SOFT_CLOSE)
+        if time_soft_close and not getattr(ms, '_time_soft_close_logged', False):
+            seconds_left = (ms.game_start_utc - now).total_seconds()
+            reason = (f"TIME-BASED SOFT-CLOSE: game starts in "
+                      f"{seconds_left / 60:.0f}min")
+            print(f"  >>> {reason}")
+            self._log_event(ms, 4, l4,
+                            f"spread={spread} mid={midpoint:.1f} {reason}")
+            discord_notify(f"**Paper MM** {ms.ticker}: {reason}")
+            ms._time_soft_close_logged = True
 
         # -- 3. Filter new trades & drain queues --
         all_trades = trade_data.get("trades", [])
@@ -413,7 +431,8 @@ class MMEngine:
         # -- 6. Place/update simulated orders (continuous skew always active) --
         if action <= Action.AGGRESS_FLATTEN:
             self._manage_quotes(ms, best_yes_bid, best_no_bid,
-                                yes_ask, midpoint, yes_bids, no_bids)
+                                yes_ask, midpoint, yes_bids, no_bids,
+                                time_soft_close=time_soft_close)
 
         # -- 7. Snapshot every 6th tick (~60s) --
         self.tick_count += 1
@@ -536,7 +555,8 @@ class MMEngine:
 
     def _manage_quotes(self, ms: MarketState, best_yes_bid: int,
                        best_no_bid: int, yes_ask: int, midpoint: float,
-                       yes_bids: list, no_bids: list):
+                       yes_bids: list, no_bids: list,
+                       time_soft_close: bool = False):
         """Place or update simulated resting orders.
 
         Uses continuous inventory skew (always active, proportional to
@@ -545,8 +565,8 @@ class MMEngine:
         now = datetime.now(timezone.utc)
         net_inventory = ms.net_inventory
 
-        # -- Soft-close: reduce-only quoting when freq 30-50 trades/5min --
-        if ms.is_soft_close:
+        # -- Soft-close: reduce-only quoting when freq 30-50 or time-based --
+        if ms.is_soft_close or time_soft_close:
             print(f"  SOFT-CLOSE {ms.ticker}: freq in 30-50 range, "
                   f"reduce-only mode (inv={net_inventory})")
             if net_inventory == 0:

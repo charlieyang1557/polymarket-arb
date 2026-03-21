@@ -11,15 +11,16 @@ class Action(IntEnum):
     """Risk actions ordered by priority (highest = most restrictive)."""
     CONTINUE = 0
     SKIP_TICK = 1
-    PAUSE_30MIN = 2
-    PAUSE_60S = 3
-    SKEW_QUOTES = 4
-    AGGRESS_FLATTEN = 5
-    FORCE_CLOSE = 6
-    STOP_AND_FLATTEN = 7
-    CANCEL_ALL = 8
-    EXIT_MARKET = 9
-    FULL_STOP = 10
+    SOFT_CLOSE = 2
+    PAUSE_30MIN = 3
+    PAUSE_60S = 4
+    SKEW_QUOTES = 5
+    AGGRESS_FLATTEN = 6
+    FORCE_CLOSE = 7
+    STOP_AND_FLATTEN = 8
+    CANCEL_ALL = 9
+    EXIT_MARKET = 10
+    FULL_STOP = 11
 
 
 def highest_priority(actions: list[Action]) -> Action:
@@ -118,6 +119,14 @@ def check_layer4(ms: MarketState, spread: int,
     now = datetime.now(timezone.utc)
     if (now - ms.last_api_success) > timedelta(seconds=30):
         return Action.CANCEL_ALL
+
+    # Time-based game start: exit/soft-close based on schedule
+    if ms.game_start_utc is not None:
+        seconds_to_start = (ms.game_start_utc - now).total_seconds()
+        if seconds_to_start <= 0:
+            return Action.EXIT_MARKET
+        if seconds_to_start < 900:
+            return Action.SOFT_CLOSE
 
     # Session drift: 10c+ from initial midpoint → EXIT_MARKET
     if ms.session_initial_midpoint is not None and ms.midpoint_history:
