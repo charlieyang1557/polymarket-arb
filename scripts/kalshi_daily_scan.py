@@ -50,6 +50,32 @@ def net_spread_cents(spread: int, midpoint: float) -> int:
     return spread - 2 * fee_per_side
 
 
+SCHEDULE_PATH = "data/game_schedule.json"
+
+
+def load_game_schedule(path: str = SCHEDULE_PATH) -> dict[str, str]:
+    """Load game schedule and build ticker → start_time_utc lookup."""
+    schedule = {}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        for game in data.get("games", []):
+            start = game.get("start_time_utc", "")
+            for ticker in game.get("kalshi_markets", []):
+                schedule[ticker] = start
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return schedule
+
+
+def attach_game_start(candidates: list[dict],
+                      schedule: dict[str, str]) -> None:
+    """Attach game_start_utc to candidates found in schedule."""
+    for c in candidates:
+        if c["ticker"] in schedule:
+            c["game_start_utc"] = schedule[c["ticker"]]
+
+
 def rank_candidates(candidates: list[dict]) -> list[dict]:
     """Rank-based composite scoring for passing candidates.
 
@@ -347,15 +373,22 @@ def main():
     # Phase 3: Rank passing candidates
     ranked = rank_candidates(checked)
 
+    # Phase 3b: Attach game start times from schedule
+    schedule = load_game_schedule()
+    attach_game_start(ranked, schedule)
+    scheduled_count = sum(1 for c in ranked if "game_start_utc" in c)
+    if scheduled_count:
+        print(f"\n  Game schedule: {scheduled_count} markets matched")
+
     passing = [c for c in ranked if c.get("passes")]
-    print(f"\n  Passing filters (net_spread>0, sprd<15, sym 0.2-5.0, "
+    print(f"\n  Passing filters (net_spread>0, sprd<15, mid 35-65, sym 0.2-5.0, "
           f"queue<20K, freq>=10/hr, exp>1h): {len(passing)}")
     print()
 
     # Table header
     header = (f"{'#':>2} {'Pass':>4} {'Ticker':<40} {'Sprd':>4} {'Net':>4} "
               f"{'Sym':>5} {'L1Q':>6} {'TotQ':>6} {'Trd/h':>6} {'Exp':>5} "
-              f"{'Rank':>5}")
+              f"{'Game':>5} {'Rank':>5}")
     print(header)
     print("-" * len(header))
 
@@ -369,9 +402,10 @@ def main():
         totq = c.get("binding_queue", 0)
         exp_h = c.get("hours_to_exp", 0)
         rank_s = f"{c['composite_rank']:.1f}" if "composite_rank" in c else "-"
+        game_s = c.get("game_start_utc", "")[-9:-1] if "game_start_utc" in c else "-"
         print(f"{i:2d} {flag} {c['ticker']:<40} "
               f"{c['spread']:4d} {net:4d} {sym_s:>5} {l1q:6d} {totq:6d} "
-              f"{tph:6.0f} {exp_h:5.1f} {rank_s:>5}")
+              f"{tph:6.0f} {exp_h:5.1f} {game_s:>5} {rank_s:>5}")
 
     # Show rank detail for passing markets
     if passing:

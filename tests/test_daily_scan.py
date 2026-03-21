@@ -1,4 +1,5 @@
 """Tests for daily scanner scoring and ranking."""
+import json
 import sys
 import os
 import math
@@ -9,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from scripts.kalshi_daily_scan import (
     deep_check, net_spread_cents, rank_candidates,
     ALLOWED_SPORT_PREFIXES, is_allowed_sport,
+    load_game_schedule, attach_game_start,
 )
 
 
@@ -400,3 +402,51 @@ def test_deep_check_passes_midpoint_50():
                    "expected_expiration": "2099-12-31T23:59:59Z"}]
     result = deep_check(client, candidates, max_check=1)
     assert result[0].get("passes") is True
+
+
+# -- Game schedule integration ------------------------------------------------
+
+def test_schedule_lookup_matches_ticker(tmp_path):
+    """Schedule file maps ticker to game start time."""
+    schedule_file = tmp_path / "game_schedule.json"
+    schedule_file.write_text(json.dumps({"games": [{
+        "sport": "NCAA",
+        "away_team": "PV",
+        "home_team": "FLA",
+        "start_time_utc": "2026-03-21T01:25:00Z",
+        "kalshi_markets": ["KXNCAAMBSPREAD-26MAR20PVFLA-FLA47"]
+    }]}))
+    schedule = load_game_schedule(str(schedule_file))
+    assert schedule["KXNCAAMBSPREAD-26MAR20PVFLA-FLA47"] == "2026-03-21T01:25:00Z"
+
+
+def test_schedule_lookup_missing_file_graceful():
+    """Missing schedule file returns empty dict, no crash."""
+    schedule = load_game_schedule("/nonexistent/path/game_schedule.json")
+    assert schedule == {}
+
+
+def test_schedule_lookup_ticker_not_in_schedule(tmp_path):
+    """Ticker not in schedule → no game_start_utc attached."""
+    schedule_file = tmp_path / "game_schedule.json"
+    schedule_file.write_text(json.dumps({"games": [{
+        "sport": "NCAA",
+        "start_time_utc": "2026-03-21T01:25:00Z",
+        "kalshi_markets": ["KXNCAAMBSPREAD-OTHER"]
+    }]}))
+    schedule = load_game_schedule(str(schedule_file))
+    candidates = [{"ticker": "KXNCAAMBSPREAD-NOTFOUND", "passes": True}]
+    attach_game_start(candidates, schedule)
+    assert "game_start_utc" not in candidates[0]
+
+
+def test_attach_game_start_adds_field(tmp_path):
+    """attach_game_start sets game_start_utc on matching candidates."""
+    schedule = {"KXTICKER1": "2026-03-21T01:00:00Z"}
+    candidates = [
+        {"ticker": "KXTICKER1", "passes": True},
+        {"ticker": "KXTICKER2", "passes": True},
+    ]
+    attach_game_start(candidates, schedule)
+    assert candidates[0]["game_start_utc"] == "2026-03-21T01:00:00Z"
+    assert "game_start_utc" not in candidates[1]
