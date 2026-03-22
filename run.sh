@@ -7,9 +7,10 @@ export NVM_DIR="$HOME/.nvm"
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate base
 
-echo "[$(date)] Python: $(which python)" >> data/preflight.log
-
 cd ~/polymarket-arb
+mkdir -p data/kalshi_diagnostic
+
+echo "[$(date)] Python: $(which python)" >> data/preflight.log
 
 echo "[$(date)] Starting preflight..." | tee -a data/preflight.log
 bash scripts/preflight.sh >> data/preflight.log 2>&1
