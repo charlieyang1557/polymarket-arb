@@ -72,7 +72,7 @@ def load_game_schedule(path: str = SCHEDULE_PATH) -> dict[str, str]:
             data = json.load(f)
         for game in data.get("games", []):
             start = game.get("start_time_utc", "")
-            for ticker in game.get("kalshi_markets", []):
+            for ticker in (game.get("kalshi_markets") or []):
                 schedule[ticker] = start
     except (FileNotFoundError, json.JSONDecodeError):
         pass

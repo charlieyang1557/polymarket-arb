@@ -441,6 +441,18 @@ def test_schedule_lookup_ticker_not_in_schedule(tmp_path):
     assert "game_start_utc" not in candidates[0]
 
 
+def test_schedule_lookup_null_kalshi_markets(tmp_path):
+    """kalshi_markets: null should not crash — treat as empty list."""
+    schedule_file = tmp_path / "game_schedule.json"
+    schedule_file.write_text(json.dumps({"games": [{
+        "sport": "NCAA",
+        "start_time_utc": "2026-03-21T01:25:00Z",
+        "kalshi_markets": None
+    }]}))
+    schedule = load_game_schedule(str(schedule_file))
+    assert schedule == {}
+
+
 def test_attach_game_start_adds_field(tmp_path):
     """attach_game_start sets game_start_utc on matching candidates."""
     schedule = {"KXTICKER1": "2026-03-21T01:00:00Z"}
