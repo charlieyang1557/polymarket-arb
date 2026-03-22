@@ -26,6 +26,29 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.kalshi_client import KalshiClient, PROD_BASE
 from src.mm.engine import discord_notify
 
+# Cron schedule (UTC): morning 12:57, afternoon 20:00
+_SCAN_TIMES_UTC = [(12, 57), (20, 0)]
+
+
+def zero_market_message(total: int, now: datetime | None = None) -> str:
+    """Format Discord notification for 0 passing markets."""
+    now = now or datetime.now(timezone.utc)
+    checked_time = now.strftime("%H:%M UTC")
+
+    # Find next scan time
+    today_minutes = now.hour * 60 + now.minute
+    scan_minutes = [(h * 60 + m, f"{h:02d}:{m:02d} UTC") for h, m in _SCAN_TIMES_UTC]
+    next_scan = None
+    for mins, label in sorted(scan_minutes):
+        if mins > today_minutes:
+            next_scan = label
+            break
+    if not next_scan:
+        next_scan = sorted(scan_minutes)[0][1]  # wrap to tomorrow's first scan
+
+    return (f"\U0001f4ca Scanner: 0/{total} markets pass filters. No bot launched.\n"
+            f"Checked at {checked_time}. Next scan: {next_scan}.")
+
 # Only allow sports where our live-game detection (>50 trades/5min) works.
 # E-sports have too little volume — bot can't detect game start.
 ALLOWED_SPORT_PREFIXES = ("KXNBA", "KXNCAAMB", "KXNCAAWB", "KXNHL",
@@ -466,7 +489,7 @@ def main():
 
     if not targets:
         print("\n  No markets pass all filters. Try again later.")
-        discord_notify("**Scanner** 0 markets pass filters — no bot launched")
+        discord_notify(zero_market_message(total=len(checked)))
         return
 
     print(f"\n  Selected targets:")

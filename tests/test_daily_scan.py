@@ -11,7 +11,7 @@ from scripts.kalshi_daily_scan import (
     deep_check, net_spread_cents, rank_candidates,
     ALLOWED_SPORT_PREFIXES, is_allowed_sport,
     load_game_schedule, attach_game_start,
-    is_bot_running,
+    is_bot_running, zero_market_message,
 )
 
 
@@ -451,6 +451,31 @@ def test_schedule_lookup_null_kalshi_markets(tmp_path):
     }]}))
     schedule = load_game_schedule(str(schedule_file))
     assert schedule == {}
+
+
+# -- Zero-market Discord notification ----------------------------------------
+
+def test_zero_market_message_format():
+    """Message contains total count, checked time, and next scan time."""
+    now = datetime(2026, 3, 22, 12, 57, 0, tzinfo=timezone.utc)
+    msg = zero_market_message(total=12, now=now)
+    assert "0/12" in msg
+    assert "12:57" in msg
+    assert "Next scan:" in msg
+
+
+def test_zero_market_message_morning_next_is_afternoon():
+    """Morning scan (12:57 UTC) → next scan should be afternoon (20:00 UTC)."""
+    now = datetime(2026, 3, 22, 12, 57, 0, tzinfo=timezone.utc)
+    msg = zero_market_message(total=8, now=now)
+    assert "20:00" in msg
+
+
+def test_zero_market_message_afternoon_next_is_morning():
+    """Afternoon scan (20:00 UTC) → next scan should be tomorrow morning (12:57 UTC)."""
+    now = datetime(2026, 3, 22, 20, 0, 0, tzinfo=timezone.utc)
+    msg = zero_market_message(total=5, now=now)
+    assert "12:57" in msg
 
 
 def test_attach_game_start_adds_field(tmp_path):
