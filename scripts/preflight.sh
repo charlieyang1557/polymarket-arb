@@ -84,14 +84,27 @@ discord_notify('Pre-flight OK — launching paper MM')
 " 2>&1 >> "$LOG"
 echo "  PASS: notification sent" >> "$LOG"
 
-# 6. Clean old processes
-echo "[6/6] Cleaning old processes..." >> "$LOG"
+# 6. PnL cross-check
+echo "[6/7] PnL verification..." >> "$LOG"
+if [ -f data/mm_paper.db ]; then
+    if $PYTHON scripts/verify_pnl.py --db data/mm_paper.db >> "$LOG" 2>&1; then
+        echo "  PASS: PnL consistent" >> "$LOG"
+    else
+        echo "  FAIL: PnL drift detected" >> "$LOG"
+        notify_fail "PnL cross-check failed — inspect data/mm_paper.db"
+        exit 1
+    fi
+else
+    echo "  SKIP: no database yet" >> "$LOG"
+fi
+
+# 7. Clean old processes
+echo "[7/7] Cleaning old processes..." >> "$LOG"
 pkill -9 -f "paper_mm.py" 2>/dev/null || true
 pkill -f "monitor_drain" 2>/dev/null || true
 pkill -f "caffeinate" 2>/dev/null || true
 sleep 2
-rm -f data/mm_paper.db data/mm_paper.db-wal data/mm_paper.db-shm
-echo "  PASS: cleaned" >> "$LOG"
+echo "  PASS: cleaned (db preserved across sessions)" >> "$LOG"
 
 echo "" >> "$LOG"
 echo "PRE-FLIGHT COMPLETE — all checks passed" >> "$LOG"

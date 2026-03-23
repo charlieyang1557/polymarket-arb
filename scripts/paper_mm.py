@@ -9,7 +9,6 @@ Usage:
     python scripts/paper_mm.py --size 3 --interval 15     # custom params
 
 Standard startup (bot + watchdog):
-    rm -f data/mm_paper.db data/mm_paper.db-wal data/mm_paper.db-shm
     nohup python -u scripts/paper_mm.py > data/mm_paper_run.log 2>&1 &
     nohup python -u scripts/monitor_drain.py > data/mm_monitor.log 2>&1 &
 """
