@@ -21,6 +21,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
+load_dotenv()  # MUST be before src imports — engine.py reads env vars at import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.kalshi_client import KalshiClient, PROD_BASE
@@ -59,7 +60,6 @@ def is_allowed_sport(ticker: str) -> bool:
     """Check if ticker belongs to an allowed sport."""
     return any(ticker.startswith(p) for p in ALLOWED_SPORT_PREFIXES)
 
-load_dotenv()
 OUTPUT_DIR = Path("data/kalshi_diagnostic")
 
 
