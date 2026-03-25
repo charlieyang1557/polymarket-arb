@@ -50,14 +50,27 @@ def zero_market_message(total: int, now: datetime | None = None) -> str:
     return (f"\U0001f4ca Scanner: 0/{total} markets pass filters. No bot launched.\n"
             f"Checked at {checked_time}. Next scan: {next_scan}.")
 
-# Only allow sports where our live-game detection (>50 trades/5min) works.
-# E-sports have too little volume — bot can't detect game start.
+# Traditional sports where frequency-based live detection (>50 trades/5min) works.
 ALLOWED_SPORT_PREFIXES = ("KXNBA", "KXNCAAMB", "KXNCAAWB", "KXNHL",
                           "KXMLB", "KXWBC", "KXNCAAFB")
 
 
-def is_allowed_sport(ticker: str) -> bool:
-    """Check if ticker belongs to an allowed sport."""
+def is_allowed_sport(ticker: str, game_start_utc: str | None = None) -> bool:
+    """Check if ticker is allowed for trading.
+
+    If game_start_utc is provided and >15min in the future, any sport
+    (including e-sports) is allowed — L4 uses deterministic time-based exit.
+    Otherwise, only traditional sports with reliable frequency-based live
+    detection are allowed.
+    """
+    if game_start_utc:
+        try:
+            start = datetime.fromisoformat(
+                game_start_utc.replace("Z", "+00:00"))
+            if start > datetime.now(timezone.utc) + timedelta(minutes=15):
+                return True
+        except (ValueError, TypeError):
+            pass
     return any(ticker.startswith(p) for p in ALLOWED_SPORT_PREFIXES)
 
 OUTPUT_DIR = Path("data/kalshi_diagnostic")
@@ -167,8 +180,10 @@ def rank_candidates(candidates: list[dict]) -> list[dict]:
     return passing + failing
 
 
-def scan_today_sports(client: KalshiClient) -> list[dict]:
+def scan_today_sports(client: KalshiClient,
+                      schedule: dict[str, str] | None = None) -> list[dict]:
     """Find today's sports spread/total markets suitable for MM."""
+    schedule = schedule or {}
     now = datetime.now(timezone.utc)
     # Today and tomorrow in UTC (covers ET evening games)
     today_str = now.strftime("%Y-%m-%d")
@@ -193,8 +208,8 @@ def scan_today_sports(client: KalshiClient) -> list[dict]:
             for m in ev.get("markets", []):
                 ticker = m.get("ticker", "")
 
-                # Only allowed sports (no e-sports — live detection fails)
-                if not is_allowed_sport(ticker):
+                # Sport whitelist (e-sports allowed only with scheduled game time)
+                if not is_allowed_sport(ticker, schedule.get(ticker)):
                     continue
 
                 # Only spread and total markets (symmetric liquidity)
@@ -341,7 +356,7 @@ def deep_check(client: KalshiClient, candidates: list[dict],
             # Pre-filters (binary)
             max_best_depth = max(yes_best_depth, no_best_depth)
             c["max_best_depth"] = max_best_depth
-            c["passes"] = (c["net_spread"] >= 2
+            c["passes"] = (c["net_spread"] >= 1
                            and c["net_spread"] <= 8
                            and c["spread"] < 15
                            and 35 <= c["midpoint"] <= 65
@@ -393,8 +408,11 @@ def main():
     print(f"Time: {datetime.now(timezone.utc).isoformat()}")
     print("=" * 60)
 
+    # Load game schedule (used for e-sports allowance + time-based exit)
+    schedule = load_game_schedule()
+
     # Phase 1: Find today's candidates
-    candidates = scan_today_sports(client)
+    candidates = scan_today_sports(client, schedule)
     print(f"\n  Found {len(candidates)} spread/total markets today")
 
     if not candidates:
@@ -410,7 +428,6 @@ def main():
     ranked = rank_candidates(checked)
 
     # Phase 3b: Attach game start times from schedule
-    schedule = load_game_schedule()
     attach_game_start(ranked, schedule)
     scheduled_count = sum(1 for c in ranked if "game_start_utc" in c)
     if scheduled_count:

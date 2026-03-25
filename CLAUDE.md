@@ -83,8 +83,14 @@ Layer 4: System checks
 ## Scanner Filters
 
 ```
+Sport whitelist (applied in scan_today_sports):
+  - Traditional sports (NBA, NCAA M/W, NHL, MLB, WBC, NCAA FB): always allowed
+  - E-sports (LOL, CSGO, etc.): allowed ONLY if game_schedule.json provides
+    game_start_utc that is >15min in the future (L4 deterministic time-based exit)
+  - E-sports without schedule data: blocked (frequency-based live detection unreliable)
+
 Pre-filters (binary pass/fail):
-  - net_spread > 0 and <= 8, where net_spread = market_spread - 2 * ceil(0.0175 * P * (1-P) * 100). This is gross spread minus estimated round-trip maker fees.
+  - net_spread >= 1 and <= 8, where net_spread = market_spread - 2 * ceil(0.0175 * P * (1-P) * 100). This is gross spread minus estimated round-trip maker fees. net_spread=1 is profitable (raw spread=3c minus 2c fees). The old >=2 threshold was too aggressive — 17/20 candidates on Mar 25 failed only on net_spread.
   - spread < 15
   - midpoint 35c - 65c (filters alt-lines/blowout bets with toxic adverse selection)
   - symmetry 0.2 - 5.0

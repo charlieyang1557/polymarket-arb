@@ -92,7 +92,7 @@ def test_deep_check_adds_net_spread():
                    "expected_expiration": "2099-12-31T23:59:59Z"}]
     result = deep_check(client, candidates, max_check=1)
     assert "net_spread" in result[0]
-    assert result[0]["net_spread"] >= 2
+    assert result[0]["net_spread"] >= 1
 
 
 def test_deep_check_adds_binding_queue():
@@ -248,6 +248,31 @@ def test_deep_check_fails_negative_net_spread():
     assert result[0].get("passes") is False
 
 
+def test_deep_check_passes_net_spread_1():
+    """Net spread == 1 should pass (raw spread=3c at mid=50 → net=1c after fees)."""
+    client = _mock_client(100)
+    # spread=3 at midpoint 50 → fee = ceil(0.0175*50*50/100) = 1c
+    # net = 3 - 2*1 = 1
+    candidates = [{"ticker": "THIN_OK", "spread": 3, "midpoint": 50,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0]["net_spread"] == 1
+    assert result[0].get("passes") is True
+
+
+def test_deep_check_fails_net_spread_0():
+    """Net spread == 0 should fail."""
+    client = _mock_client(100)
+    # spread=2 at midpoint 50 → net = 2 - 2*1 = 0
+    candidates = [{"ticker": "ZERO_NET", "spread": 2, "midpoint": 50,
+                   "volume_24h": 5000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0]["net_spread"] == 0
+    assert result[0].get("passes") is False
+
+
 def test_deep_check_fails_expiring_soon():
     """Market expiring in 30 minutes should fail."""
     client = _mock_client(100)
@@ -343,11 +368,11 @@ def test_allowed_sport_nhl():
 def test_allowed_sport_mlb():
     assert is_allowed_sport("KXMLBSPREAD-26MAR19FOO-BAR1") is True
 
-def test_rejected_esport_lol():
-    """E-sports rejected: live game detection doesn't work."""
+def test_rejected_esport_lol_no_schedule():
+    """E-sports without game_start_utc rejected — no deterministic exit."""
     assert is_allowed_sport("KXLOLTOTALMAPS-26MAR19LYGEN-4") is False
 
-def test_rejected_esport_csgo():
+def test_rejected_esport_csgo_no_schedule():
     assert is_allowed_sport("KXCSGOTOTALMAPS-26MAR19FOO-BAR") is False
 
 def test_rejected_unknown_prefix():
@@ -360,6 +385,42 @@ def test_allowed_prefixes_list():
     assert "KXNCAAWB" in ALLOWED_SPORT_PREFIXES
     assert "KXNHL" in ALLOWED_SPORT_PREFIXES
     assert "KXMLB" in ALLOWED_SPORT_PREFIXES
+
+
+# -- Conditional e-sports allowance ----------------------------------------
+
+def test_esport_allowed_with_future_game_start():
+    """E-sports WITH valid future game_start_utc should pass."""
+    future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    assert is_allowed_sport("KXLOLTOTALMAPS-26MAR19LYGEN-4",
+                            game_start_utc=future) is True
+
+def test_esport_blocked_with_past_game_start():
+    """E-sports with past game_start_utc should be blocked."""
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    assert is_allowed_sport("KXLOLTOTALMAPS-26MAR19LYGEN-4",
+                            game_start_utc=past) is False
+
+def test_esport_blocked_with_imminent_game_start():
+    """E-sports with game_start_utc within 15min should be blocked."""
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    assert is_allowed_sport("KXLOLTOTALMAPS-26MAR19LYGEN-4",
+                            game_start_utc=soon) is False
+
+def test_esport_allowed_at_16min_boundary():
+    """E-sports with game_start_utc at exactly 16min should pass."""
+    boundary = (datetime.now(timezone.utc) + timedelta(minutes=16)).isoformat()
+    assert is_allowed_sport("KXCSGOTOTALMAPS-26MAR19FOO-BAR",
+                            game_start_utc=boundary) is True
+
+def test_traditional_sport_still_passes_without_schedule():
+    """NBA etc. still pass without game_start_utc (unchanged behavior)."""
+    assert is_allowed_sport("KXNBASPREAD-26MAR19DETWAS-DET25") is True
+
+def test_esport_blocked_with_none_game_start():
+    """Explicit None game_start_utc should not bypass whitelist."""
+    assert is_allowed_sport("KXLOLTOTALMAPS-26MAR19LYGEN-4",
+                            game_start_utc=None) is False
 
 
 # -- Midpoint filter ----------------------------------------------------------
