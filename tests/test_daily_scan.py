@@ -368,6 +368,9 @@ def test_allowed_sport_nhl():
 def test_allowed_sport_mlb():
     assert is_allowed_sport("KXMLBSPREAD-26MAR19FOO-BAR1") is True
 
+def test_allowed_sport_nfl():
+    assert is_allowed_sport("KXNFLSPREAD-26SEP19FOO-BAR1") is True
+
 def test_rejected_esport_lol_no_schedule():
     """E-sports without game_start_utc rejected — no deterministic exit."""
     assert is_allowed_sport("KXLOLTOTALMAPS-26MAR19LYGEN-4") is False
@@ -384,6 +387,7 @@ def test_allowed_prefixes_list():
     assert "KXNCAAMB" in ALLOWED_SPORT_PREFIXES
     assert "KXNCAAWB" in ALLOWED_SPORT_PREFIXES
     assert "KXNHL" in ALLOWED_SPORT_PREFIXES
+    assert "KXNFL" in ALLOWED_SPORT_PREFIXES
     assert "KXMLB" in ALLOWED_SPORT_PREFIXES
 
 

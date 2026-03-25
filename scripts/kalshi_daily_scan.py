@@ -52,7 +52,7 @@ def zero_market_message(total: int, now: datetime | None = None) -> str:
 
 # Traditional sports where frequency-based live detection (>50 trades/5min) works.
 ALLOWED_SPORT_PREFIXES = ("KXNBA", "KXNCAAMB", "KXNCAAWB", "KXNHL",
-                          "KXMLB", "KXWBC", "KXNCAAFB")
+                          "KXMLB", "KXWBC", "KXNCAAFB", "KXNFL")
 
 
 def is_allowed_sport(ticker: str, game_start_utc: str | None = None) -> bool:
