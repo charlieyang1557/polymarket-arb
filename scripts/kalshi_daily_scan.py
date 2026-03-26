@@ -102,14 +102,18 @@ SCHEDULE_MAX_AGE_HOURS = 6
 PENDING_MARKETS_PATH = "data/pending_markets.json"
 
 
-def load_game_schedule(path: str = SCHEDULE_PATH) -> dict[str, str]:
+def load_game_schedule(path: str = SCHEDULE_PATH
+                       ) -> tuple[dict[str, str], list[dict]]:
     """Load game schedule and build ticker -> start_time_utc lookup.
 
-    Returns empty dict if file is missing, malformed, or stale (>6h old).
-    Staleness check prevents acting on outdated game_start_utc values,
-    which would break L4 time-based exit for e-sports.
+    Returns (schedule_dict, games_list).
+    schedule_dict: ticker → start_time_utc (from kalshi_markets field).
+    games_list: raw game entries for Python-side matching.
+
+    Returns ({}, []) if file is missing, malformed, or stale (>6h old).
     """
-    schedule = {}
+    schedule: dict[str, str] = {}
+    games: list[dict] = []
     try:
         with open(path) as f:
             data = json.load(f)
@@ -119,22 +123,23 @@ def load_game_schedule(path: str = SCHEDULE_PATH) -> dict[str, str]:
         if not updated_at:
             print("  WARNING: game_schedule.json missing updated_at — "
                   "treating as stale")
-            return {}
+            return {}, []
         updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
         age_hours = ((datetime.now(timezone.utc) - updated).total_seconds()
                      / 3600)
         if age_hours > SCHEDULE_MAX_AGE_HOURS:
             print(f"  WARNING: game_schedule.json is {age_hours:.1f}h old — "
                   "treating as stale")
-            return {}
+            return {}, []
 
-        for game in data.get("games", []):
+        games = data.get("games", [])
+        for game in games:
             start = game.get("start_time_utc", "")
             for ticker in (game.get("kalshi_markets") or []):
                 schedule[ticker] = start
     except (FileNotFoundError, json.JSONDecodeError):
         pass
-    return schedule
+    return schedule, games
 
 
 def attach_game_start(candidates: list[dict],
@@ -161,6 +166,66 @@ def write_pending_markets(targets: list[dict], path: str = PENDING_MARKETS_PATH,
         json.dump(new_targets, f, indent=2)
     os.rename(tmp_path, path)
     return len(new_targets)
+
+
+def match_schedule_to_market(schedule_games: list[dict], ticker: str,
+                             event_expiration_utc: str,
+                             event_title: str = "") -> str | None:
+    """Match a Kalshi market to a game in the schedule.
+
+    Returns game_start_utc string if matched, None otherwise.
+
+    Priority 1: Contiguous abbreviation match in ticker
+      (away+home or home+away as substring, case-insensitive)
+    Priority 2: Token intersection in event_title
+      (at least one word >=3 chars from each team's full name)
+    Both require date proximity: abs(expiration - game_start) <= 24h.
+    """
+    try:
+        exp_dt = datetime.fromisoformat(
+            event_expiration_utc.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+    ticker_upper = ticker.upper()
+    title_lower = event_title.lower()
+
+    for game in schedule_games:
+        start_str = game.get("start_time_utc", "")
+        if not start_str:
+            continue
+        try:
+            start_dt = datetime.fromisoformat(
+                start_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+
+        # Date check: within 24h
+        if abs((exp_dt - start_dt).total_seconds()) > 86400:
+            continue
+
+        away = (game.get("away_team") or "").upper()
+        home = (game.get("home_team") or "").upper()
+
+        # Priority 1: contiguous abbreviation in ticker
+        if away and home:
+            if f"{away}{home}" in ticker_upper or \
+               f"{home}{away}" in ticker_upper:
+                return start_str
+
+        # Priority 2: title token intersection
+        if title_lower:
+            away_full = (game.get("away_full") or "").lower()
+            home_full = (game.get("home_full") or "").lower()
+            away_words = {w for w in away_full.split() if len(w) >= 3}
+            home_words = {w for w in home_full.split() if len(w) >= 3}
+
+            away_hit = any(w in title_lower for w in away_words)
+            home_hit = any(w in title_lower for w in home_words)
+            if away_hit and home_hit:
+                return start_str
+
+    return None
 
 
 def rank_candidates(candidates: list[dict]) -> list[dict]:
@@ -221,9 +286,11 @@ def rank_candidates(candidates: list[dict]) -> list[dict]:
 
 
 def scan_today_sports(client: KalshiClient,
-                      schedule: dict[str, str] | None = None) -> list[dict]:
+                      schedule: dict[str, str] | None = None,
+                      schedule_games: list[dict] | None = None) -> list[dict]:
     """Find today's sports spread/total markets suitable for MM."""
     schedule = schedule or {}
+    schedule_games = schedule_games or []
     now = datetime.now(timezone.utc)
     # Today and tomorrow in UTC (covers ET evening games)
     today_str = now.strftime("%Y-%m-%d")
@@ -248,16 +315,27 @@ def scan_today_sports(client: KalshiClient,
             for m in ev.get("markets", []):
                 ticker = m.get("ticker", "")
 
-                # Sport whitelist (e-sports allowed only with scheduled game time)
-                if not is_allowed_sport(ticker, schedule.get(ticker)):
-                    continue
-
                 # Only spread and total markets (symmetric liquidity)
                 if "SPREAD" not in ticker and "TOTAL" not in ticker:
                     continue
 
                 exp = m.get("expected_expiration_time", "")
                 if not exp:
+                    continue
+
+                # Match to game schedule (Python-side, replaces LLM matching)
+                matched_start = schedule.get(ticker)
+                if not matched_start and schedule_games:
+                    event_title = ev.get("title", "")
+                    matched_start = match_schedule_to_market(
+                        schedule_games, ticker, exp, event_title)
+                    if matched_start:
+                        schedule[ticker] = matched_start
+                        print(f"  SCHEDULE MATCH: {ticker} → {event_title} "
+                              f"[{matched_start}]")
+
+                # Sport whitelist (e-sports allowed only with scheduled game time)
+                if not is_allowed_sport(ticker, matched_start):
                     continue
 
                 # Must expire today or tomorrow
@@ -309,6 +387,15 @@ def scan_today_sports(client: KalshiClient,
             break
 
     print(f"  Scanned {total_events} events")
+
+    # Log unmatched schedule games
+    matched_starts = set(schedule.values())
+    for game in schedule_games:
+        start = game.get("start_time_utc", "")
+        if start and start not in matched_starts:
+            away = game.get("away_full", game.get("away_team", "?"))
+            home = game.get("home_full", game.get("home_team", "?"))
+            print(f"  SCHEDULE UNMATCHED: {away} vs {home} [{start}]")
 
     # Sort by volume, then spread
     candidates.sort(key=lambda c: (c["volume_24h"], c["spread"]),
@@ -449,10 +536,10 @@ def main():
     print("=" * 60)
 
     # Load game schedule (used for e-sports allowance + time-based exit)
-    schedule = load_game_schedule()
+    schedule, schedule_games = load_game_schedule()
 
-    # Phase 1: Find today's candidates
-    candidates = scan_today_sports(client, schedule)
+    # Phase 1: Find today's candidates (Python-side schedule matching)
+    candidates = scan_today_sports(client, schedule, schedule_games)
     print(f"\n  Found {len(candidates)} spread/total markets today")
 
     if not candidates:

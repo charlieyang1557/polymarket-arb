@@ -12,7 +12,7 @@ from scripts.kalshi_daily_scan import (
     ALLOWED_SPORT_PREFIXES, is_allowed_sport,
     load_game_schedule, attach_game_start,
     is_bot_running, zero_market_message,
-    write_pending_markets,
+    write_pending_markets, match_schedule_to_market,
 )
 
 
@@ -487,25 +487,30 @@ def test_schedule_lookup_matches_ticker(tmp_path):
             "kalshi_markets": ["KXNCAAMBSPREAD-26MAR20PVFLA-FLA47"]
         }]
     }))
-    schedule = load_game_schedule(str(schedule_file))
+    schedule, _ = load_game_schedule(str(schedule_file))
     assert schedule["KXNCAAMBSPREAD-26MAR20PVFLA-FLA47"] == "2026-03-21T01:25:00Z"
 
 
 def test_schedule_lookup_missing_file_graceful():
     """Missing schedule file returns empty dict, no crash."""
-    schedule = load_game_schedule("/nonexistent/path/game_schedule.json")
+    schedule, games = load_game_schedule("/nonexistent/path/game_schedule.json")
     assert schedule == {}
+    assert games == []
 
 
 def test_schedule_lookup_ticker_not_in_schedule(tmp_path):
     """Ticker not in schedule → no game_start_utc attached."""
     schedule_file = tmp_path / "game_schedule.json"
-    schedule_file.write_text(json.dumps({"games": [{
-        "sport": "NCAA",
-        "start_time_utc": "2026-03-21T01:25:00Z",
-        "kalshi_markets": ["KXNCAAMBSPREAD-OTHER"]
-    }]}))
-    schedule = load_game_schedule(str(schedule_file))
+    fresh = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    schedule_file.write_text(json.dumps({
+        "updated_at": fresh,
+        "games": [{
+            "sport": "NCAA",
+            "start_time_utc": "2026-03-21T01:25:00Z",
+            "kalshi_markets": ["KXNCAAMBSPREAD-OTHER"]
+        }]
+    }))
+    schedule, _ = load_game_schedule(str(schedule_file))
     candidates = [{"ticker": "KXNCAAMBSPREAD-NOTFOUND", "passes": True}]
     attach_game_start(candidates, schedule)
     assert "game_start_utc" not in candidates[0]
@@ -523,7 +528,7 @@ def test_schedule_lookup_null_kalshi_markets(tmp_path):
             "kalshi_markets": None
         }]
     }))
-    schedule = load_game_schedule(str(schedule_file))
+    schedule, _ = load_game_schedule(str(schedule_file))
     assert schedule == {}
 
 
@@ -652,7 +657,7 @@ def test_schedule_staleness_revokes_esports(tmp_path):
             "kalshi_markets": ["KXLOLTOTALMAPS-T1"]
         }]
     }))
-    schedule = load_game_schedule(str(schedule_file))
+    schedule, _ = load_game_schedule(str(schedule_file))
     assert schedule == {}
 
 
@@ -668,7 +673,7 @@ def test_schedule_fresh_allows_esports(tmp_path):
             "kalshi_markets": ["KXLOLTOTALMAPS-T1"]
         }]
     }))
-    schedule = load_game_schedule(str(schedule_file))
+    schedule, _ = load_game_schedule(str(schedule_file))
     assert "KXLOLTOTALMAPS-T1" in schedule
 
 
@@ -682,5 +687,104 @@ def test_schedule_no_updated_at_treated_as_stale(tmp_path):
             "kalshi_markets": ["KXNBASPREAD-T1"]
         }]
     }))
-    schedule = load_game_schedule(str(schedule_file))
+    schedule, _ = load_game_schedule(str(schedule_file))
     assert schedule == {}
+
+
+# -- Schedule-to-market matching -----------------------------------------------
+
+def _game(away="WPG", home="NYR", away_full="Winnipeg Jets",
+          home_full="New York Rangers",
+          start="2026-03-22T23:00:00Z", sport="NHL"):
+    """Helper to build a schedule game entry."""
+    return {
+        "sport": sport,
+        "away_team": away, "home_team": home,
+        "away_full": away_full, "home_full": home_full,
+        "start_time_utc": start, "kalshi_markets": [],
+    }
+
+
+def test_match_contiguous_ticker_abbreviation():
+    """PRIORITY 1: 'WPGNYR' found contiguously in ticker."""
+    games = [_game(away="WPG", home="NYR")]
+    result = match_schedule_to_market(
+        games, "KXNHLTOTAL-26MAR22WPGNYR-5", "2026-03-23T04:00:00Z")
+    assert result == "2026-03-22T23:00:00Z"
+
+
+def test_match_contiguous_reversed_order():
+    """PRIORITY 1: home+away order also matches."""
+    games = [_game(away="WPG", home="NYR")]
+    result = match_schedule_to_market(
+        games, "KXNHLTOTAL-26MAR22NYRWPG-5", "2026-03-23T04:00:00Z")
+    assert result == "2026-03-22T23:00:00Z"
+
+
+def test_reject_separate_abbreviation_match():
+    """'IN'+'LA' must NOT match 'LALMIN' — abbreviations must be contiguous."""
+    games = [_game(away="IN", home="LA", away_full="Indiana Pacers",
+                   home_full="Los Angeles Lakers", sport="NBA")]
+    result = match_schedule_to_market(
+        games, "KXNBASPREAD-26MAR22LALMIN-LAL5", "2026-03-23T04:00:00Z")
+    # "INLA" or "LAIN" is NOT in "LALMIN", so no ticker match
+    # Title fallback needs both teams — not testing that here
+    assert result is None
+
+
+def test_match_title_fallback_both_teams():
+    """PRIORITY 2: Token intersection — both team names in event title."""
+    games = [_game(away="NYK", home="CHA",
+                   away_full="New York Knicks", home_full="Charlotte Hornets",
+                   sport="NBA")]
+    result = match_schedule_to_market(
+        games, "KXNBASPREAD-26MAR22NYKCHR-NYK5", "2026-03-23T04:00:00Z",
+        event_title="Knicks at Hornets")
+    assert result is not None
+
+
+def test_reject_one_team_only_title():
+    """Title match requires BOTH teams, not just one."""
+    games = [_game(away="NYK", home="CHA",
+                   away_full="New York Knicks", home_full="Charlotte Hornets",
+                   sport="NBA")]
+    result = match_schedule_to_market(
+        games, "KXNBASPREAD-26MAR22XXXYYY-X1", "2026-03-23T04:00:00Z",
+        event_title="Knicks vs Thunder")
+    assert result is None
+
+
+def test_match_date_boundary_pt_evening():
+    """PT evening game (MAR22 10PM PT) = UTC MAR23 5AM. Ticker says MAR22."""
+    games = [_game(start="2026-03-23T05:00:00Z")]  # game at 10PM PT Mar22
+    # Event expires MAR23 in UTC (next day) — within 24h of game start
+    result = match_schedule_to_market(
+        games, "KXNHLTOTAL-26MAR22WPGNYR-5", "2026-03-23T10:00:00Z")
+    assert result == "2026-03-23T05:00:00Z"
+
+
+def test_reject_date_too_far():
+    """Game 48h away should not match."""
+    games = [_game(start="2026-03-24T23:00:00Z")]
+    result = match_schedule_to_market(
+        games, "KXNHLTOTAL-26MAR22WPGNYR-5", "2026-03-22T23:00:00Z")
+    assert result is None
+
+
+def test_match_ncaa_ticker():
+    """NCAA tickers: 'ILST'+'DAY' in KXNCAAMBSPREAD ticker."""
+    games = [_game(away="ILST", home="DAY",
+                   away_full="Illinois State Redbirds",
+                   home_full="Dayton Flyers",
+                   sport="NCAA", start="2026-03-22T23:00:00Z")]
+    result = match_schedule_to_market(
+        games, "KXNCAAMBSPREAD-26MAR22ILSTDAY-DAY5", "2026-03-23T04:00:00Z")
+    assert result == "2026-03-22T23:00:00Z"
+
+
+def test_match_case_insensitive():
+    """Ticker matching is case-insensitive."""
+    games = [_game(away="wpg", home="nyr")]
+    result = match_schedule_to_market(
+        games, "KXNHLTOTAL-26MAR22WPGNYR-5", "2026-03-23T04:00:00Z")
+    assert result == "2026-03-22T23:00:00Z"
