@@ -30,7 +30,7 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.kalshi_client import KalshiClient, PROD_BASE
 from src.mm.state import MarketState, GlobalState
-from src.mm.engine import MMEngine, discord_notify
+from src.mm.engine import MMEngine, discord_notify, load_pending_markets
 from src.mm.db import MMDatabase
 
 DEFAULT_TICKERS = [
@@ -149,6 +149,17 @@ def main():
                     engine._cancel_orders(ms, f"unexpected_error: {e}")
 
             cycle += 1
+
+            # Hot-add pending markets (every 6th cycle, ~60s)
+            if cycle % 6 == 0:
+                new_tickers = load_pending_markets(gs)
+                if new_tickers:
+                    tickers.extend(new_tickers)
+                    for t in new_tickers:
+                        print(f"  HOT-ADD [{t}] added to session")
+                    discord_notify(
+                        f"**Hot-Add** {len(new_tickers)} markets added: "
+                        f"{', '.join(new_tickers)}")
 
             # Periodic 12h summary
             now_ts = time.time()
