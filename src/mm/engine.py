@@ -30,17 +30,28 @@ def load_pending_markets(gs: GlobalState, path: str = PENDING_MARKETS_PATH,
                          max_active: int = MAX_ACTIVE_MARKETS) -> list[str]:
     """Check for pending_markets.json, add new markets to session.
 
+    Atomic consume: rename to .processing first, then read and process,
+    then delete. Prevents race condition where scanner writes a new file
+    while engine is mid-processing.
+
     Returns list of ticker strings that were added.
     """
     if not os.path.exists(path):
         return []
 
+    # Atomic consume: claim the file before reading
+    processing_path = path + ".processing"
     try:
-        with open(path) as f:
+        os.rename(path, processing_path)
+    except OSError:
+        return []  # another process claimed it, or disappeared
+
+    try:
+        with open(processing_path) as f:
             pending = json.load(f)
     except (json.JSONDecodeError, IOError) as e:
         logger.warning("Malformed pending_markets.json: %s", e)
-        os.remove(path)
+        os.remove(processing_path)
         return []
 
     active_count = sum(1 for m in gs.markets.values() if m.active)
@@ -68,7 +79,7 @@ def load_pending_markets(gs: GlobalState, path: str = PENDING_MARKETS_PATH,
         added.append(ticker)
         active_count += 1
 
-    os.remove(path)
+    os.remove(processing_path)
     return added
 
 

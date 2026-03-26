@@ -106,8 +106,9 @@ def test_engine_loads_pending_markets(tmp_path):
     assert "NEW2" in gs.markets
     assert gs.markets["NEW1"].game_start_utc is not None
     assert gs.markets["NEW2"].game_start_utc is None
-    # File should be deleted after processing
+    # Both original and .processing files should be gone
     assert not os.path.exists(pending_path)
+    assert not os.path.exists(pending_path + ".processing")
 
 
 def test_engine_skips_duplicate_tickers(tmp_path):
@@ -162,8 +163,9 @@ def test_engine_handles_malformed_pending(tmp_path):
 
     added = load_pending_markets(gs, pending_path, max_active=15)
     assert added == []
-    # File should be deleted even if malformed
+    # Both original and .processing files should be gone
     assert not os.path.exists(pending_path)
+    assert not os.path.exists(pending_path + ".processing")
 
 
 def test_engine_no_pending_file(tmp_path):
@@ -173,3 +175,34 @@ def test_engine_no_pending_file(tmp_path):
     gs = GlobalState(session_id="test")
     added = load_pending_markets(gs, str(tmp_path / "nope.json"), max_active=15)
     assert added == []
+
+
+def test_engine_atomic_consume_preserves_new_file(tmp_path):
+    """Scanner can write a new pending file while engine processes the old one.
+
+    Simulates: engine renames to .processing, scanner writes new file,
+    engine deletes .processing — new file survives.
+    """
+    from src.mm.engine import load_pending_markets
+
+    gs = GlobalState(session_id="test")
+    pending_path = str(tmp_path / "pending_markets.json")
+
+    # Engine's first pending file
+    with open(pending_path, "w") as f:
+        json.dump([{"ticker": "BATCH1"}], f)
+
+    # Engine renames to .processing (simulated by calling load_pending_markets)
+    added = load_pending_markets(gs, pending_path, max_active=15)
+    assert added == ["BATCH1"]
+
+    # Scanner writes a NEW file at the same path after engine consumed the old one
+    with open(pending_path, "w") as f:
+        json.dump([{"ticker": "BATCH2"}], f)
+
+    # The new file should survive — engine only deleted .processing
+    assert os.path.exists(pending_path)
+
+    # Engine picks up the new file on next check
+    added2 = load_pending_markets(gs, pending_path, max_active=15)
+    assert added2 == ["BATCH2"]
