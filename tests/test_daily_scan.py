@@ -12,6 +12,7 @@ from scripts.kalshi_daily_scan import (
     ALLOWED_SPORT_PREFIXES, is_allowed_sport,
     load_game_schedule, attach_game_start,
     is_bot_running, zero_market_message,
+    write_pending_markets,
 )
 
 
@@ -475,13 +476,17 @@ def test_deep_check_passes_midpoint_50():
 def test_schedule_lookup_matches_ticker(tmp_path):
     """Schedule file maps ticker to game start time."""
     schedule_file = tmp_path / "game_schedule.json"
-    schedule_file.write_text(json.dumps({"games": [{
-        "sport": "NCAA",
-        "away_team": "PV",
-        "home_team": "FLA",
-        "start_time_utc": "2026-03-21T01:25:00Z",
-        "kalshi_markets": ["KXNCAAMBSPREAD-26MAR20PVFLA-FLA47"]
-    }]}))
+    fresh = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    schedule_file.write_text(json.dumps({
+        "updated_at": fresh,
+        "games": [{
+            "sport": "NCAA",
+            "away_team": "PV",
+            "home_team": "FLA",
+            "start_time_utc": "2026-03-21T01:25:00Z",
+            "kalshi_markets": ["KXNCAAMBSPREAD-26MAR20PVFLA-FLA47"]
+        }]
+    }))
     schedule = load_game_schedule(str(schedule_file))
     assert schedule["KXNCAAMBSPREAD-26MAR20PVFLA-FLA47"] == "2026-03-21T01:25:00Z"
 
@@ -509,11 +514,15 @@ def test_schedule_lookup_ticker_not_in_schedule(tmp_path):
 def test_schedule_lookup_null_kalshi_markets(tmp_path):
     """kalshi_markets: null should not crash — treat as empty list."""
     schedule_file = tmp_path / "game_schedule.json"
-    schedule_file.write_text(json.dumps({"games": [{
-        "sport": "NCAA",
-        "start_time_utc": "2026-03-21T01:25:00Z",
-        "kalshi_markets": None
-    }]}))
+    fresh = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    schedule_file.write_text(json.dumps({
+        "updated_at": fresh,
+        "games": [{
+            "sport": "NCAA",
+            "start_time_utc": "2026-03-21T01:25:00Z",
+            "kalshi_markets": None
+        }]
+    }))
     schedule = load_game_schedule(str(schedule_file))
     assert schedule == {}
 
@@ -583,3 +592,95 @@ def test_is_bot_running_handles_multiple_pids():
         running, pid = is_bot_running()
         assert running is True
         assert pid == "12345"
+
+
+# -- Pending markets (hot-add) -----------------------------------------------
+
+def test_write_pending_markets_atomic(tmp_path):
+    """write_pending_markets writes JSON atomically via .tmp rename."""
+    targets = [
+        {"ticker": "KXNBASPREAD-T1", "title": "NBA Game 1",
+         "game_start_utc": "2026-03-26T23:00:00Z"},
+        {"ticker": "KXNHLSPREAD-T2", "title": "NHL Game 2"},
+    ]
+    out_path = str(tmp_path / "pending_markets.json")
+    n = write_pending_markets(targets, out_path)
+    assert n == 2
+    assert (tmp_path / "pending_markets.json").exists()
+    data = json.loads((tmp_path / "pending_markets.json").read_text())
+    assert len(data) == 2
+    assert data[0]["ticker"] == "KXNBASPREAD-T1"
+    # .tmp should not linger
+    assert not (tmp_path / "pending_markets.json.tmp").exists()
+
+
+def test_write_pending_markets_excludes_active(tmp_path):
+    """Tickers already in running session are excluded from pending."""
+    targets = [
+        {"ticker": "KXNBASPREAD-T1", "title": "Game 1"},
+        {"ticker": "KXNBASPREAD-T2", "title": "Game 2"},
+    ]
+    active_tickers = {"KXNBASPREAD-T1"}
+    out_path = str(tmp_path / "pending.json")
+    n = write_pending_markets(targets, out_path, active_tickers=active_tickers)
+    assert n == 1
+    data = json.loads((tmp_path / "pending.json").read_text())
+    assert len(data) == 1
+    assert data[0]["ticker"] == "KXNBASPREAD-T2"
+
+
+def test_write_pending_markets_empty_returns_zero(tmp_path):
+    """All tickers already active → writes nothing, returns 0."""
+    targets = [{"ticker": "KXNBA-T1"}]
+    out_path = str(tmp_path / "pending.json")
+    n = write_pending_markets(targets, out_path, active_tickers={"KXNBA-T1"})
+    assert n == 0
+    assert not (tmp_path / "pending.json").exists()
+
+
+# -- Schedule staleness -------------------------------------------------------
+
+def test_schedule_staleness_revokes_esports(tmp_path):
+    """Schedule >6h old → returns empty dict."""
+    schedule_file = tmp_path / "game_schedule.json"
+    old_time = (datetime.now(timezone.utc) - timedelta(hours=7)).isoformat()
+    schedule_file.write_text(json.dumps({
+        "updated_at": old_time,
+        "games": [{
+            "sport": "LOL",
+            "start_time_utc": "2026-03-26T23:00:00Z",
+            "kalshi_markets": ["KXLOLTOTALMAPS-T1"]
+        }]
+    }))
+    schedule = load_game_schedule(str(schedule_file))
+    assert schedule == {}
+
+
+def test_schedule_fresh_allows_esports(tmp_path):
+    """Schedule <6h old → e-sports tickers get game_start_utc."""
+    schedule_file = tmp_path / "game_schedule.json"
+    fresh_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    schedule_file.write_text(json.dumps({
+        "updated_at": fresh_time,
+        "games": [{
+            "sport": "LOL",
+            "start_time_utc": "2026-03-26T23:00:00Z",
+            "kalshi_markets": ["KXLOLTOTALMAPS-T1"]
+        }]
+    }))
+    schedule = load_game_schedule(str(schedule_file))
+    assert "KXLOLTOTALMAPS-T1" in schedule
+
+
+def test_schedule_no_updated_at_treated_as_stale(tmp_path):
+    """Missing updated_at → treat as stale, return empty."""
+    schedule_file = tmp_path / "game_schedule.json"
+    schedule_file.write_text(json.dumps({
+        "games": [{
+            "sport": "NBA",
+            "start_time_utc": "2026-03-26T23:00:00Z",
+            "kalshi_markets": ["KXNBASPREAD-T1"]
+        }]
+    }))
+    schedule = load_game_schedule(str(schedule_file))
+    assert schedule == {}

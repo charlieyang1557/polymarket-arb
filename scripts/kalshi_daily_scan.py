@@ -98,14 +98,36 @@ def is_bot_running() -> tuple[bool, str | None]:
 
 
 SCHEDULE_PATH = "data/game_schedule.json"
+SCHEDULE_MAX_AGE_HOURS = 6
+PENDING_MARKETS_PATH = "data/pending_markets.json"
 
 
 def load_game_schedule(path: str = SCHEDULE_PATH) -> dict[str, str]:
-    """Load game schedule and build ticker → start_time_utc lookup."""
+    """Load game schedule and build ticker -> start_time_utc lookup.
+
+    Returns empty dict if file is missing, malformed, or stale (>6h old).
+    Staleness check prevents acting on outdated game_start_utc values,
+    which would break L4 time-based exit for e-sports.
+    """
     schedule = {}
     try:
         with open(path) as f:
             data = json.load(f)
+
+        # Staleness check
+        updated_at = data.get("updated_at")
+        if not updated_at:
+            print("  WARNING: game_schedule.json missing updated_at — "
+                  "treating as stale")
+            return {}
+        updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        age_hours = ((datetime.now(timezone.utc) - updated).total_seconds()
+                     / 3600)
+        if age_hours > SCHEDULE_MAX_AGE_HOURS:
+            print(f"  WARNING: game_schedule.json is {age_hours:.1f}h old — "
+                  "treating as stale")
+            return {}
+
         for game in data.get("games", []):
             start = game.get("start_time_utc", "")
             for ticker in (game.get("kalshi_markets") or []):
@@ -121,6 +143,24 @@ def attach_game_start(candidates: list[dict],
     for c in candidates:
         if c["ticker"] in schedule:
             c["game_start_utc"] = schedule[c["ticker"]]
+
+
+def write_pending_markets(targets: list[dict], path: str = PENDING_MARKETS_PATH,
+                          active_tickers: set[str] | None = None) -> int:
+    """Atomically write pending markets for engine hot-add.
+
+    Returns count of markets written (after filtering active tickers).
+    """
+    active_tickers = active_tickers or set()
+    new_targets = [t for t in targets if t["ticker"] not in active_tickers]
+    if not new_targets:
+        return 0
+
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(new_targets, f, indent=2)
+    os.rename(tmp_path, path)
+    return len(new_targets)
 
 
 def rank_candidates(candidates: list[dict]) -> list[dict]:
@@ -526,9 +566,16 @@ def main():
         bot_running, bot_pid = is_bot_running()
         if bot_running and args.smart_run:
             print(f"\n  Bot already running (PID={bot_pid}). Skipping launch.")
-            print("  New markets saved for next session.")
-            lines.append(f"Afternoon scan: bot already running (PID={bot_pid}). "
-                         f"New markets saved for next session.")
+            # Write pending file for engine hot-add
+            n_queued = write_pending_markets(targets)
+            if n_queued:
+                queued = [t["ticker"] for t in targets][:n_queued]
+                print(f"  Queued {n_queued} new markets for hot-add.")
+                lines.append(f"Queued {n_queued} new markets for hot-add: "
+                             f"{', '.join(queued)}")
+            else:
+                print("  No new markets to queue (all already active).")
+                lines.append("Afternoon scan: no new markets to add.")
         else:
             if not bot_running:
                 print("\n  No bot running. Launching new session.")
