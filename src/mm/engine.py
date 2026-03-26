@@ -2,6 +2,7 @@
 """Core engine for the paper market maker."""
 
 from __future__ import annotations
+import json
 import logging
 import sys
 import os
@@ -21,6 +22,54 @@ logger = logging.getLogger(__name__)
 
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 MAX_INVENTORY = 10  # single-side cap
+PENDING_MARKETS_PATH = "data/pending_markets.json"
+MAX_ACTIVE_MARKETS = 15
+
+
+def load_pending_markets(gs: GlobalState, path: str = PENDING_MARKETS_PATH,
+                         max_active: int = MAX_ACTIVE_MARKETS) -> list[str]:
+    """Check for pending_markets.json, add new markets to session.
+
+    Returns list of ticker strings that were added.
+    """
+    if not os.path.exists(path):
+        return []
+
+    try:
+        with open(path) as f:
+            pending = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning("Malformed pending_markets.json: %s", e)
+        os.remove(path)
+        return []
+
+    active_count = sum(1 for m in gs.markets.values() if m.active)
+    added = []
+
+    for entry in pending:
+        ticker = entry.get("ticker")
+        if not ticker or ticker in gs.markets:
+            continue
+        if active_count >= max_active:
+            break
+
+        # Parse game_start_utc if present
+        game_start = None
+        raw_start = entry.get("game_start_utc")
+        if raw_start:
+            try:
+                game_start = datetime.fromisoformat(
+                    raw_start.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                pass
+
+        gs.markets[ticker] = MarketState(
+            ticker=ticker, game_start_utc=game_start)
+        added.append(ticker)
+        active_count += 1
+
+    os.remove(path)
+    return added
 
 
 def clamp_order_size(side: str, net_inventory: int, order_size: int,

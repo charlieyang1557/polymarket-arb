@@ -1,7 +1,9 @@
 # tests/test_mm_engine.py
+import json
+import os
 from datetime import datetime, timezone
 from src.mm.engine import drain_queue, process_fills, pair_off_inventory
-from src.mm.state import SimOrder, MarketState
+from src.mm.state import SimOrder, MarketState, GlobalState
 
 
 def test_drain_queue_yes_bid():
@@ -79,3 +81,95 @@ def test_pair_off_inventory():
     assert pairs[0]["gross_pnl"] == gross
     assert len(ms.yes_queue) == 1  # [28] remains
     assert len(ms.no_queue) == 0
+
+
+# -- Hot-add pending markets --------------------------------------------------
+
+def test_engine_loads_pending_markets(tmp_path):
+    """Engine picks up pending_markets.json and creates MarketState."""
+    from src.mm.engine import load_pending_markets
+
+    gs = GlobalState(session_id="test")
+    gs.markets["EXISTING"] = MarketState(ticker="EXISTING")
+
+    pending = [
+        {"ticker": "NEW1", "game_start_utc": "2026-03-26T23:00:00Z"},
+        {"ticker": "NEW2"},
+    ]
+    pending_path = str(tmp_path / "pending_markets.json")
+    with open(pending_path, "w") as f:
+        json.dump(pending, f)
+
+    added = load_pending_markets(gs, pending_path, max_active=15)
+    assert added == ["NEW1", "NEW2"]
+    assert "NEW1" in gs.markets
+    assert "NEW2" in gs.markets
+    assert gs.markets["NEW1"].game_start_utc is not None
+    assert gs.markets["NEW2"].game_start_utc is None
+    # File should be deleted after processing
+    assert not os.path.exists(pending_path)
+
+
+def test_engine_skips_duplicate_tickers(tmp_path):
+    """Tickers already in gs.markets are skipped."""
+    from src.mm.engine import load_pending_markets
+
+    gs = GlobalState(session_id="test")
+    gs.markets["DUP"] = MarketState(ticker="DUP")
+
+    pending_path = str(tmp_path / "pending_markets.json")
+    with open(pending_path, "w") as f:
+        json.dump([{"ticker": "DUP"}, {"ticker": "FRESH"}], f)
+
+    added = load_pending_markets(gs, pending_path, max_active=15)
+    assert added == ["FRESH"]
+    assert len(gs.markets) == 2  # DUP + FRESH
+
+
+def test_engine_respects_active_market_cap(tmp_path):
+    """Cap counts only active markets; exited markets don't count."""
+    from src.mm.engine import load_pending_markets
+
+    gs = GlobalState(session_id="test")
+    # 10 exited + 4 active = 14 total, 4 active
+    for i in range(10):
+        ms = MarketState(ticker=f"EXIT{i}")
+        ms.active = False
+        gs.markets[f"EXIT{i}"] = ms
+    for i in range(4):
+        gs.markets[f"ACTIVE{i}"] = MarketState(ticker=f"ACTIVE{i}")
+
+    pending_path = str(tmp_path / "pending_markets.json")
+    new = [{"ticker": f"NEW{i}"} for i in range(12)]
+    with open(pending_path, "w") as f:
+        json.dump(new, f)
+
+    added = load_pending_markets(gs, pending_path, max_active=15)
+    # 4 active + 11 new = 15 (cap). Only 11 should be added.
+    assert len(added) == 11
+    active_count = sum(1 for m in gs.markets.values() if m.active)
+    assert active_count == 15
+
+
+def test_engine_handles_malformed_pending(tmp_path):
+    """Malformed JSON doesn't crash — logs warning, skips."""
+    from src.mm.engine import load_pending_markets
+
+    gs = GlobalState(session_id="test")
+    pending_path = str(tmp_path / "pending_markets.json")
+    with open(pending_path, "w") as f:
+        f.write("{invalid json")
+
+    added = load_pending_markets(gs, pending_path, max_active=15)
+    assert added == []
+    # File should be deleted even if malformed
+    assert not os.path.exists(pending_path)
+
+
+def test_engine_no_pending_file(tmp_path):
+    """No pending file → empty list, no error."""
+    from src.mm.engine import load_pending_markets
+
+    gs = GlobalState(session_id="test")
+    added = load_pending_markets(gs, str(tmp_path / "nope.json"), max_active=15)
+    assert added == []
