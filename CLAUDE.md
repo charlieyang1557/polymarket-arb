@@ -89,14 +89,21 @@ Sport whitelist (applied in scan_today_sports):
     game_start_utc that is >15min in the future (L4 deterministic time-based exit)
   - E-sports without schedule data: blocked (frequency-based live detection unreliable)
 
+Schedule matching (Python-side, in scan_today_sports):
+  - match_schedule_to_market() matches Kalshi tickers to game_schedule.json
+  - Priority 1: Contiguous abbreviation match (away+home or home+away in ticker)
+  - Priority 2: Token intersection in event title (both teams' full names)
+  - Date proximity: abs(expiration - game_start) <= 24h (UTC timestamps)
+  - Matched game_start_utc carried through to deep_check for time-aware filtering
+
 Pre-filters (binary pass/fail):
-  - net_spread >= 1 and <= 8, where net_spread = market_spread - 2 * ceil(0.0175 * P * (1-P) * 100). This is gross spread minus estimated round-trip maker fees. net_spread=1 is profitable (raw spread=3c minus 2c fees). The old >=2 threshold was too aggressive — 17/20 candidates on Mar 25 failed only on net_spread.
+  - net_spread >= 1 and <= 8, where net_spread = market_spread - 2 * ceil(0.0175 * P * (1-P) * 100). This is gross spread minus estimated round-trip maker fees. net_spread=1 is profitable (raw spread=3c minus 2c fees).
   - spread < 15
   - midpoint 35c - 65c (filters alt-lines/blowout bets with toxic adverse selection)
   - symmetry 0.2 - 5.0
-  - L1 queue depth < 20,000
+  - L1 queue depth: <20K normally, OR <200K if trades_per_hour >= 50 (high-volume March Madness)
   - trades_per_hour >= 10
-  - hours_to_expiration > 1
+  - Time check: if game_start_utc available, hours_to_game >= 1; else hours_to_exp > 1. Market expiry != game start — use game_start_utc when available.
   - Both sides must have depth > 0
 
 Ranking: rank-based composite (no magic weights)

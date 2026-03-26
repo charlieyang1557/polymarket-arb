@@ -368,7 +368,7 @@ def scan_today_sports(client: KalshiClient,
                 vol_24h = int(float(m.get("volume_24h_fp", "0") or "0"))
                 vol_total = int(float(m.get("volume_fp", "0") or "0"))
 
-                candidates.append({
+                candidate = {
                     "ticker": ticker,
                     "title": (m.get("title") or
                               m.get("yes_sub_title") or "")[:70],
@@ -379,7 +379,10 @@ def scan_today_sports(client: KalshiClient,
                     "volume_24h": vol_24h,
                     "volume_total": vol_total,
                     "expected_expiration": exp,
-                })
+                }
+                if matched_start:
+                    candidate["game_start_utc"] = matched_start
+                candidates.append(candidate)
 
         cursor = data.get("cursor")
         time.sleep(0.1)
@@ -480,9 +483,28 @@ def deep_check(client: KalshiClient, candidates: list[dict],
                     pass
             c["hours_to_exp"] = round(hours_to_exp, 1)
 
-            # Pre-filters (binary)
+            # Schedule-aware time check: use game_start_utc if available
+            game_start_str = c.get("game_start_utc")
+            time_ok = False
+            if game_start_str:
+                try:
+                    start_dt = datetime.fromisoformat(
+                        game_start_str.replace("Z", "+00:00"))
+                    hours_to_game = (start_dt - now).total_seconds() / 3600
+                    time_ok = hours_to_game >= 1.0
+                except (ValueError, TypeError):
+                    time_ok = hours_to_exp > 1
+            else:
+                time_ok = hours_to_exp > 1
+
+            # L1Q filter: relax for high-volume markets
             max_best_depth = max(yes_best_depth, no_best_depth)
             c["max_best_depth"] = max_best_depth
+            tph = c["trades_per_hour"]
+            l1q_ok = (max_best_depth < 20000 or
+                      (tph >= 50 and max_best_depth < 200000))
+
+            # Pre-filters (binary)
             c["passes"] = (c["net_spread"] >= 1
                            and c["net_spread"] <= 8
                            and c["spread"] < 15
@@ -490,9 +512,9 @@ def deep_check(client: KalshiClient, candidates: list[dict],
                            and yes_best_depth > 0
                            and no_best_depth > 0
                            and 0.2 <= sym <= 5.0
-                           and max_best_depth < 20000
-                           and c["trades_per_hour"] >= 10
-                           and hours_to_exp > 1)
+                           and l1q_ok
+                           and tph >= 10
+                           and time_ok)
             checked.append(c)
 
         except Exception as e:

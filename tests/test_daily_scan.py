@@ -788,3 +788,98 @@ def test_match_case_insensitive():
     result = match_schedule_to_market(
         games, "KXNHLTOTAL-26MAR22WPGNYR-5", "2026-03-23T04:00:00Z")
     assert result == "2026-03-22T23:00:00Z"
+
+
+# -- Schedule-aware expiry filter (FIX 2) ------------------------------------
+
+def test_deep_check_passes_low_exp_with_game_start():
+    """Market expiring in 0.8h but game starts in 3h → should PASS."""
+    client = _mock_client(100)
+    now = datetime.now(timezone.utc)
+    # Expires in 0.8h (would fail old filter)
+    exp = (now + timedelta(minutes=48)).isoformat()
+    # Game starts in 3h (plenty of pre-game time)
+    game_start = (now + timedelta(hours=3)).isoformat()
+    candidates = [{"ticker": "SCHED", "spread": 5, "midpoint": 50,
+                   "volume_24h": 5000,
+                   "expected_expiration": exp,
+                   "game_start_utc": game_start}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0].get("passes") is True
+
+
+def test_deep_check_fails_game_starting_soon():
+    """Game starts in 30 min → should FAIL even if exp is far away."""
+    client = _mock_client(100)
+    now = datetime.now(timezone.utc)
+    exp = (now + timedelta(hours=5)).isoformat()
+    game_start = (now + timedelta(minutes=30)).isoformat()
+    candidates = [{"ticker": "SOON", "spread": 5, "midpoint": 50,
+                   "volume_24h": 5000,
+                   "expected_expiration": exp,
+                   "game_start_utc": game_start}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0].get("passes") is False
+
+
+def test_deep_check_no_schedule_falls_back_to_exp():
+    """No game_start_utc → use exp>1h as before."""
+    client = _mock_client(100)
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+    candidates = [{"ticker": "NOSTART", "spread": 5, "midpoint": 50,
+                   "volume_24h": 5000,
+                   "expected_expiration": soon}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0].get("passes") is False
+
+
+# -- Relaxed L1Q for high-volume markets (FIX 3) ----------------------------
+
+def test_deep_check_passes_high_l1q_high_freq():
+    """L1Q=100k but freq>=50/hr → should PASS (March Madness)."""
+    client = MagicMock()
+    client.get_orderbook.return_value = {
+        "orderbook_fp": {
+            "yes_dollars": [["0.48", "100000"], ["0.47", "5000"]],
+            "no_dollars": [["0.52", "80000"], ["0.53", "5000"]],
+        }
+    }
+    now = datetime.now(timezone.utc)
+    trades = [{"trade_id": f"t{i}",
+               "created_time": (now - timedelta(seconds=i * 60)).strftime(
+                   "%Y-%m-%dT%H:%M:%S.000000Z"),
+               "count_fp": "2", "yes_price_dollars": "0.48"}
+              for i in range(55)]  # 55 trades in ~55 min ≈ 55/hr
+    client.get_trades.return_value = {"trades": trades}
+
+    candidates = [{"ticker": "NCAAMM", "spread": 4, "midpoint": 50,
+                   "volume_24h": 100000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0]["max_best_depth"] == 100000
+    assert result[0]["trades_per_hour"] >= 50
+    assert result[0].get("passes") is True
+
+
+def test_deep_check_fails_high_l1q_low_freq():
+    """L1Q=100k but freq=5/hr → should FAIL (dead political market)."""
+    client = MagicMock()
+    client.get_orderbook.return_value = {
+        "orderbook_fp": {
+            "yes_dollars": [["0.48", "100000"]],
+            "no_dollars": [["0.52", "80000"]],
+        }
+    }
+    now = datetime.now(timezone.utc)
+    trades = [{"trade_id": f"t{i}",
+               "created_time": (now - timedelta(seconds=i * 600)).strftime(
+                   "%Y-%m-%dT%H:%M:%S.000000Z"),
+               "count_fp": "2", "yes_price_dollars": "0.48"}
+              for i in range(5)]
+    client.get_trades.return_value = {"trades": trades}
+
+    candidates = [{"ticker": "DEAD", "spread": 4, "midpoint": 50,
+                   "volume_24h": 1000,
+                   "expected_expiration": "2099-12-31T23:59:59Z"}]
+    result = deep_check(client, candidates, max_check=1)
+    assert result[0].get("passes") is False
