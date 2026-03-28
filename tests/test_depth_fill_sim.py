@@ -9,6 +9,7 @@ from scripts.poly_paper_mm import (
     DepthFillSimulator,
 )
 from src.mm.state import SimOrder
+from src.poly_client import calculate_maker_fee
 from datetime import datetime, timezone
 
 
@@ -210,3 +211,30 @@ def test_sim_order_replaced():
     book2 = [[53, 300]]
     fills = sim.check_fills("slug", order2, None, book2, [])
     assert fills == []  # baseline reset, no fills on first tick at new price
+
+
+# --- Fee monkey-patch verification ---
+
+def test_maker_fee_is_negative_after_monkeypatch():
+    """_apply_poly_fee_patch makes maker_fee_cents return negative (rebate)."""
+    import src.mm.state as mm_state
+    from scripts.poly_paper_mm import _apply_poly_fee_patch
+
+    # Save original, apply patch, test, restore
+    original = mm_state.maker_fee_cents
+    try:
+        _apply_poly_fee_patch()
+        fee = mm_state.maker_fee_cents(50, 2)
+        # Polymarket sports: rebate = -0.25 * 0.02 * 0.5 * 0.5 * 100 * 2 = -0.25c
+        assert fee < 0, f"Expected negative fee (rebate), got {fee}"
+        assert abs(fee - (-0.25)) < 0.01
+    finally:
+        mm_state.maker_fee_cents = original
+
+
+def test_fill_at_50c_shows_rebate():
+    """A fill at 50c should show negative fee = maker gets paid."""
+    fee = calculate_maker_fee(50, category="sports", count=2)
+    assert fee < 0
+    # At 50c: rebate = 0.25 * 0.02 * 0.25 * 100 * 2 = 0.25c → returned as -0.25
+    assert abs(fee - (-0.25)) < 0.01

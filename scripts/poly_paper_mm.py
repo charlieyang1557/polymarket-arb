@@ -32,9 +32,21 @@ load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.poly_client import PolyClient, calculate_maker_fee
+import src.mm.state as _mm_state
 from src.mm.state import MarketState, GlobalState, SimOrder
 from src.mm.engine import MMEngine, discord_notify, process_fills
 from src.mm.db import MMDatabase
+
+
+def _apply_poly_fee_patch():
+    """Replace Kalshi maker fee with Polymarket rebate.
+
+    Kalshi charges makers (positive fee). Polymarket PAYS makers (negative fee).
+    This affects _record_fill() and any other fee calculation in the engine.
+    Must be called before engine starts processing fills.
+    """
+    _mm_state.maker_fee_cents = lambda price_cents, count=1: calculate_maker_fee(
+        price_cents, category="sports", count=count)
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +144,9 @@ class DepthFillSimulator:
 
 
 def main():
+    # Replace Kalshi fee formula with Polymarket rebate BEFORE engine init
+    _apply_poly_fee_patch()
+
     parser = argparse.ArgumentParser(
         description="Paper trading market maker — Polymarket US")
     parser.add_argument("--slugs", required=True,
