@@ -69,9 +69,47 @@ def main():
     db = MMDatabase(args.db_path, session_id)
     gs = GlobalState(session_id=session_id)
 
-    # Initialize markets — slug is used as ticker throughout the engine
+    # Load game start times from scanner targets + SDK
+    schedule = {}
+
+    # Source 1: Scanner daily_targets.json (has game_start_time from SDK/schedule)
+    targets_file = Path("data/polymarket_diagnostic/daily_targets.json")
+    try:
+        with open(targets_file) as f:
+            for t in json.load(f):
+                gst = t.get("game_start_time") or ""
+                if gst and t.get("slug"):
+                    schedule[t["slug"]] = gst
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    # Source 2: Direct SDK lookup for any slugs not in targets
     for slug in slugs:
-        gs.markets[slug] = MarketState(ticker=slug)
+        if slug not in schedule:
+            try:
+                raw = client.get_market(slug)
+                market = raw.get("market", raw) or {}
+                gst = market.get("gameStartTime") or ""
+                if gst:
+                    schedule[slug] = gst
+            except Exception:
+                pass
+
+    matched = sum(1 for s in slugs if s in schedule)
+    print(f"  Game start times: {matched}/{len(slugs)} slugs matched")
+
+    # Initialize markets with game_start_utc for time-based exit
+    for slug in slugs:
+        game_start = None
+        gst_str = schedule.get(slug)
+        if gst_str:
+            try:
+                game_start = datetime.fromisoformat(
+                    gst_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                pass
+        gs.markets[slug] = MarketState(
+            ticker=slug, game_start_utc=game_start)
 
     engine = MMEngine(client, db, gs, order_size=args.size)
 

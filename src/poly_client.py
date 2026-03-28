@@ -205,9 +205,15 @@ class PolyClient:
             return normalize_orderbook(None)
 
     def get_market(self, slug: str) -> dict:
-        """Fetch single market details."""
+        """Fetch single market details.
+
+        Returns {"market": {...}} matching Kalshi format.
+        SDK may return {"market": {...}} already — avoid double-nesting.
+        """
         try:
             raw = self.client.markets.retrieve_by_slug(slug)
+            if isinstance(raw, dict) and "market" in raw:
+                return raw  # already wrapped
             return {"market": raw}
         except Exception as e:
             logger.warning("get_market failed for %s: %s", slug, e)

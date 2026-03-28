@@ -13,9 +13,10 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,6 +27,173 @@ OUTPUT_DIR = Path("data/polymarket_diagnostic")
 # Rebate config (sports default for Polymarket US)
 TAKER_FEE_PCT = 0.02
 REBATE_PCT = 0.25
+
+SCHEDULE_PATH = "data/game_schedule.json"
+SCHEDULE_MAX_AGE_HOURS = 6
+
+# Slug date pattern: YYYY-MM-DD somewhere in the slug
+_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+# Known sport codes in Polymarket slugs
+_SPORTS = {"nba", "nhl", "mlb", "nfl", "cbb", "wcbb", "cfb",
+           "ufc", "atp", "wta", "epl", "ucl", "mls", "sea",
+           "bun", "lal", "masters"}
+
+
+# ---------------------------------------------------------------------------
+# Slug parsing + schedule matching (tested)
+# ---------------------------------------------------------------------------
+
+def parse_slug(slug: str) -> dict:
+    """Parse a Polymarket slug into sport, teams, date.
+
+    Slug format: prefix-sport-team1-team2-YYYY-MM-DD[-detail]
+    Examples:
+      tsc-nba-sac-atl-2026-03-28-238pt5
+      asc-nba-sac-atl-2026-03-28-pos-15pt5
+      aec-mlb-pit-nym-2026-03-28
+      aec-cbb-bayl-minnst-2026-04-01
+      tec-nba-champ-2026-07-01-okc
+    """
+    result = {"sport": None, "team1": None, "team2": None, "date": None}
+
+    # Extract date
+    date_match = _DATE_RE.search(slug)
+    if date_match:
+        result["date"] = date_match.group(1)
+
+    parts = slug.split("-")
+    if len(parts) < 4:
+        return result
+
+    # Parts[0] = prefix (tsc/asc/aec/tec/atc), parts[1] = sport
+    sport = parts[1].lower()
+    if sport in _SPORTS:
+        result["sport"] = sport
+    else:
+        return result
+
+    # Teams: parts after sport, before date
+    # Find where the date starts in parts
+    date_str = result["date"]
+    if date_str:
+        date_parts = date_str.split("-")  # ["2026", "03", "28"]
+        try:
+            date_idx = parts.index(date_parts[0])
+        except ValueError:
+            date_idx = len(parts)
+    else:
+        date_idx = len(parts)
+
+    # Team parts are between sport (idx 1) and date start
+    team_parts = parts[2:date_idx]
+    if len(team_parts) >= 2:
+        result["team1"] = team_parts[0].lower()
+        result["team2"] = team_parts[1].lower()
+    elif len(team_parts) == 1:
+        result["team1"] = team_parts[0].lower()
+
+    return result
+
+
+def match_slug_to_schedule(slug: str, schedule_games: list[dict]) -> str | None:
+    """Match a Polymarket slug to a game in the schedule.
+
+    Returns game_start_utc string if matched, None otherwise.
+
+    Matching logic:
+      1. Parse slug → sport, team1, team2, date
+      2. For each game in schedule:
+         - Sport must match (case-insensitive)
+         - Both teams must match (either order, case-insensitive)
+         - Date within ±1 day (games near midnight cross dates)
+    """
+    parsed = parse_slug(slug)
+    if not parsed["sport"] or not parsed["team1"]:
+        return None
+
+    slug_sport = parsed["sport"].lower()
+    slug_t1 = parsed["team1"].lower()
+    slug_t2 = (parsed["team2"] or "").lower()
+    slug_date = parsed["date"]
+
+    for game in schedule_games:
+        game_sport = (game.get("sport") or "").lower()
+        away = (game.get("away_team") or "").lower()
+        home = (game.get("home_team") or "").lower()
+        start = game.get("start_time_utc", "")
+
+        if not start:
+            continue
+
+        # Sport check
+        if game_sport != slug_sport:
+            continue
+
+        # Team check: both must match in either order
+        slug_teams = {slug_t1, slug_t2} - {""}
+        game_teams = {away, home} - {""}
+        if not slug_teams or not game_teams:
+            continue
+        if not slug_teams.issubset(game_teams):
+            continue
+
+        # Date check: within ±1 day
+        if slug_date:
+            game_date = start[:10]  # "2026-03-28"
+            try:
+                sd = datetime.strptime(slug_date, "%Y-%m-%d").date()
+                gd = datetime.strptime(game_date, "%Y-%m-%d").date()
+                if abs((sd - gd).days) > 1:
+                    continue
+            except ValueError:
+                pass
+
+        return start
+
+    return None
+
+
+def extract_game_start_from_market(market: dict) -> str | None:
+    """Extract game start time from a market dict.
+
+    Priority:
+      1. gameStartTime (on market from SDK)
+      2. _event_start_time (injected from event-level startTime)
+
+    Returns ISO string or None.
+    """
+    gst = market.get("gameStartTime") or ""
+    if gst:
+        return gst
+
+    est = market.get("_event_start_time") or ""
+    if est:
+        return est
+
+    return None
+
+
+def load_game_schedule(path: str = SCHEDULE_PATH) -> list[dict]:
+    """Load game schedule, return games list. Empty list if missing/stale."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+
+        updated_at = data.get("updated_at")
+        if updated_at:
+            updated = datetime.fromisoformat(
+                updated_at.replace("Z", "+00:00"))
+            age_hours = ((datetime.now(timezone.utc) - updated).total_seconds()
+                         / 3600)
+            if age_hours > SCHEDULE_MAX_AGE_HOURS:
+                print(f"  WARNING: game_schedule.json is {age_hours:.1f}h old — "
+                      "treating as stale")
+                return []
+
+        return data.get("games", [])
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +464,24 @@ def main():
     if not candidates:
         print("\n  No active markets with live books.")
         return
+
+    # Attach game start times
+    # Priority 1: SDK gameStartTime (already in candidate)
+    # Priority 2: game_schedule.json fallback
+    schedule_games = load_game_schedule()
+    if schedule_games:
+        print(f"\n  Game schedule: {len(schedule_games)} games loaded")
+
+    matched = 0
+    for c in candidates:
+        gst = c.get("game_start_time") or ""
+        if not gst and schedule_games:
+            gst = match_slug_to_schedule(c["slug"], schedule_games) or ""
+            if gst:
+                c["game_start_time"] = gst
+        if gst:
+            matched += 1
+    print(f"  Game start times: {matched}/{len(candidates)} markets matched")
 
     # Quick stats
     spreads = [c["spread"] for c in candidates]
