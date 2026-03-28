@@ -32,9 +32,103 @@ load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.poly_client import PolyClient, calculate_maker_fee
-from src.mm.state import MarketState, GlobalState
-from src.mm.engine import MMEngine, discord_notify
+from src.mm.state import MarketState, GlobalState, SimOrder
+from src.mm.engine import MMEngine, discord_notify, process_fills
 from src.mm.db import MMDatabase
+
+
+# ---------------------------------------------------------------------------
+# Orderbook-snapshot fill simulation (tested)
+# ---------------------------------------------------------------------------
+
+DRAIN_FACTOR = 0.5  # conservative: only 50% of depth decrease = real trades
+
+
+def compute_depth_at_price(book: list[list], price: int,
+                            side: str = "yes") -> int:
+    """Total depth at or below our price level.
+
+    book: [[price_cents, qty], ...] sorted ascending.
+    For both YES and NO sides, depth at price P = sum of qty where level <= P.
+    These are the contracts ahead of us in the FIFO queue.
+    """
+    total = 0
+    for p, q in book:
+        if p <= price:
+            total += q
+    return total
+
+
+def compute_drain(prev_depth: int, curr_depth: int,
+                   factor: float = DRAIN_FACTOR) -> int:
+    """Drain from depth decrease. Returns non-negative integer."""
+    delta = prev_depth - curr_depth
+    if delta <= 0:
+        return 0
+    return int(delta * factor)
+
+
+class DepthFillSimulator:
+    """Simulates fills via orderbook depth changes.
+
+    Tracks depth at our resting price levels across ticks.
+    When depth decreases, advances queue position by drain * factor.
+    When queue reaches 0, triggers fill.
+    """
+
+    def __init__(self, factor: float = DRAIN_FACTOR):
+        self.factor = factor
+        # Track prev state per slug: {slug: {"yes": (price, depth), "no": ...}}
+        self._prev: dict[str, dict] = {}
+
+    def check_fills(self, slug: str,
+                     yes_order: SimOrder | None,
+                     no_order: SimOrder | None,
+                     yes_book: list[list],
+                     no_book: list[list]) -> list[dict]:
+        """Check for fills based on depth changes.
+
+        Returns list of fill dicts: [{"side": ..., "filled": ..., "price": ...}]
+        """
+        fills = []
+        prev = self._prev.get(slug, {})
+        new_prev: dict = {}
+
+        for order, book, side_key in [
+            (yes_order, yes_book, "yes"),
+            (no_order, no_book, "no"),
+        ]:
+            if order is None or order.remaining <= 0:
+                new_prev[side_key] = None
+                continue
+
+            curr_depth = compute_depth_at_price(book, order.price, side_key)
+            new_prev[side_key] = (order.price, curr_depth)
+
+            # Check if we have a baseline at this price
+            prev_entry = prev.get(side_key)
+            if prev_entry is None:
+                continue  # first tick — set baseline only
+
+            prev_price, prev_depth = prev_entry
+            if prev_price != order.price:
+                continue  # order replaced — reset baseline
+
+            drain = compute_drain(prev_depth, curr_depth, self.factor)
+            if drain > 0:
+                filled = process_fills(order, drain)
+                if filled > 0:
+                    fills.append({
+                        "side": side_key,
+                        "filled": filled,
+                        "price": order.price,
+                        "drain": drain,
+                        "prev_depth": prev_depth,
+                        "curr_depth": curr_depth,
+                    })
+
+        self._prev[slug] = new_prev
+        return fills
 
 
 def main():
@@ -112,6 +206,7 @@ def main():
             ticker=slug, game_start_utc=game_start)
 
     engine = MMEngine(client, db, gs, order_size=args.size)
+    fill_sim = DepthFillSimulator(factor=DRAIN_FACTOR)
 
     # Track rebates earned per market for session summary
     rebates_earned = {slug: 0.0 for slug in slugs}
@@ -167,11 +262,51 @@ def main():
                 try:
                     engine.tick_one_market(ms)
 
-                    # Track rebates on fills
-                    if ms.realized_pnl != 0 and ms.net_inventory != 0:
-                        mid = ms.midpoint_history[-1][1] if ms.midpoint_history else 50
-                        rebate = calculate_maker_fee(int(mid))
-                        rebates_earned[slug] += abs(rebate)
+                    # --- Depth-based fill simulation ---
+                    # Engine's trade-based drain was a no-op (empty trades).
+                    # Now check for fills via orderbook depth changes.
+                    if ms.active and (ms.yes_order or ms.no_order):
+                        try:
+                            book_data = client.get_orderbook(slug)
+                            fp = book_data.get("orderbook_fp", {})
+                            yes_raw = fp.get("yes_dollars", [])
+                            no_raw = fp.get("no_dollars", [])
+                            yes_book = [[round(float(p) * 100), int(float(q))]
+                                        for p, q in yes_raw]
+                            no_book = [[round(float(p) * 100), int(float(q))]
+                                       for p, q in no_raw]
+
+                            fills = fill_sim.check_fills(
+                                slug, ms.yes_order, ms.no_order,
+                                yes_book, no_book)
+
+                            for f in fills:
+                                order = (ms.yes_order if f["side"] == "yes"
+                                         else ms.no_order)
+                                if order is None:
+                                    continue
+
+                                print(f"    DEPTH {slug} "
+                                      f"{f['side']}@{f['price']}: "
+                                      f"{f['prev_depth']}→{f['curr_depth']} "
+                                      f"drain={f['drain']} "
+                                      f"qpos→{order.queue_pos}",
+                                      flush=True)
+
+                                # Record fill via engine's pipeline
+                                best_yb = yes_book[-1][0] if yes_book else 50
+                                best_nb = no_book[-1][0] if no_book else 50
+                                engine._record_fill(
+                                    ms, order, f["filled"],
+                                    best_yb, best_nb)
+
+                                # Track rebate (negative fee = income)
+                                rebate = abs(calculate_maker_fee(
+                                    f["price"], count=f["filled"]))
+                                rebates_earned[slug] += rebate
+
+                        except Exception as e:
+                            pass  # non-critical: fill sim failure is OK
 
                 except Exception as e:
                     print(f"  !!! API ERROR {slug}: {e}",
