@@ -273,17 +273,18 @@ class PolyClient:
 
     def place_order(self, slug: str, *, side: str, price: int,
                     count: int, order_type: str = "limit") -> dict:
-        """Place limit order. Requires authenticated client.
+        """Place limit order via SDK.
 
         Args:
-            slug: Market slug (used as ticker)
+            slug: Market slug
             side: "yes" or "no"
             price: Price in cents (1-99)
             count: Number of contracts
-            order_type: "limit" (only type supported)
+            order_type: "limit" only
 
-        Raises:
-            NotImplementedError: If client not authenticated
+        SDK intent mapping:
+            side="yes" → ORDER_INTENT_BUY_LONG  (buy YES)
+            side="no"  → ORDER_INTENT_BUY_SHORT (buy NO = sell YES)
         """
         if not self._authenticated:
             raise NotImplementedError(
@@ -291,41 +292,53 @@ class PolyClient:
                 "Pass key_id and secret_key to PolyClient()."
             )
 
-        # Convert cents to dollar string for SDK
-        price_dollars = price / 100.0
+        intent = ("ORDER_INTENT_BUY_LONG" if side.lower() == "yes"
+                  else "ORDER_INTENT_BUY_SHORT")
 
-        try:
-            # SDK order placement — exact method TBD when we get API keys
-            # For now, stub the call to match expected interface
-            logger.info("place_order: slug=%s side=%s price=%dc count=%d",
-                        slug, side, price, count)
-            raise NotImplementedError(
-                "Order placement not yet implemented — "
-                "waiting for API key configuration"
-            )
-        except NotImplementedError:
-            raise
-        except Exception as e:
-            logger.error("place_order failed: %s", e)
-            raise
+        price_str = f"{price / 100:.3f}"
 
-    def cancel_order(self, order_id: str) -> dict:
-        """Cancel order by ID. Requires authenticated client."""
+        logger.info("place_order: slug=%s side=%s price=%dc count=%d",
+                     slug, side, price, count)
+
+        resp = self.client.orders.create({
+            "marketSlug": slug,
+            "intent": intent,
+            "type": "ORDER_TYPE_LIMIT",
+            "price": {"value": price_str, "currency": "USD"},
+            "quantity": count,
+            "tif": "TIME_IN_FORCE_GOOD_TILL_CANCEL",
+            "participateDontInitiate": True,  # maker-only
+        })
+        return resp if isinstance(resp, dict) else {"order": str(resp)}
+
+    def cancel_order(self, order_id: str, slug: str = "") -> dict:
+        """Cancel order by ID."""
         if not self._authenticated:
             raise NotImplementedError(
                 "Trading requires authenticated client."
             )
-        try:
-            logger.info("cancel_order: %s", order_id)
+        logger.info("cancel_order: %s (slug=%s)", order_id, slug)
+        self.client.orders.cancel(order_id, {"marketSlug": slug})
+        return {"status": "cancelled"}
+
+    def cancel_all_orders(self, slug: str = "") -> dict:
+        """Cancel all open orders, optionally filtered by slug."""
+        if not self._authenticated:
             raise NotImplementedError(
-                "Order cancellation not yet implemented — "
-                "waiting for API key configuration"
+                "Trading requires authenticated client."
             )
-        except NotImplementedError:
-            raise
-        except Exception as e:
-            logger.error("cancel_order failed: %s", e)
-            raise
+        logger.info("cancel_all_orders: slug=%s", slug)
+        params = {"marketSlug": slug} if slug else None
+        resp = self.client.orders.cancel_all(params)
+        return resp if isinstance(resp, dict) else {"status": "cancelled"}
+
+    def list_orders(self, slugs: list[str] | None = None) -> dict:
+        """List open orders."""
+        if not self._authenticated:
+            return {"orders": []}
+        params = {"slugs": slugs} if slugs else None
+        resp = self.client.orders.list(params)
+        return resp if isinstance(resp, dict) else {"orders": []}
 
     # -- Account (requires auth) -------------------------------------------
 
@@ -334,10 +347,19 @@ class PolyClient:
         if not self._authenticated:
             return {"balance": 0}
         try:
-            # SDK method TBD
-            raise NotImplementedError("Balance check not yet implemented")
-        except NotImplementedError:
-            raise
+            resp = self.client.account.balances()
+            return resp if isinstance(resp, dict) else {"balances": str(resp)}
         except Exception as e:
             logger.error("get_balance failed: %s", e)
             return {"balance": 0}
+
+    def get_positions(self) -> dict:
+        """Get current positions."""
+        if not self._authenticated:
+            return {"positions": []}
+        try:
+            resp = self.client.portfolio.positions()
+            return resp if isinstance(resp, dict) else {"positions": str(resp)}
+        except Exception as e:
+            logger.error("get_positions failed: %s", e)
+            return {"positions": []}
