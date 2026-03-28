@@ -182,10 +182,11 @@ class PolyClient:
                  base_url: Optional[str] = None):
         if key_id and secret_key:
             self.client = PolymarketUS(
-                key_id=key_id, secret_key=secret_key)
+                key_id=key_id, secret_key=secret_key,
+                timeout=15.0)
             self._authenticated = True
         else:
-            self.client = PolymarketUS()
+            self.client = PolymarketUS(timeout=15.0)
             self._authenticated = False
 
         self._category = "sports"  # platform is currently sports-only

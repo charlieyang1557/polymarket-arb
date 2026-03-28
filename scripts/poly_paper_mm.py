@@ -174,9 +174,12 @@ def main():
                         rebates_earned[slug] += abs(rebate)
 
                 except Exception as e:
-                    print(f"  UNEXPECTED ERROR on {slug}: {e}",
-                          file=sys.stderr)
-                    engine._cancel_orders(ms, f"unexpected_error: {e}")
+                    print(f"  !!! API ERROR {slug}: {e}",
+                          file=sys.stderr, flush=True)
+                    try:
+                        engine._cancel_orders(ms, f"unexpected_error: {e}")
+                    except Exception:
+                        pass
 
             cycle += 1
 
@@ -209,7 +212,10 @@ def main():
             time.sleep(sleep_time)
 
     except Exception as e:
-        print(f"\nFATAL ERROR: {e}", file=sys.stderr)
+        print(f"\nFATAL ERROR: {e}", file=sys.stderr, flush=True)
+        import traceback
+        traceback.print_exc()
+        discord_notify(f"**POLY MM FATAL**: {e} | session={session_id}")
 
     # Shutdown: cancel orders and write final snapshots
     for ms in gs.markets.values():
@@ -273,4 +279,16 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Interrupted by user.", flush=True)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        try:
+            from src.mm.engine import discord_notify
+            discord_notify(f"**POLY MM CRASHED**: {e}")
+        except Exception:
+            pass
+        sys.exit(1)
