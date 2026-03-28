@@ -13,6 +13,7 @@ from scripts.kalshi_daily_scan import (
     load_game_schedule, attach_game_start,
     is_bot_running, zero_market_message,
     write_pending_markets, match_schedule_to_market,
+    filter_stale_targets,
 )
 
 
@@ -883,3 +884,42 @@ def test_deep_check_fails_high_l1q_low_freq():
                    "expected_expiration": "2099-12-31T23:59:59Z"}]
     result = deep_check(client, candidates, max_check=1)
     assert result[0].get("passes") is False
+
+
+# -- Target TTL filter --------------------------------------------------------
+
+def test_filter_stale_targets_by_ticker_date():
+    """Targets with yesterday's date in ticker are dropped."""
+    now = datetime(2026, 3, 27, 12, 0, 0, tzinfo=timezone.utc)
+    targets = [
+        {"ticker": "KXNBASPREAD-26MAR25NYKCHR-NYK5"},  # Mar 25 = stale
+        {"ticker": "KXNBASPREAD-26MAR27DETWAS-DET5"},  # Mar 27 = today
+        {"ticker": "KXNHLTOTAL-26MAR28WPGNYR-5"},      # Mar 28 = tomorrow
+    ]
+    result = filter_stale_targets(targets, now=now)
+    tickers = [t["ticker"] for t in result]
+    assert "KXNBASPREAD-26MAR25NYKCHR-NYK5" not in tickers
+    assert "KXNBASPREAD-26MAR27DETWAS-DET5" in tickers
+    assert "KXNHLTOTAL-26MAR28WPGNYR-5" in tickers
+
+
+def test_filter_stale_targets_by_game_start():
+    """Targets with past game_start_utc are dropped."""
+    now = datetime(2026, 3, 27, 12, 0, 0, tzinfo=timezone.utc)
+    targets = [
+        {"ticker": "KXNBASPREAD-26MAR27ABCDEF-X1",
+         "game_start_utc": "2026-03-27T01:00:00Z"},  # past
+        {"ticker": "KXNBASPREAD-26MAR27GHIJKL-X2",
+         "game_start_utc": "2026-03-27T23:00:00Z"},  # future
+    ]
+    result = filter_stale_targets(targets, now=now)
+    assert len(result) == 1
+    assert result[0]["ticker"] == "KXNBASPREAD-26MAR27GHIJKL-X2"
+
+
+def test_filter_stale_targets_unparseable_ticker_kept():
+    """Tickers without parseable date are kept (safe default)."""
+    now = datetime(2026, 3, 27, 12, 0, 0, tzinfo=timezone.utc)
+    targets = [{"ticker": "KXWEIRD-NOPARSING"}]
+    result = filter_stale_targets(targets, now=now)
+    assert len(result) == 1

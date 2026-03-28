@@ -14,6 +14,7 @@ import argparse
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -148,6 +149,49 @@ def attach_game_start(candidates: list[dict],
     for c in candidates:
         if c["ticker"] in schedule:
             c["game_start_utc"] = schedule[c["ticker"]]
+
+
+# Month abbreviation → number for ticker date parsing
+_MONTH_MAP = {"JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+              "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12}
+_TICKER_DATE_RE = re.compile(r"(\d{2})([A-Z]{3})(\d{2})")
+
+
+def filter_stale_targets(targets: list[dict],
+                         now: datetime | None = None) -> list[str]:
+    """Remove targets with past ticker dates or past game_start_utc."""
+    now = now or datetime.now(timezone.utc)
+    today = now.date()
+    fresh = []
+    for t in targets:
+        # Check game_start_utc first (most reliable)
+        gs = t.get("game_start_utc")
+        if gs:
+            try:
+                start_dt = datetime.fromisoformat(
+                    gs.replace("Z", "+00:00"))
+                if start_dt < now:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+        # Check ticker-embedded date (e.g. "26MAR25" in KXNBA-26MAR25...)
+        m = _TICKER_DATE_RE.search(t.get("ticker", ""))
+        if m:
+            yr = int("20" + m.group(1))
+            mo = _MONTH_MAP.get(m.group(2).upper())
+            dy = int(m.group(3))
+            if mo:
+                try:
+                    from datetime import date
+                    ticker_date = date(yr, mo, dy)
+                    if ticker_date < today:
+                        continue
+                except ValueError:
+                    pass
+
+        fresh.append(t)
+    return fresh
 
 
 def write_pending_markets(targets: list[dict], path: str = PENDING_MARKETS_PATH,
@@ -631,6 +675,12 @@ def main():
                 existing = json.load(f)
         except (json.JSONDecodeError, IOError):
             existing = []
+
+    # TTL: drop stale targets from past days
+    before = len(existing)
+    existing = filter_stale_targets(existing)
+    if before > len(existing):
+        print(f"\n  TTL: dropped {before - len(existing)} stale targets")
 
     existing_tickers = {t["ticker"] for t in existing}
     merged = list(existing)
