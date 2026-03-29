@@ -7,6 +7,7 @@ from scripts.poly_paper_mm import (
     compute_depth_at_price,
     compute_drain,
     DepthFillSimulator,
+    MAX_DRAIN_PER_TICK,
 )
 from src.mm.state import SimOrder
 from src.poly_client import calculate_maker_fee
@@ -238,3 +239,35 @@ def test_fill_at_50c_shows_rebate():
     assert fee < 0
     # At 50c: rebate = 0.25 * 0.02 * 0.25 * 100 * 2 = 0.25c → returned as -0.25
     assert abs(fee - (-0.25)) < 0.01
+
+
+# --- Drain sanity cap ---
+
+def test_drain_capped_at_max():
+    """Drain > MAX_DRAIN_PER_TICK gets capped."""
+    drain = compute_drain(prev_depth=200000, curr_depth=0, factor=0.5)
+    # Raw: 200000 * 0.5 = 100000, but capped to MAX_DRAIN_PER_TICK
+    assert drain == MAX_DRAIN_PER_TICK
+
+
+def test_drain_under_max_not_capped():
+    """Drain under threshold passes through unchanged."""
+    drain = compute_drain(prev_depth=1000, curr_depth=0, factor=0.5)
+    assert drain == 500  # 1000 * 0.5, below cap
+
+
+def test_sim_caps_extreme_drain(capsys):
+    """Simulator logs DRAIN_CAP and caps the drain."""
+    sim = DepthFillSimulator()
+    order = _order(side="yes", price=55, size=2, queue_pos=10)
+    book = [[55, 300000]]
+
+    sim.check_fills("slug", order, None, book, [])
+
+    # Massive depth drop
+    book2 = [[55, 10000]]
+    fills = sim.check_fills("slug", order, None, book2, [])
+    # Fill triggered (queue_pos=10 easily drained)
+    assert len(fills) == 1
+    # Drain in fill dict should be capped
+    assert fills[0]["drain"] <= MAX_DRAIN_PER_TICK

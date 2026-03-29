@@ -54,6 +54,7 @@ def _apply_poly_fee_patch():
 # ---------------------------------------------------------------------------
 
 DRAIN_FACTOR = 0.5  # conservative: only 50% of depth decrease = real trades
+MAX_DRAIN_PER_TICK = 50000  # $500 worth — cap extreme depth swings
 
 
 def compute_depth_at_price(book: list[list], price: int,
@@ -73,11 +74,12 @@ def compute_depth_at_price(book: list[list], price: int,
 
 def compute_drain(prev_depth: int, curr_depth: int,
                    factor: float = DRAIN_FACTOR) -> int:
-    """Drain from depth decrease. Returns non-negative integer."""
+    """Drain from depth decrease, capped at MAX_DRAIN_PER_TICK."""
     delta = prev_depth - curr_depth
     if delta <= 0:
         return 0
-    return int(delta * factor)
+    raw = int(delta * factor)
+    return min(raw, MAX_DRAIN_PER_TICK)
 
 
 class DepthFillSimulator:
@@ -126,7 +128,12 @@ class DepthFillSimulator:
             if prev_price != order.price:
                 continue  # order replaced — reset baseline
 
+            raw_drain = int((prev_depth - curr_depth) * self.factor)
             drain = compute_drain(prev_depth, curr_depth, self.factor)
+            if raw_drain > MAX_DRAIN_PER_TICK:
+                print(f"    DRAIN_CAP: {slug} {side_key}@{order.price} "
+                      f"raw_drain={raw_drain} capped to {drain}",
+                      flush=True)
             if drain > 0:
                 filled = process_fills(order, drain)
                 if filled > 0:
