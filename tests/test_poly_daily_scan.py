@@ -2,6 +2,7 @@
 """Tests for Polymarket US daily scanner — pure functions only."""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from datetime import datetime, timezone
 
 from scripts.poly_daily_scan import (
     poly_net_spread_cents,
@@ -162,3 +163,52 @@ def test_rank_failing_excluded():
 
 def test_rank_empty():
     assert rank_candidates([]) == []
+
+
+# --- hours_to_game filter ---
+
+from scripts.poly_daily_scan import filter_by_hours_to_game
+
+
+def test_filter_excludes_distant_game():
+    """Game 48h away → passes set to False."""
+    now = datetime(2026, 3, 29, 12, 0, tzinfo=timezone.utc)
+    candidates = [
+        {"slug": "far", "passes": True,
+         "game_start_time": "2026-03-31T12:00:00Z"},
+    ]
+    result = filter_by_hours_to_game(candidates, max_hours=18, now=now)
+    assert result[0]["passes"] is False
+    assert "48h" in result[0].get("skip_reason", "")
+
+
+def test_filter_includes_today_game():
+    """Game 5h away → included."""
+    now = datetime(2026, 3, 29, 12, 0, tzinfo=timezone.utc)
+    candidates = [
+        {"slug": "soon", "passes": True,
+         "game_start_time": "2026-03-29T17:00:00Z"},
+    ]
+    result = filter_by_hours_to_game(candidates, max_hours=18, now=now)
+    assert len(result) == 1
+
+
+def test_filter_keeps_no_game_start():
+    """Market without game_start_time → kept (can't filter)."""
+    now = datetime(2026, 3, 29, 12, 0, tzinfo=timezone.utc)
+    candidates = [
+        {"slug": "unknown", "passes": True, "game_start_time": ""},
+    ]
+    result = filter_by_hours_to_game(candidates, max_hours=18, now=now)
+    assert len(result) == 1
+
+
+def test_filter_only_affects_passing():
+    """Non-passing candidates left untouched."""
+    now = datetime(2026, 3, 29, 12, 0, tzinfo=timezone.utc)
+    candidates = [
+        {"slug": "far-fail", "passes": False,
+         "game_start_time": "2026-04-05T12:00:00Z"},
+    ]
+    result = filter_by_hours_to_game(candidates, max_hours=18, now=now)
+    assert len(result) == 1  # kept because passes=False (not filtered)

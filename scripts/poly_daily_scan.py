@@ -237,6 +237,46 @@ def apply_prefilters(c: dict) -> bool:
             and 0.2 <= c.get("symmetry", 0) <= 5.0)
 
 
+def filter_by_hours_to_game(candidates: list[dict], max_hours: int = 18,
+                            now: datetime | None = None) -> list[dict]:
+    """Exclude passing candidates where game_start is > max_hours away.
+
+    Distant markets have mirage liquidity (wide spreads that disappear
+    as game approaches). Only trade today's games.
+
+    Non-passing candidates are kept (they're already excluded from ranking).
+    Candidates without game_start_time are kept (can't filter).
+    """
+    now = now or datetime.now(timezone.utc)
+    result = []
+    for c in candidates:
+        if not c.get("passes"):
+            result.append(c)
+            continue
+
+        gst = c.get("game_start_time") or ""
+        if not gst:
+            result.append(c)
+            continue
+
+        try:
+            start = datetime.fromisoformat(gst.replace("Z", "+00:00"))
+            hours = (start - now).total_seconds() / 3600
+            if hours > max_hours:
+                c["passes"] = False
+                c["skip_reason"] = f"game in {hours:.0f}h (>{max_hours}h)"
+                print(f"    SKIP: {c['slug']} game in {hours:.0f}h", flush=True)
+            # Also skip if game already started
+            elif hours < 0:
+                c["passes"] = False
+                c["skip_reason"] = "game already started"
+        except (ValueError, TypeError):
+            pass
+
+        result.append(c)
+    return result
+
+
 def avg_rank(values: list, ascending: bool = True) -> list[float]:
     """Return average ranks. ascending=True means lowest value = rank 1."""
     indexed = sorted(enumerate(values),
@@ -493,6 +533,9 @@ def main():
 
     # Phase 2: Deep check (orderbook + filters)
     checked = deep_check(client, candidates, max_check=args.max_check)
+
+    # Phase 2b: Filter out distant games (>18h away = mirage liquidity)
+    checked = filter_by_hours_to_game(checked, max_hours=18)
 
     # Phase 3: Rank passing candidates
     ranked = rank_candidates(checked)
