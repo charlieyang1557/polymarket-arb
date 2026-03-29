@@ -100,6 +100,29 @@ def clamp_order_size(side: str, net_inventory: int, order_size: int,
     return order_size
 
 
+def soft_close_exit_price(side: str, fair_value: float, best_bid: int,
+                          max_slippage: int = 5) -> int:
+    """Aggressive maker price for soft-close exit.
+
+    Crosses spread by 1c above best bid to jump the queue, but
+    never exceeds fair_value + max_slippage. Still a maker order
+    (earns rebate, doesn't pay taker fee).
+    """
+    aggressive = best_bid + 1
+    cap = int(fair_value) + max_slippage
+    return max(1, min(aggressive, cap))
+
+
+def is_side_cooled_down(ms: MarketState, side: str,
+                         now: datetime) -> bool:
+    """Check if a side is in post-AGGRESS_FLATTEN cooldown."""
+    cd = (ms.aggress_cooldown_yes if side == "yes"
+          else ms.aggress_cooldown_no)
+    if cd is None:
+        return False
+    return now < cd
+
+
 def should_skip_side(side: str, net_inventory: int,
                      max_inventory: int = MAX_INVENTORY) -> bool:
     """Skip quoting on the side that would increase inventory past cap."""
@@ -307,10 +330,15 @@ class MMEngine:
                 ms.active = False
                 ms.deactivation_reason = f"EXIT_MARKET (L4)"
                 if ms.game_start_utc:
-                    reason = (f"TIME-BASED EXIT: game should have started — "
-                              f"exiting {ms.ticker} inv={ms.net_inventory} "
-                              f"pnl={ms.realized_pnl:.1f}c")
-                    print(f"  >>> {reason}")
+                    inv = ms.net_inventory
+                    inv_note = ""
+                    if inv != 0:
+                        inv_note = (f" UNHEDGED EXIT: inv={inv}, "
+                                    f"accepting residual risk")
+                    reason = (f"TIME-BASED EXIT: game started — "
+                              f"exiting {ms.ticker} inv={inv} "
+                              f"pnl={ms.realized_pnl:.1f}c{inv_note}")
+                    print(f"  >>> {reason}", flush=True)
                     discord_notify(f"**Paper MM** {reason}")
             elif l4 == Action.CANCEL_ALL:
                 # Cancel orders but DON'T deactivate — market resumes next tick
@@ -585,6 +613,8 @@ class MMEngine:
             size = min(self.order_size, abs(net))
             fee = taker_fee_cents(price, size)
             ms.no_queue.extend([price] * size)
+            # Cooldown: halt YES quoting for 30s (prevents re-fill cycle)
+            ms.aggress_cooldown_yes = now + timedelta(seconds=30)
         else:
             # Long NO -> buy YES to flatten
             price = yes_ask
@@ -592,6 +622,8 @@ class MMEngine:
             size = min(self.order_size, abs(net))
             fee = taker_fee_cents(price, size)
             ms.yes_queue.extend([price] * size)
+            # Cooldown: halt NO quoting for 30s
+            ms.aggress_cooldown_no = now + timedelta(seconds=30)
 
         ms.total_fees += fee
         ms.realized_pnl -= fee
@@ -627,18 +659,49 @@ class MMEngine:
 
         # -- Soft-close: reduce-only quoting when freq 30-50 or time-based --
         if ms.is_soft_close or time_soft_close:
-            print(f"  SOFT-CLOSE {ms.ticker}: freq in 30-50 range, "
-                  f"reduce-only mode (inv={net_inventory})")
             if net_inventory == 0:
                 # Flat — cancel both, don't risk new inventory
                 self._cancel_orders(ms, "soft_close_flat")
                 return
-            elif net_inventory > 0:
-                # Long YES — cancel YES side (would increase), keep NO
+
+            # Cancel the side that would INCREASE inventory
+            if net_inventory > 0:
                 self._cancel_order(ms, "yes", "soft_close_reduce")
+                reduce_side = "no"
+                reduce_bid = best_no_bid
             else:
-                # Long NO — cancel NO side (would increase), keep YES
                 self._cancel_order(ms, "no", "soft_close_reduce")
+                reduce_side = "yes"
+                reduce_bid = best_yes_bid
+
+            # Time-based soft close: place aggressive maker to exit faster
+            if time_soft_close and abs(net_inventory) > 0:
+                aggressive_price = soft_close_exit_price(
+                    side=reduce_side, fair_value=midpoint if reduce_side == "yes"
+                    else (100 - midpoint),
+                    best_bid=reduce_bid, max_slippage=5)
+
+                order = ms.yes_order if reduce_side == "yes" else ms.no_order
+                if order is None or order.remaining <= 0 or \
+                        abs(order.price - aggressive_price) > 1:
+                    self._cancel_order(ms, reduce_side, "soft_close_aggr")
+                    bids = yes_bids if reduce_side == "yes" else no_bids
+                    queue_pos = sum(q for p, q in bids
+                                    if p == aggressive_price)
+                    if queue_pos == 0:
+                        queue_pos = 10  # small fallback — aggressive placement
+                    new_order = SimOrder(
+                        side=reduce_side, price=aggressive_price,
+                        size=min(self.order_size, abs(net_inventory)),
+                        remaining=min(self.order_size, abs(net_inventory)),
+                        queue_pos=queue_pos, placed_at=now)
+                    if reduce_side == "yes":
+                        ms.yes_order = new_order
+                    else:
+                        ms.no_order = new_order
+                    print(f"    SOFT-EXIT {ms.ticker}: aggressive {reduce_side}"
+                          f"@{aggressive_price}c (inv={net_inventory})",
+                          flush=True)
             return
 
         # Dynamic spread from realized volatility
@@ -656,6 +719,11 @@ class MMEngine:
         for side, quote_price, best_bid, bids in [
                 ("yes", yes_quote, best_yes_bid, yes_bids),
                 ("no", no_quote, best_no_bid, no_bids)]:
+            # Post-AGGRESS_FLATTEN cooldown: halt quoting on triggering side
+            if is_side_cooled_down(ms, side, now):
+                self._cancel_order(ms, side, "aggress_cooldown")
+                continue
+
             # Single-side inventory cap
             if should_skip_side(side, ms.net_inventory):
                 self._cancel_order(ms, side, "inv_cap")

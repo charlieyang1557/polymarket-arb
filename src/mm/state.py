@@ -138,6 +138,8 @@ class MarketState:
     consecutive_skip_ticks: int = 0  # consecutive empty orderbook ticks
     session_initial_midpoint: float | None = None  # set on first tick for drift detection
     game_start_utc: datetime | None = None  # from schedule, for time-based exit
+    aggress_cooldown_yes: datetime | None = None  # post-AGGRESS_FLATTEN cooldown per side
+    aggress_cooldown_no: datetime | None = None
 
     @property
     def is_live_game(self) -> bool:

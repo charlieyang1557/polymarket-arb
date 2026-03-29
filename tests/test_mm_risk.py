@@ -53,9 +53,9 @@ def test_l2_aggress_11_to_20():
     ms.yes_queue = [26] * 15  # net +15
     assert check_layer2(ms) == Action.AGGRESS_FLATTEN
 
-def test_l2_stop_over_20():
+def test_l2_stop_over_25():
     ms = MarketState(ticker="X")
-    ms.yes_queue = [26] * 25  # net +25
+    ms.yes_queue = [26] * 30  # net +30 > 25 threshold
     assert check_layer2(ms) == Action.STOP_AND_FLATTEN
 
 def test_l2_no_skew_at_small_inventory():
@@ -66,15 +66,15 @@ def test_l2_no_skew_at_small_inventory():
     assert check_layer2(ms) == Action.CONTINUE
 
 def test_l2_aggress_at_2h_old_position():
-    """Net=5 with 3h old position → AGGRESS_FLATTEN."""
+    """Net=6 with 3h old position → AGGRESS_FLATTEN (threshold raised to >5)."""
     ms = MarketState(ticker="X")
-    ms.yes_queue = [26] * 5
+    ms.yes_queue = [26] * 6  # net > 5 threshold
     ms.oldest_fill_time = datetime.now(timezone.utc) - timedelta(hours=3)
     assert check_layer2(ms) == Action.AGGRESS_FLATTEN
 
 def test_l2_force_close_at_4h_old_position():
     ms = MarketState(ticker="X")
-    ms.yes_queue = [26] * 5
+    ms.yes_queue = [26] * 6  # net > 5 threshold
     ms.oldest_fill_time = datetime.now(timezone.utc) - timedelta(hours=5)
     assert check_layer2(ms) == Action.FORCE_CLOSE
 

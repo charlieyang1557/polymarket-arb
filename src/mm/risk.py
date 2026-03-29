@@ -51,16 +51,17 @@ def check_layer2(ms: MarketState) -> Action:
     now = datetime.now(timezone.utc)
 
     # Time-based checks on oldest unhedged position
-    # Only escalate if inventory is meaningful (> order size)
-    if ms.oldest_fill_time and net > 2:
+    # Only escalate if inventory is meaningful (> half of max_inv)
+    # With size=2, inv=4 is just 2 fills — normal MM, not emergency.
+    if ms.oldest_fill_time and net > 5:
         age = now - ms.oldest_fill_time
         if age > timedelta(hours=4):
             return Action.FORCE_CLOSE
         if age > timedelta(hours=2):
             return Action.AGGRESS_FLATTEN
 
-    # Emergency backstops (continuous skew handles inv < 20)
-    if net > 20:
+    # Emergency backstops (continuous skew handles inv < 25)
+    if net > 25:
         return Action.STOP_AND_FLATTEN
     if net > 10:
         return Action.AGGRESS_FLATTEN
