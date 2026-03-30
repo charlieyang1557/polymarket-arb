@@ -55,6 +55,9 @@ def _apply_poly_fee_patch():
 
 DRAIN_FACTOR = 0.5  # conservative: only 50% of depth decrease = real trades
 MAX_DRAIN_PER_TICK = 50000  # $500 worth — cap extreme depth swings
+MAX_ACTIVE_MARKETS = 10
+ACTIVE_SLUGS_PATH = "data/poly_active_slugs.json"
+PENDING_MARKETS_PATH = "data/pending_poly_markets.json"
 
 
 def compute_depth_at_price(book: list[list], price: int,
@@ -148,6 +151,95 @@ class DepthFillSimulator:
 
         self._prev[slug] = new_prev
         return fills
+
+
+def write_active_slugs_file(slugs: list[str], session_id: str,
+                             path: str = ACTIVE_SLUGS_PATH):
+    """Write current active slugs to state file (atomic)."""
+    data = {
+        "session_id": session_id,
+        "active_slugs": slugs,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    tmp = path + ".tmp"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.rename(tmp, path)
+
+
+def consume_pending_markets(gs, pending_path: str = PENDING_MARKETS_PATH,
+                             active_path: str = ACTIVE_SLUGS_PATH,
+                             game_start_lookup=None) -> list[str]:
+    """Consume pending hot-add file and add markets to GlobalState.
+
+    Returns list of slug strings that were actually added.
+    """
+    if not os.path.exists(pending_path):
+        return []
+
+    # Atomic consume: rename → read → delete
+    processing = pending_path + ".processing"
+    try:
+        os.rename(pending_path, processing)
+    except OSError:
+        return []
+
+    try:
+        with open(processing) as f:
+            data = json.load(f)
+        slugs = data.get("slugs", [])
+    except (json.JSONDecodeError, TypeError):
+        slugs = []
+    finally:
+        try:
+            os.unlink(processing)
+        except OSError:
+            pass
+
+    if not slugs:
+        return []
+
+    added = []
+    active_count = sum(1 for ms in gs.markets.values() if ms.active)
+
+    for slug in slugs:
+        # Skip duplicates
+        if slug in gs.markets:
+            print(f"  SKIP duplicate hot-add: {slug}", flush=True)
+            continue
+
+        # Max cap
+        if active_count >= MAX_ACTIVE_MARKETS:
+            print(f"  MAX_CAP: cannot add {slug} "
+                  f"({active_count}/{MAX_ACTIVE_MARKETS})", flush=True)
+            break
+
+        # Get game start time
+        game_start = None
+        if game_start_lookup:
+            gst_str = game_start_lookup(slug)
+            if gst_str:
+                try:
+                    game_start = datetime.fromisoformat(
+                        gst_str.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    pass
+
+        gs.markets[slug] = MarketState(
+            ticker=slug, game_start_utc=game_start)
+        added.append(slug)
+        active_count += 1
+
+        gst_note = f" (game {game_start.strftime('%H:%M')}Z)" if game_start else ""
+        print(f"  HOT-ADD: {slug}{gst_note}", flush=True)
+
+    # Update active slugs file
+    if added:
+        active_slugs = [s for s, ms in gs.markets.items() if ms.active]
+        write_active_slugs_file(active_slugs, gs.session_id, active_path)
+
+    return added
 
 
 def main():
@@ -259,15 +351,40 @@ def main():
         f"**Poly Paper MM Started** | {n} markets | session={session_id}\n"
         f"Slugs: {', '.join(slugs)}")
 
+    # Write initial active slugs state
+    write_active_slugs_file(slugs, session_id)
+
     active_slugs = list(slugs)
     start = time.time()
     cycle = 0
     last_summary_time = start
     SUMMARY_INTERVAL = 43200  # 12h
 
+    def _lookup_game_start(slug):
+        """Look up gameStartTime from SDK for hot-added slugs."""
+        try:
+            raw = client.get_market(slug)
+            market = raw.get("market", raw) or {}
+            return market.get("gameStartTime") or ""
+        except Exception:
+            return ""
+
     try:
         while not shutdown and (time.time() - start) < args.duration:
-            active_slugs = [s for s in slugs if gs.markets[s].active]
+            # --- Hot-add: check for pending markets from scanner ---
+            added = consume_pending_markets(
+                gs, game_start_lookup=_lookup_game_start)
+            if added:
+                for slug in added:
+                    rebates_earned[slug] = 0.0
+                discord_notify(
+                    f"**Hot-added {len(added)} markets** | "
+                    f"session={session_id}\n" +
+                    ", ".join(added))
+
+            # Refresh active slugs from all markets in gs
+            all_slugs = list(gs.markets.keys())
+            active_slugs = [s for s in all_slugs if gs.markets[s].active]
             if not active_slugs:
                 print("All markets inactive. Stopping.")
                 break
@@ -339,6 +456,11 @@ def main():
                         pass
 
             cycle += 1
+
+            # Update active slugs file if market set changed
+            curr_active = [s for s in all_slugs if gs.markets[s].active]
+            if set(curr_active) != set(active_slugs):
+                write_active_slugs_file(curr_active, session_id)
 
             # Periodic summary
             now_ts = time.time()

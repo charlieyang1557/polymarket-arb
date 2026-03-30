@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -482,6 +483,66 @@ def deep_check(client: PolyClient, candidates: list[dict],
     return checked
 
 
+ACTIVE_SLUGS_PATH = "data/poly_active_slugs.json"
+PENDING_MARKETS_PATH = "data/pending_poly_markets.json"
+
+
+# ---------------------------------------------------------------------------
+# Smart-run helpers (tested)
+# ---------------------------------------------------------------------------
+
+def is_poly_mm_running() -> bool:
+    """Check if poly_paper_mm.py is running. No grep ghost."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "poly_paper_mm"],
+            capture_output=True, text=True, timeout=5)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def read_active_slugs(path: str = ACTIVE_SLUGS_PATH) -> list[str]:
+    """Read currently active slugs from state file."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data.get("active_slugs", [])
+    except (FileNotFoundError, json.JSONDecodeError, TypeError):
+        return []
+
+
+def write_pending_markets(slugs: list[str],
+                           path: str = PENDING_MARKETS_PATH):
+    """Atomic write: .tmp then os.rename."""
+    data = {
+        "slugs": slugs,
+        "added_at": datetime.now(timezone.utc).isoformat(),
+    }
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(data, f, indent=2)
+    os.rename(tmp_path, path)
+
+
+def read_pending_markets(path: str = PENDING_MARKETS_PATH) -> list[str]:
+    """Read and consume (delete) pending markets file."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        os.unlink(path)
+        return data.get("slugs", [])
+    except (FileNotFoundError,):
+        return []
+    except (json.JSONDecodeError, TypeError):
+        # Malformed — clean up
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return []
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Polymarket US daily MM target scanner")
@@ -489,6 +550,8 @@ def main():
                         help="Max targets to select (default: 5)")
     parser.add_argument("--max-check", type=int, default=100,
                         help="Max markets to deep-check (default: 100)")
+    parser.add_argument("--smart-run", action="store_true",
+                        help="Auto-launch or hot-add to running bot")
     args = parser.parse_args()
 
     client = PolyClient()  # public only
@@ -621,6 +684,81 @@ def main():
         with open(slug_file, "w") as f:
             f.write(",".join(t["slug"] for t in targets))
         print(f"  Slug list: {slug_file}")
+
+    # Also save full target data for paper_mm game_start_time lookup
+    if targets:
+        targets_json = OUTPUT_DIR / "daily_targets.json"
+        with open(targets_json, "w") as f:
+            json.dump(targets, f, indent=2, default=str)
+
+    # --- Smart-run ---
+    if not args.smart_run:
+        return
+
+    from src.mm.engine import discord_notify
+
+    if not targets:
+        print("\n  --smart-run: 0 passing markets, no action.")
+        discord_notify("**Poly Scanner**: 0 targets pass filters — no launch")
+        return
+
+    target_slugs = [t["slug"] for t in targets]
+
+    if is_poly_mm_running():
+        # Hot-add path
+        active = read_active_slugs()
+        if not active:
+            # Fallback: try ps aux parsing
+            try:
+                ps = subprocess.run(
+                    ["ps", "aux"], capture_output=True, text=True, timeout=5)
+                for line in ps.stdout.splitlines():
+                    if "poly_paper_mm" in line and "--slugs" in line:
+                        idx = line.index("--slugs") + 8
+                        slug_arg = line[idx:].split()[0]
+                        active = [s.strip() for s in slug_arg.split(",")]
+                        break
+            except Exception:
+                pass
+            if active:
+                print(f"  Fallback: parsed {len(active)} slugs from ps")
+
+        new_slugs = [s for s in target_slugs if s not in active]
+        if new_slugs:
+            write_pending_markets(new_slugs)
+            print(f"\n  HOT-ADD: queued {len(new_slugs)} new markets")
+            for s in new_slugs:
+                print(f"    + {s}")
+            discord_notify(
+                f"**Poly Scanner**: queued {len(new_slugs)} "
+                f"markets for hot-add:\n" +
+                "\n".join(f"  • {s}" for s in new_slugs))
+        else:
+            print(f"\n  All {len(target_slugs)} targets already active. "
+                  f"No new markets to add.")
+    else:
+        # Launch new session
+        slug_str = ",".join(target_slugs)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        logfile = f"data/poly_mm_paper_{ts}.log"
+
+        cmd = (f"{sys.executable} scripts/poly_paper_mm.py "
+               f"--slugs {slug_str} "
+               f"--duration 86400 --size 2 --interval 10")
+
+        print(f"\n  Launching paper MM:")
+        print(f"    {cmd}")
+        print(f"    Log: {logfile}")
+
+        with open(logfile, "w") as log_f:
+            subprocess.Popen(
+                cmd.split(),
+                stdout=log_f, stderr=subprocess.STDOUT,
+                start_new_session=True)
+
+        discord_notify(
+            f"**Poly Paper MM Launched** | {len(target_slugs)} markets\n"
+            f"Slugs: {slug_str}\nLog: {logfile}")
 
 
 if __name__ == "__main__":
