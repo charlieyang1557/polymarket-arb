@@ -742,7 +742,7 @@ def main():
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         logfile = f"data/poly_mm_paper_{ts}.log"
 
-        cmd = (f"{sys.executable} scripts/poly_paper_mm.py "
+        cmd = (f"{sys.executable} -u scripts/poly_paper_mm.py "
                f"--slugs {slug_str} "
                f"--duration 86400 --size 2 --interval 10")
 
