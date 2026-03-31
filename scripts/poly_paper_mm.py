@@ -54,21 +54,26 @@ def _apply_poly_fee_patch():
 # ---------------------------------------------------------------------------
 
 WORST_CASE_PER_CONTRACT = 50  # cents at midpoint 50c
+MAX_SKEW_CENTS = 5  # max skew at full inventory
 
 
 def compute_risk_params(capital_cents: int) -> dict:
     """Derive risk thresholds from capital.
 
-    $25 (2500c): MAX_INV=10, UNHEDGED=5, AGGRESS=8
-    $200 (20000c): MAX_INV=80, UNHEDGED=40, AGGRESS=64
+    $25 (2500c): MAX_INV=10, SIZE=2, AGGRESS=8, gamma=0.5
+    $200 (20000c): MAX_INV=80, SIZE=16, AGGRESS=64, gamma=0.0625
     """
     max_inv = max(4, int(capital_cents * 0.20 / WORST_CASE_PER_CONTRACT))
     max_unhedged = max(2, int(capital_cents * 0.10 / WORST_CASE_PER_CONTRACT))
     aggress_thresh = max(2, int(max_inv * 0.8))
+    order_size = max(1, int(max_inv / 5))
+    gamma = MAX_SKEW_CENTS / max_inv  # normalized: skew = (inv/MAX_INV) * MAX_SKEW
     return {
         "max_inventory": max_inv,
         "max_unhedged_exit": max_unhedged,
         "aggress_threshold": aggress_thresh,
+        "order_size": order_size,
+        "gamma": gamma,
     }
 
 
@@ -347,9 +352,11 @@ def main():
             ticker=slug, game_start_utc=game_start)
 
     risk = compute_risk_params(args.capital)
-    engine = MMEngine(client, db, gs, order_size=args.size,
+    order_size = risk["order_size"] if args.size == 2 else args.size  # CLI overrides auto
+    engine = MMEngine(client, db, gs, order_size=order_size,
                       max_inventory=risk["max_inventory"],
-                      max_unhedged_exit=risk["max_unhedged_exit"])
+                      max_unhedged_exit=risk["max_unhedged_exit"],
+                      gamma=risk["gamma"])
     fill_sim = DepthFillSimulator(factor=DRAIN_FACTOR)
 
     # Track rebates earned per market for session summary
@@ -368,14 +375,15 @@ def main():
 
     # Header
     n = len(slugs)
-    MM_VERSION = "v2: Polymarket US — OBI + skew + capital-aware risk"
+    MM_VERSION = "v3: Polymarket US — OBI + normalized skew + capital scaling"
     print(f"\nPoly Paper MM | {MM_VERSION}")
-    print(f"  {n} markets | {args.size} contracts | "
+    print(f"  {n} markets | {order_size} contracts | "
           f"{args.interval}s interval")
     print(f"  Capital: ${args.capital/100:.0f} | "
-          f"MAX_INV: {risk['max_inventory']} | "
+          f"MAX_INV: {risk['max_inventory']} | SIZE: {order_size} | "
           f"UNHEDGED: {risk['max_unhedged_exit']} | "
-          f"AGGRESS: {risk['aggress_threshold']}")
+          f"AGGRESS: {risk['aggress_threshold']} | "
+          f"GAMMA: {risk['gamma']:.4f}")
     print(f"  Session: {session_id}")
     print(f"  Started: {datetime.now(timezone.utc).isoformat()} | "
           f"Duration: {args.duration}s | DB: {args.db_path}")

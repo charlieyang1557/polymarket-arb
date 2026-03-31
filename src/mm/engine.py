@@ -206,13 +206,15 @@ class MMEngine:
     def __init__(self, client: KalshiClient, db: MMDatabase,
                  global_state: GlobalState, order_size: int = 2,
                  max_inventory: int = MAX_INVENTORY,
-                 max_unhedged_exit: int = 5):
+                 max_unhedged_exit: int = 5,
+                 gamma: float = 0.5):
         self.client = client
         self.db = db
         self.gs = global_state
         self.order_size = order_size
         self.max_inventory = max_inventory
         self.max_unhedged_exit = max_unhedged_exit
+        self.gamma = gamma
         self.tick_count = 0  # per-market tick counter (for snapshot every 6th)
 
     def tick_one_market(self, ms: MarketState):
@@ -714,11 +716,11 @@ class MMEngine:
         vol_offset = dynamic_spread(ms.midpoint_history, now) - market_spread
         vol_offset = max(0, vol_offset)  # only widen, never tighten below market
 
-        # Continuous skew: gamma=0.5c per contract of inventory
+        # Continuous skew: normalized to MAX_SKEW_CENTS at full inventory
         yes_quote, no_quote = skewed_quotes(
             fair=midpoint, best_yes_bid=best_yes_bid,
             best_no_bid=best_no_bid,
-            net_inventory=ms.net_inventory, gamma=0.5,
+            net_inventory=ms.net_inventory, gamma=self.gamma,
             quote_offset=vol_offset)
 
         for side, quote_price, best_bid, bids in [
