@@ -204,11 +204,15 @@ class MMEngine:
     """Runs the paper market making simulation."""
 
     def __init__(self, client: KalshiClient, db: MMDatabase,
-                 global_state: GlobalState, order_size: int = 2):
+                 global_state: GlobalState, order_size: int = 2,
+                 max_inventory: int = MAX_INVENTORY,
+                 max_unhedged_exit: int = 5):
         self.client = client
         self.db = db
         self.gs = global_state
         self.order_size = order_size
+        self.max_inventory = max_inventory
+        self.max_unhedged_exit = max_unhedged_exit
         self.tick_count = 0  # per-market tick counter (for snapshot every 6th)
 
     def tick_one_market(self, ms: MarketState):
@@ -475,7 +479,7 @@ class MMEngine:
 
         # -- 5. Risk checks (layers 2-3) --
         actions = [Action.CONTINUE]
-        l2 = check_layer2(ms)
+        l2 = check_layer2(ms, max_inventory=self.max_inventory)
         if l2 != Action.CONTINUE:
             actions.append(l2)
             self._log_event(ms, 2, l2, f"net_inv={ms.net_inventory}")
@@ -674,8 +678,8 @@ class MMEngine:
                 reduce_side = "yes"
                 reduce_bid = best_yes_bid
 
-            # Time-based soft close: place aggressive maker to exit faster
-            if time_soft_close and abs(net_inventory) > 0:
+            # Time-based soft close: aggressive flatten only if |inv| > max_unhedged_exit
+            if time_soft_close and abs(net_inventory) > self.max_unhedged_exit:
                 aggressive_price = soft_close_exit_price(
                     side=reduce_side, fair_value=midpoint if reduce_side == "yes"
                     else (100 - midpoint),
@@ -700,7 +704,8 @@ class MMEngine:
                     else:
                         ms.no_order = new_order
                     print(f"    SOFT-EXIT {ms.ticker}: aggressive {reduce_side}"
-                          f"@{aggressive_price}c (inv={net_inventory})",
+                          f"@{aggressive_price}c (inv={net_inventory}, "
+                          f"target<={self.max_unhedged_exit})",
                           flush=True)
             return
 
@@ -725,7 +730,8 @@ class MMEngine:
                 continue
 
             # Single-side inventory cap
-            if should_skip_side(side, ms.net_inventory):
+            if should_skip_side(side, ms.net_inventory,
+                                self.max_inventory):
                 self._cancel_order(ms, side, "inv_cap")
                 continue
 
@@ -739,7 +745,8 @@ class MMEngine:
             if order is None or order.remaining <= 0:
                 # Clamp size so fill can't overshoot max inventory
                 size = clamp_order_size(side, net_inventory,
-                                        self.order_size)
+                                        self.order_size,
+                                        self.max_inventory)
                 if size <= 0:
                     continue
 

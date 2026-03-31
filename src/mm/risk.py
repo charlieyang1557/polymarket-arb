@@ -46,24 +46,30 @@ def check_layer1(price: int, size: int, midpoint: float,
 
 # -- Layer 2: Inventory Management ----------------------------------------
 
-def check_layer2(ms: MarketState) -> Action:
+def check_layer2(ms: MarketState,
+                 max_inventory: int = 10,
+                 aggress_threshold: int | None = None) -> Action:
     net = abs(ms.net_inventory)
     now = datetime.now(timezone.utc)
 
+    if aggress_threshold is None:
+        aggress_threshold = max(2, int(max_inventory * 0.8))
+
     # Time-based checks on oldest unhedged position
-    # Only escalate if inventory is meaningful (> half of max_inv)
-    # With size=2, inv=4 is just 2 fills — normal MM, not emergency.
-    if ms.oldest_fill_time and net > 5:
+    # Only escalate if inventory is meaningful (> half of aggress threshold)
+    time_thresh = max(2, aggress_threshold // 2)
+    if ms.oldest_fill_time and net > time_thresh:
         age = now - ms.oldest_fill_time
         if age > timedelta(hours=4):
             return Action.FORCE_CLOSE
         if age > timedelta(hours=2):
             return Action.AGGRESS_FLATTEN
 
-    # Emergency backstops (continuous skew handles inv < 25)
-    if net > 25:
+    # Emergency backstops
+    stop_thresh = max(4, int(max_inventory * 2.5))
+    if net > stop_thresh:
         return Action.STOP_AND_FLATTEN
-    if net > 10:
+    if net > max_inventory:
         return Action.AGGRESS_FLATTEN
     return Action.CONTINUE
 

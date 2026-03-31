@@ -53,6 +53,31 @@ def _apply_poly_fee_patch():
 # Orderbook-snapshot fill simulation (tested)
 # ---------------------------------------------------------------------------
 
+WORST_CASE_PER_CONTRACT = 50  # cents at midpoint 50c
+
+
+def compute_risk_params(capital_cents: int) -> dict:
+    """Derive risk thresholds from capital.
+
+    $25 (2500c): MAX_INV=10, UNHEDGED=5, AGGRESS=8
+    $200 (20000c): MAX_INV=80, UNHEDGED=40, AGGRESS=64
+    """
+    max_inv = max(4, int(capital_cents * 0.20 / WORST_CASE_PER_CONTRACT))
+    max_unhedged = max(2, int(capital_cents * 0.10 / WORST_CASE_PER_CONTRACT))
+    aggress_thresh = max(2, int(max_inv * 0.8))
+    return {
+        "max_inventory": max_inv,
+        "max_unhedged_exit": max_unhedged,
+        "aggress_threshold": aggress_thresh,
+    }
+
+
+def should_soft_close_flatten(net_inventory: int,
+                                max_unhedged_exit: int) -> bool:
+    """Whether to flatten during SOFT_CLOSE. Only if |inv| > threshold."""
+    return abs(net_inventory) > max_unhedged_exit
+
+
 DRAIN_FACTOR = 0.5  # conservative: only 50% of depth decrease = real trades
 MAX_DRAIN_PER_TICK = 50000  # $500 worth — cap extreme depth swings
 MAX_ACTIVE_MARKETS = 10
@@ -256,6 +281,8 @@ def main():
                         help="Contracts per order (default: 2)")
     parser.add_argument("--interval", type=int, default=10,
                         help="Seconds between ticks per market (default: 10)")
+    parser.add_argument("--capital", type=int, default=2500,
+                        help="Capital in cents (default: 2500 = $25)")
     parser.add_argument("--db-path", default="data/poly_mm_paper.db")
     args = parser.parse_args()
 
@@ -319,7 +346,10 @@ def main():
         gs.markets[slug] = MarketState(
             ticker=slug, game_start_utc=game_start)
 
-    engine = MMEngine(client, db, gs, order_size=args.size)
+    risk = compute_risk_params(args.capital)
+    engine = MMEngine(client, db, gs, order_size=args.size,
+                      max_inventory=risk["max_inventory"],
+                      max_unhedged_exit=risk["max_unhedged_exit"])
     fill_sim = DepthFillSimulator(factor=DRAIN_FACTOR)
 
     # Track rebates earned per market for session summary
@@ -338,10 +368,14 @@ def main():
 
     # Header
     n = len(slugs)
-    MM_VERSION = "v1: Polymarket US — OBI + skew + dynamic spread + maker rebates"
+    MM_VERSION = "v2: Polymarket US — OBI + skew + capital-aware risk"
     print(f"\nPoly Paper MM | {MM_VERSION}")
     print(f"  {n} markets | {args.size} contracts | "
           f"{args.interval}s interval")
+    print(f"  Capital: ${args.capital/100:.0f} | "
+          f"MAX_INV: {risk['max_inventory']} | "
+          f"UNHEDGED: {risk['max_unhedged_exit']} | "
+          f"AGGRESS: {risk['aggress_threshold']}")
     print(f"  Session: {session_id}")
     print(f"  Started: {datetime.now(timezone.utc).isoformat()} | "
           f"Duration: {args.duration}s | DB: {args.db_path}")
