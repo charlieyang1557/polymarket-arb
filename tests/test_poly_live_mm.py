@@ -333,3 +333,139 @@ class TestClampPrice:
     def test_99_is_valid(self):
         from scripts.poly_live_mm import clamp_price
         assert clamp_price(99) == 99
+
+
+# ---------------------------------------------------------------------------
+# Test: local order tracking — prevents requote thrashing
+# ---------------------------------------------------------------------------
+
+class TestLocalOrderTracking:
+    """After place_order, local tracking must prevent needless cancel+replace.
+
+    Bug: poll_open_orders() can return empty (API lag, format mismatch),
+    making `existing` always None in _manage_live_quotes, bypassing
+    should_requote and placing a new order every tick.
+
+    Fix: LiveOrderManager tracks placed orders locally. merged_orders()
+    combines poll results with local state so orders are never "lost".
+    """
+
+    def _make_manager(self):
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=True, capital_cents=2500)
+        return mgr
+
+    def test_place_order_populates_local_orders(self):
+        """After place_order, _local_orders should contain the order info."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        assert "slug-a" in mgr._local_orders
+        assert "yes" in mgr._local_orders["slug-a"]
+        info = mgr._local_orders["slug-a"]["yes"]
+        assert info["price_cents"] == 48
+        assert info["remaining_qty"] == 2
+
+    def test_cancel_order_removes_local_orders(self):
+        """After cancel_order, _local_orders should remove that side."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        assert "yes" in mgr._local_orders.get("slug-a", {})
+        mgr.cancel_order("slug-a", "yes", "dry-abc123")
+        assert "yes" not in mgr._local_orders.get("slug-a", {})
+
+    def test_merged_orders_uses_local_when_poll_empty(self):
+        """When poll returns empty, merged_orders should use local state."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        mgr.place_order("slug-a", "no", 50, 2)
+        # Simulate poll returning nothing (API lag)
+        polled = {}
+        merged = mgr.merged_orders(polled)
+        assert "slug-a" in merged
+        assert merged["slug-a"]["yes"]["price_cents"] == 48
+        assert merged["slug-a"]["no"]["price_cents"] == 50
+
+    def test_merged_orders_exchange_truth_wins(self):
+        """When poll returns data, exchange truth takes precedence."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        # Simulate poll showing partial fill (exchange truth)
+        polled = {"slug-a": {"yes": {
+            "order_id": "real-id",
+            "price_cents": 48,
+            "original_qty": 2,
+            "filled_qty": 1,
+            "remaining_qty": 1,
+        }}}
+        merged = mgr.merged_orders(polled)
+        # Exchange truth should win
+        assert merged["slug-a"]["yes"]["filled_qty"] == 1
+        assert merged["slug-a"]["yes"]["remaining_qty"] == 1
+
+    def test_merged_orders_preserves_polled_only_slugs(self):
+        """Slugs only in poll (not local) should pass through."""
+        mgr = self._make_manager()
+        polled = {"slug-b": {"yes": {
+            "order_id": "ext-1", "price_cents": 55,
+            "original_qty": 3, "filled_qty": 0, "remaining_qty": 3,
+        }}}
+        merged = mgr.merged_orders(polled)
+        assert merged["slug-b"]["yes"]["price_cents"] == 55
+
+    def test_cancel_all_clears_local_orders(self):
+        """cancel_all_orders should also clear local tracking."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        mgr.place_order("slug-b", "no", 50, 2)
+        mgr.cancel_all_orders()
+        assert mgr._local_orders == {}
+
+    def test_poll_remaps_api_slug_to_our_slug(self):
+        """poll_open_orders remaps API marketSlug to our slug via order_id."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # Simulate a real place_order that stored order_id in _live_order_ids
+        mgr._live_order_ids["my-slug-123"] = {"yes": "ord-AAA"}
+
+        # API returns the same order but under a different marketSlug
+        client.list_orders.return_value = {"orders": [{
+            "id": "ord-AAA",
+            "marketSlug": "api-slug-xyz",
+            "intent": "ORDER_INTENT_BUY_LONG",
+            "price": {"value": "0.480", "currency": "USD"},
+            "quantity": 2,
+            "cumQuantity": 0,
+            "leavesQuantity": 2,
+            "state": "ORDER_STATE_NEW",
+        }]}
+
+        result = mgr.poll_open_orders(["my-slug-123"])
+        # Should be keyed by OUR slug, not the API's
+        assert "my-slug-123" in result
+        assert "api-slug-xyz" not in result
+        assert result["my-slug-123"]["yes"]["order_id"] == "ord-AAA"
+
+    def test_poll_remap_preserves_unknown_orders(self):
+        """Orders not in _live_order_ids keep their API slug."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # No _live_order_ids — order from API should keep its slug
+        client.list_orders.return_value = {"orders": [{
+            "id": "ord-unknown",
+            "marketSlug": "some-api-slug",
+            "intent": "ORDER_INTENT_BUY_SHORT",
+            "price": {"value": "0.500", "currency": "USD"},
+            "quantity": 3,
+            "cumQuantity": 0,
+            "leavesQuantity": 3,
+            "state": "ORDER_STATE_NEW",
+        }]}
+
+        result = mgr.poll_open_orders(["some-api-slug"])
+        assert "some-api-slug" in result
+        assert result["some-api-slug"]["no"]["order_id"] == "ord-unknown"

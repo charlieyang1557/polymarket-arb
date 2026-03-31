@@ -268,12 +268,17 @@ class LiveOrderManager:
         self._prev_orders: dict = {}
         # Track exchange order IDs we've placed: {slug: {side: order_id}}
         self._live_order_ids: dict = {}
+        # Local order tracking: {slug: {side: {order_id, price_cents, ...}}}
+        # Prevents requote thrashing when poll_open_orders returns empty
+        self._local_orders: dict = {}
         self._api_backoff = 0  # exponential backoff counter for 429s
 
     def cancel_all_orders(self, slugs: list[str] | None = None):
         """Cancel ALL open orders. Called on startup, shutdown, crash."""
         if self.dry_run:
             print("  [DRY-RUN] Would cancel all orders", flush=True)
+            self._live_order_ids.clear()
+            self._local_orders.clear()
             return
         try:
             if slugs:
@@ -286,6 +291,7 @@ class LiveOrderManager:
             print(f"  WARNING: cancel_all failed: {e}", file=sys.stderr,
                   flush=True)
         self._live_order_ids.clear()
+        self._local_orders.clear()
 
     def place_order(self, slug: str, side: str, price_cents: int,
                     count: int) -> str | None:
@@ -308,7 +314,15 @@ class LiveOrderManager:
         if self.dry_run:
             print(f"    [DRY-RUN] Would place {side}@{price_cents}c "
                   f"x{count} on {slug}", flush=True)
-            return f"dry-{uuid.uuid4().hex[:8]}"
+            dry_id = f"dry-{uuid.uuid4().hex[:8]}"
+            self._local_orders.setdefault(slug, {})[side] = {
+                "order_id": dry_id,
+                "price_cents": price_cents,
+                "original_qty": count,
+                "filled_qty": 0,
+                "remaining_qty": count,
+            }
+            return dry_id
 
         try:
             resp = self.client.place_order(
@@ -321,6 +335,13 @@ class LiveOrderManager:
                 if slug not in self._live_order_ids:
                     self._live_order_ids[slug] = {}
                 self._live_order_ids[slug][side] = order_id
+                self._local_orders.setdefault(slug, {})[side] = {
+                    "order_id": order_id,
+                    "price_cents": price_cents,
+                    "original_qty": count,
+                    "filled_qty": 0,
+                    "remaining_qty": count,
+                }
             self._api_backoff = 0
             return order_id
         except Exception as e:
@@ -339,6 +360,13 @@ class LiveOrderManager:
                         if slug not in self._live_order_ids:
                             self._live_order_ids[slug] = {}
                         self._live_order_ids[slug][side] = oid
+                        self._local_orders.setdefault(slug, {})[side] = {
+                            "order_id": oid,
+                            "price_cents": price_cents,
+                            "original_qty": count,
+                            "filled_qty": 0,
+                            "remaining_qty": count,
+                        }
                         return oid
                     else:
                         print(f"    TIMEOUT: order did NOT reach exchange",
@@ -362,12 +390,16 @@ class LiveOrderManager:
         if self.dry_run:
             print(f"    [DRY-RUN] Would cancel {side} order {order_id} "
                   f"on {slug}", flush=True)
+            if slug in self._local_orders:
+                self._local_orders[slug].pop(side, None)
             return
 
         try:
             self.client.cancel_order(order_id, slug=slug)
             if slug in self._live_order_ids:
                 self._live_order_ids[slug].pop(side, None)
+            if slug in self._local_orders:
+                self._local_orders[slug].pop(side, None)
             self._api_backoff = 0
         except Exception as e:
             err_str = str(e)
@@ -384,10 +416,27 @@ class LiveOrderManager:
         """Fetch current open orders for active slugs.
 
         Returns parsed order map: {slug: {side: order_info}}.
+        Remaps API marketSlug to our slug via order_id lookup in
+        _live_order_ids, so slug format mismatches don't break tracking.
         """
         try:
             resp = self.client.list_orders(slugs=slugs)
-            return parse_open_orders(resp)
+            parsed = parse_open_orders(resp)
+
+            # Build reverse map: order_id → our slug
+            id_to_slug: dict[str, str] = {}
+            for slug, sides in self._live_order_ids.items():
+                for side, oid in sides.items():
+                    id_to_slug[oid] = slug
+
+            # Remap API slugs to our slugs
+            fixed: dict = {}
+            for api_slug, sides in parsed.items():
+                for side, info in sides.items():
+                    oid = info.get("order_id", "")
+                    real_slug = id_to_slug.get(oid, api_slug)
+                    fixed.setdefault(real_slug, {})[side] = info
+            return fixed
         except Exception as e:
             print(f"    POLL ERROR: {e}", file=sys.stderr, flush=True)
             return {}
@@ -418,6 +467,29 @@ class LiveOrderManager:
                         # Partial info lost — log it
                         pass
         return fills
+
+    def merged_orders(self, polled: dict) -> dict:
+        """Merge poll results with local tracking.
+
+        When poll returns data for a (slug, side), exchange truth wins
+        and local tracking is updated. When poll is empty (API lag/error),
+        local tracking fills the gap so should_requote can fire.
+        """
+        merged = {}
+        # Start with polled data
+        for slug, sides in polled.items():
+            merged[slug] = dict(sides)
+        # Fill gaps from local tracking
+        for slug, sides in self._local_orders.items():
+            if slug not in merged:
+                merged[slug] = {}
+            for side, info in sides.items():
+                if side not in merged[slug]:
+                    merged[slug][side] = dict(info)
+                else:
+                    # Exchange truth — update local tracking
+                    self._local_orders[slug][side] = dict(merged[slug][side])
+        return merged
 
     def update_prev_orders(self, curr_orders: dict):
         """Store current tick's orders for next fill comparison."""
@@ -664,7 +736,8 @@ def main():
             sleep_time = args.interval / max(len(active_slugs), 1)
 
             # Poll open orders for all active slugs (one API call)
-            curr_orders = live_mgr.poll_open_orders(active_slugs)
+            raw_polled = live_mgr.poll_open_orders(active_slugs)
+            curr_orders = live_mgr.merged_orders(raw_polled)
 
             # Detect fills from order state changes
             fills = live_mgr.check_fills(curr_orders)
