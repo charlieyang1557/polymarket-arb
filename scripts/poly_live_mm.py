@@ -343,6 +343,7 @@ class LiveOrderManager:
                     "remaining_qty": count,
                 }
             self._api_backoff = 0
+            print(f"    PLACED {slug} {side}@{price_cents}c x{count} id={order_id}", flush=True)
             return order_id
         except Exception as e:
             err_str = str(e)
