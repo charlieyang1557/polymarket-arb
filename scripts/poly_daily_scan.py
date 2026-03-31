@@ -491,15 +491,27 @@ PENDING_MARKETS_PATH = "data/pending_poly_markets.json"
 # Smart-run helpers (tested)
 # ---------------------------------------------------------------------------
 
+def detect_running_bot() -> str | None:
+    """Detect which poly MM bot is running.
+
+    Priority: live > paper. Returns "live", "paper", or None.
+    """
+    for label, pattern in [("live", "poly_live_mm"),
+                           ("paper", "poly_paper_mm")]:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", pattern],
+                capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                return label
+        except Exception:
+            pass
+    return None
+
+
 def is_poly_mm_running() -> bool:
-    """Check if poly_paper_mm.py is running. No grep ghost."""
-    try:
-        result = subprocess.run(
-            ["pgrep", "-f", "poly_paper_mm"],
-            capture_output=True, text=True, timeout=5)
-        return result.returncode == 0
-    except Exception:
-        return False
+    """Check if any poly MM bot is running."""
+    return detect_running_bot() is not None
 
 
 def read_active_slugs(path: str = ACTIVE_SLUGS_PATH) -> list[str]:
@@ -552,6 +564,8 @@ def main():
                         help="Max markets to deep-check (default: 100)")
     parser.add_argument("--smart-run", action="store_true",
                         help="Auto-launch or hot-add to running bot")
+    parser.add_argument("--paper", action="store_true",
+                        help="Force paper mode when launching (default: live)")
     args = parser.parse_args()
 
     client = PolyClient()  # public only
@@ -703,20 +717,27 @@ def main():
         return
 
     target_slugs = [t["slug"] for t in targets]
+    running_bot = detect_running_bot()
 
-    if is_poly_mm_running():
-        # Hot-add path
+    if running_bot:
+        # Hot-add path — works for both live and paper bots
+        bot_label = running_bot.upper()
         active = read_active_slugs()
         if not active:
             # Fallback: try ps aux parsing
+            patterns = ["poly_live_mm", "poly_paper_mm"]
             try:
                 ps = subprocess.run(
                     ["ps", "aux"], capture_output=True, text=True, timeout=5)
                 for line in ps.stdout.splitlines():
-                    if "poly_paper_mm" in line and "--slugs" in line:
-                        idx = line.index("--slugs") + 8
-                        slug_arg = line[idx:].split()[0]
-                        active = [s.strip() for s in slug_arg.split(",")]
+                    for pat in patterns:
+                        if pat in line and "--slugs" in line:
+                            idx = line.index("--slugs") + 8
+                            slug_arg = line[idx:].split()[0]
+                            active = [s.strip()
+                                      for s in slug_arg.split(",")]
+                            break
+                    if active:
                         break
             except Exception:
                 pass
@@ -726,27 +747,39 @@ def main():
         new_slugs = [s for s in target_slugs if s not in active]
         if new_slugs:
             write_pending_markets(new_slugs)
-            print(f"\n  HOT-ADD: queued {len(new_slugs)} new markets")
+            print(f"\n  HOT-ADD to {bot_label} bot: "
+                  f"queued {len(new_slugs)} new markets")
             for s in new_slugs:
                 print(f"    + {s}")
             discord_notify(
                 f"**Poly Scanner**: queued {len(new_slugs)} "
-                f"markets for hot-add:\n" +
+                f"markets for hot-add ({bot_label}):\n" +
                 "\n".join(f"  • {s}" for s in new_slugs))
         else:
-            print(f"\n  All {len(target_slugs)} targets already active. "
-                  f"No new markets to add.")
+            print(f"\n  All {len(target_slugs)} targets already active "
+                  f"in {bot_label} bot. No new markets to add.")
     else:
-        # Launch new session
+        # Launch new session — default live, --paper for paper
         slug_str = ",".join(target_slugs)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        logfile = f"data/poly_mm_paper_{ts}.log"
 
-        cmd = (f"{sys.executable} -u scripts/poly_paper_mm.py "
-               f"--slugs {slug_str} "
-               f"--duration 86400 --size 2 --interval 10")
+        if args.paper:
+            script = "scripts/poly_paper_mm.py"
+            mode_label = "PAPER"
+            logfile = f"data/poly_mm_paper_{ts}.log"
+            cmd = (f"{sys.executable} -u {script} "
+                   f"--slugs {slug_str} "
+                   f"--duration 86400 --size 2 --interval 10")
+        else:
+            script = "scripts/poly_live_mm.py"
+            mode_label = "LIVE"
+            logfile = f"data/poly_mm_live_{ts}.log"
+            cmd = (f"{sys.executable} -u {script} "
+                   f"--slugs {slug_str} "
+                   f"--duration 86400 --size 2 --interval 10 "
+                   f"--no-confirm")
 
-        print(f"\n  Launching paper MM:")
+        print(f"\n  Launching {mode_label} MM:")
         print(f"    {cmd}")
         print(f"    Log: {logfile}")
 
@@ -757,7 +790,8 @@ def main():
                 start_new_session=True)
 
         discord_notify(
-            f"**Poly Paper MM Launched** | {len(target_slugs)} markets\n"
+            f"**Poly {mode_label} MM Launched** | "
+            f"{len(target_slugs)} markets\n"
             f"Slugs: {slug_str}\nLog: {logfile}")
 
 

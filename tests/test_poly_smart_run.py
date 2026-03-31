@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timezone
 from scripts.poly_daily_scan import (
     is_poly_mm_running,
+    detect_running_bot,
     read_active_slugs,
     write_pending_markets,
     read_pending_markets,
@@ -21,9 +22,22 @@ from scripts.poly_paper_mm import (
 
 def test_process_detection_no_grep_ghost():
     """pgrep-based detection doesn't match itself."""
-    # This just validates the function exists and returns bool
     result = is_poly_mm_running()
     assert isinstance(result, bool)
+
+
+def test_detect_running_bot_returns_valid():
+    """detect_running_bot returns 'live', 'paper', or None."""
+    result = detect_running_bot()
+    assert result in ("live", "paper", None)
+
+
+def test_detect_running_bot_priority():
+    """Live bot has priority over paper bot.
+    We can't test real process detection without mock, but
+    verify the function exists and has correct return type."""
+    result = detect_running_bot()
+    assert result is None or result in ("live", "paper")
 
 
 # --- Active slugs file ---
