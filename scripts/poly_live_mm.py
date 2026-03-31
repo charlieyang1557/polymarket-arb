@@ -1204,7 +1204,8 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
             continue
 
         # Layer 1 validation
-        rejection = check_layer1(quote_price, size, midpoint, side=side)
+        rejection = check_layer1(quote_price, size, midpoint,
+                                 max_size=order_size * 2, side=side)
         if rejection:
             continue
 

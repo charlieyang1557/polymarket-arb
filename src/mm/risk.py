@@ -30,13 +30,15 @@ def highest_priority(actions: list[Action]) -> Action:
 # -- Layer 1: Per-Order Validation -----------------------------------------
 
 def check_layer1(price: int, size: int, midpoint: float,
-                 max_size: int = 5, side: str = "yes") -> str | None:
+                 max_size: int | None = None,
+                 side: str = "yes") -> str | None:
     """Returns rejection reason string, or None if valid.
 
     For YES bids, compare price against YES midpoint.
     For NO bids, compare price against NO midpoint (100 - midpoint).
+    max_size=None skips size check (caller is responsible).
     """
-    if size > max_size:
+    if max_size is not None and size > max_size:
         return f"size {size} > max {max_size}"
     ref = midpoint if side == "yes" else (100 - midpoint)
     if ref > 0 and abs(price - ref) > ref * 0.10:

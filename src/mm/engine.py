@@ -754,7 +754,9 @@ class MMEngine:
 
                 # Layer 1 validation
                 rejection = check_layer1(quote_price, size,
-                                         midpoint, side=side)
+                                         midpoint,
+                                         max_size=self.order_size * 2,
+                                         side=side)
                 if rejection:
                     continue
 

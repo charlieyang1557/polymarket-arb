@@ -41,6 +41,20 @@ def test_l1_rejects_no_fat_finger():
     # midpoint=28 -> NO ref = 72. Price 60 is outside 10% of 72 (7.2)
     assert check_layer1(price=60, size=2, midpoint=28.0, side="no") is not None
 
+def test_l1_scaled_size_passes_with_scaled_max():
+    """size=16 with max_size=32 should pass (capital-scaled orders)."""
+    assert check_layer1(price=48, size=16, midpoint=49.0, max_size=32) is None
+
+def test_l1_scaled_size_rejected_by_old_default():
+    """size=16 with max_size=5 should reject."""
+    result = check_layer1(price=48, size=16, midpoint=49.0, max_size=5)
+    assert result is not None
+    assert "size 16 > max 5" in result
+
+def test_l1_none_max_size_skips_size_check():
+    """max_size=None should skip size validation entirely."""
+    assert check_layer1(price=48, size=999, midpoint=49.0, max_size=None) is None
+
 # Layer 2
 def test_l2_continue_under_10():
     ms = MarketState(ticker="X")
