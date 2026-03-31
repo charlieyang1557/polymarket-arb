@@ -212,3 +212,96 @@ def test_filter_only_affects_passing():
     ]
     result = filter_by_hours_to_game(candidates, max_hours=18, now=now)
     assert len(result) == 1  # kept because passes=False (not filtered)
+
+
+def test_filter_rejects_game_too_close():
+    """Game 1h away → rejected (spread already compressed)."""
+    now = datetime(2026, 3, 29, 12, 0, tzinfo=timezone.utc)
+    candidates = [
+        {"slug": "imminent", "passes": True,
+         "game_start_time": "2026-03-29T13:00:00Z"},
+    ]
+    result = filter_by_hours_to_game(candidates, max_hours=18,
+                                     min_hours=3, now=now)
+    assert result[0]["passes"] is False
+    assert "too close" in result[0].get("skip_reason", "").lower()
+
+
+def test_filter_accepts_game_at_8h():
+    """Game 8h away → accepted (within 3-18h window)."""
+    now = datetime(2026, 3, 29, 12, 0, tzinfo=timezone.utc)
+    candidates = [
+        {"slug": "tonight", "passes": True,
+         "game_start_time": "2026-03-29T20:00:00Z"},
+    ]
+    result = filter_by_hours_to_game(candidates, max_hours=18,
+                                     min_hours=3, now=now)
+    assert result[0]["passes"] is True
+
+
+# --- taker velocity filter ---
+
+from scripts.poly_daily_scan import filter_by_taker_velocity
+
+
+def test_velocity_rejects_dead_market():
+    """Market with 0 trades/hr → rejected."""
+    candidates = [
+        {"slug": "dead-water", "passes": True, "taker_velocity": 0},
+    ]
+    result = filter_by_taker_velocity(candidates, min_velocity=50)
+    assert result[0]["passes"] is False
+    assert "low taker velocity" in result[0].get("skip_reason", "").lower()
+
+
+def test_velocity_accepts_active_market():
+    """Market with 100 trades/hr → accepted."""
+    candidates = [
+        {"slug": "active", "passes": True, "taker_velocity": 100},
+    ]
+    result = filter_by_taker_velocity(candidates, min_velocity=50)
+    assert result[0]["passes"] is True
+
+
+def test_velocity_skips_non_passing():
+    """Non-passing candidates untouched."""
+    candidates = [
+        {"slug": "already-failed", "passes": False, "taker_velocity": 0},
+    ]
+    result = filter_by_taker_velocity(candidates, min_velocity=50)
+    assert result[0]["passes"] is False  # unchanged, no skip_reason added
+
+
+def test_velocity_at_threshold():
+    """Exactly at threshold → accepted."""
+    candidates = [
+        {"slug": "borderline", "passes": True, "taker_velocity": 50},
+    ]
+    result = filter_by_taker_velocity(candidates, min_velocity=50)
+    assert result[0]["passes"] is True
+
+
+# --- estimate_taker_velocity ---
+
+from scripts.poly_daily_scan import estimate_taker_velocity
+
+
+def test_estimate_velocity_from_delta():
+    """Delta of 100 shares over 30s = 12000/hr."""
+    vel = estimate_taker_velocity(
+        shares_before=1000, shares_after=1100, interval_seconds=30)
+    assert vel == 12000
+
+
+def test_estimate_velocity_zero_delta():
+    """No change in shares → 0 velocity."""
+    vel = estimate_taker_velocity(
+        shares_before=1000, shares_after=1000, interval_seconds=30)
+    assert vel == 0
+
+
+def test_estimate_velocity_handles_zero_interval():
+    """Zero interval → 0 velocity (avoid division by zero)."""
+    vel = estimate_taker_velocity(
+        shares_before=1000, shares_after=1100, interval_seconds=0)
+    assert vel == 0

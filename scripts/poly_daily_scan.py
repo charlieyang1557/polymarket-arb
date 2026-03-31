@@ -239,11 +239,12 @@ def apply_prefilters(c: dict) -> bool:
 
 
 def filter_by_hours_to_game(candidates: list[dict], max_hours: int = 18,
+                            min_hours: int = 3,
                             now: datetime | None = None) -> list[dict]:
-    """Exclude passing candidates where game_start is > max_hours away.
+    """Exclude passing candidates outside the [min_hours, max_hours] window.
 
-    Distant markets have mirage liquidity (wide spreads that disappear
-    as game approaches). Only trade today's games.
+    - > max_hours: mirage liquidity (wide spreads that disappear near game)
+    - < min_hours: spread already compressed near game time, no edge
 
     Non-passing candidates are kept (they're already excluded from ranking).
     Candidates without game_start_time are kept (can't filter).
@@ -267,12 +268,52 @@ def filter_by_hours_to_game(candidates: list[dict], max_hours: int = 18,
                 c["passes"] = False
                 c["skip_reason"] = f"game in {hours:.0f}h (>{max_hours}h)"
                 print(f"    SKIP: {c['slug']} game in {hours:.0f}h", flush=True)
-            # Also skip if game already started
+            elif 0 < hours < min_hours:
+                c["passes"] = False
+                c["skip_reason"] = (f"game too close ({hours:.1f}h "
+                                    f"< {min_hours}h min)")
+                print(f"    SKIP: {c['slug']} game too close "
+                      f"({hours:.1f}h)", flush=True)
             elif hours < 0:
                 c["passes"] = False
                 c["skip_reason"] = "game already started"
         except (ValueError, TypeError):
             pass
+
+        result.append(c)
+    return result
+
+
+def estimate_taker_velocity(shares_before: int, shares_after: int,
+                            interval_seconds: int) -> int:
+    """Estimate taker velocity from two consecutive shares_traded snapshots.
+
+    Returns estimated contracts traded per hour.
+    """
+    if interval_seconds <= 0:
+        return 0
+    delta = max(0, shares_after - shares_before)
+    return int(delta * 3600 / interval_seconds)
+
+
+def filter_by_taker_velocity(candidates: list[dict],
+                             min_velocity: int = 50) -> list[dict]:
+    """Exclude passing candidates with low taker velocity.
+
+    Prevents selecting "dead water" markets with wide spreads but no
+    taker activity — our orders never fill in these markets.
+    """
+    result = []
+    for c in candidates:
+        if not c.get("passes"):
+            result.append(c)
+            continue
+
+        vel = c.get("taker_velocity", 0)
+        if vel < min_velocity:
+            c["passes"] = False
+            c["skip_reason"] = f"low taker velocity: {vel}/hr (min {min_velocity})"
+            print(f"    SKIP: {c['slug']} low velocity {vel}/hr", flush=True)
 
         result.append(c)
     return result
@@ -483,6 +524,56 @@ def deep_check(client: PolyClient, candidates: list[dict],
     return checked
 
 
+VELOCITY_POLL_INTERVAL = 30  # seconds between BBO polls
+
+
+def measure_taker_velocity(client: PolyClient,
+                           candidates: list[dict],
+                           interval: int = VELOCITY_POLL_INTERVAL) -> None:
+    """Measure taker velocity via 2-poll BBO delta on passing candidates.
+
+    Mutates candidates in-place, adding 'taker_velocity' field.
+    Only polls passing candidates to minimize API calls.
+    """
+    passing = [c for c in candidates if c.get("passes")]
+    if not passing:
+        return
+
+    print(f"  Measuring taker velocity ({interval}s window, "
+          f"{len(passing)} markets)...", flush=True)
+
+    # First poll: record shares_traded
+    snap1: dict[str, int] = {}
+    for c in passing:
+        try:
+            bbo = client.get_bbo(c["slug"])
+            snap1[c["slug"]] = bbo.get("shares_traded", 0)
+        except Exception:
+            snap1[c["slug"]] = c.get("shares_traded", 0)
+        time.sleep(0.05)
+
+    # Wait
+    time.sleep(interval)
+
+    # Second poll: measure delta
+    for c in passing:
+        try:
+            bbo = client.get_bbo(c["slug"])
+            shares_after = bbo.get("shares_traded", 0)
+        except Exception:
+            shares_after = snap1.get(c["slug"], 0)
+
+        shares_before = snap1.get(c["slug"], 0)
+        c["taker_velocity"] = estimate_taker_velocity(
+            shares_before, shares_after, interval)
+        time.sleep(0.05)
+
+    # Non-passing get velocity 0
+    for c in candidates:
+        if "taker_velocity" not in c:
+            c["taker_velocity"] = 0
+
+
 ACTIVE_SLUGS_PATH = "data/poly_active_slugs.json"
 PENDING_MARKETS_PATH = "data/pending_poly_markets.json"
 
@@ -611,8 +702,14 @@ def main():
     # Phase 2: Deep check (orderbook + filters)
     checked = deep_check(client, candidates, max_check=args.max_check)
 
-    # Phase 2b: Filter out distant games (>18h away = mirage liquidity)
-    checked = filter_by_hours_to_game(checked, max_hours=18)
+    # Phase 2b: Filter out distant/imminent games
+    checked = filter_by_hours_to_game(checked, max_hours=18, min_hours=3)
+
+    # Phase 2c: Measure taker velocity (2-poll BBO delta, ~30s)
+    measure_taker_velocity(client, checked)
+
+    # Phase 2d: Filter out dead-water markets
+    checked = filter_by_taker_velocity(checked, min_velocity=50)
 
     # Phase 3: Rank passing candidates
     ranked = rank_candidates(checked)
@@ -625,7 +722,8 @@ def main():
     print()
     header = (f"{'#':>2} {'Pass':>4} {'Series':<12} {'Type':<10} "
               f"{'Sprd':>4} {'Net':>5} {'Mid':>4} {'Sym':>5} "
-              f"{'L1Q':>6} {'TotQ':>6} {'Rank':>5} {'Question':<35}")
+              f"{'L1Q':>6} {'TotQ':>6} {'Vel':>5} {'Rank':>5} "
+              f"{'Question':<35}")
     print(header)
     print("-" * len(header))
 
@@ -638,10 +736,11 @@ def main():
         net = c.get("net_spread", 0)
         best_depth = max(c.get("best_yes_depth", 0), c.get("best_no_depth", 0))
         totq = c.get("binding_queue", 0)
+        vel = c.get("taker_velocity", 0)
         rank_s = f"{c['composite_rank']:.1f}" if "composite_rank" in c else "-"
         print(f"{i:2d} {flag} {series:<12} {mt:<10} "
               f"{c['spread']:4d} {net:5.1f} {c['midpoint']:4.0f} {sym_s:>5} "
-              f"{best_depth:6d} {totq:6d} {rank_s:>5} "
+              f"{best_depth:6d} {totq:6d} {vel:5d} {rank_s:>5} "
               f"{c.get('question', '')[:35]}")
 
     # Rank detail for passing
@@ -661,7 +760,7 @@ def main():
         for t in targets:
             print(f"    {t['slug']:<45} spread={t['spread']}c "
                   f"net={t['net_spread']:.1f}c sym={t['symmetry']:.2f} "
-                  f"queue={t['binding_queue']}")
+                  f"queue={t['binding_queue']} vel={t.get('taker_velocity', 0)}/hr")
     else:
         print("\n  No markets pass all filters.")
 
