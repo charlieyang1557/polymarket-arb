@@ -284,22 +284,18 @@ def filter_by_hours_to_game(candidates: list[dict], max_hours: int = 18,
     return result
 
 
-def estimate_taker_velocity(shares_before: int, shares_after: int,
-                            interval_seconds: int) -> int:
-    """Estimate taker velocity from two consecutive shares_traded snapshots.
-
-    Returns estimated contracts traded per hour.
-    """
-    if interval_seconds <= 0:
-        return 0
-    delta = max(0, shares_after - shares_before)
-    return int(delta * 3600 / interval_seconds)
+# Volume filter: uses shares_traded from BBO metadata (already fetched).
+# Replaces the old 2-poll BBO delta approach which was too slow for 50+
+# markets (30s per market = 25 min total).
+MIN_SHARES_TRADED = 1000  # cumulative shares traded — conservative threshold
+                          # filters dead markets while allowing recently listed ones
 
 
 def filter_by_taker_velocity(candidates: list[dict],
-                             min_velocity: int = 50) -> list[dict]:
-    """Exclude passing candidates with low taker velocity.
+                             min_shares: int = MIN_SHARES_TRADED) -> list[dict]:
+    """Exclude passing candidates with low trading volume.
 
+    Uses shares_traded from BBO metadata — zero extra API calls.
     Prevents selecting "dead water" markets with wide spreads but no
     taker activity — our orders never fill in these markets.
     """
@@ -309,11 +305,13 @@ def filter_by_taker_velocity(candidates: list[dict],
             result.append(c)
             continue
 
-        vel = c.get("taker_velocity", 0)
-        if vel < min_velocity:
+        vol = c.get("shares_traded", 0)
+        if vol < min_shares:
             c["passes"] = False
-            c["skip_reason"] = f"low taker velocity: {vel}/hr (min {min_velocity})"
-            print(f"    SKIP: {c['slug']} low velocity {vel}/hr", flush=True)
+            c["skip_reason"] = (f"low volume: {vol} shares_traded "
+                                f"(min {min_shares})")
+            print(f"    SKIP: {c['slug']} low volume "
+                  f"{vol} shares", flush=True)
 
         result.append(c)
     return result
@@ -524,56 +522,6 @@ def deep_check(client: PolyClient, candidates: list[dict],
     return checked
 
 
-VELOCITY_POLL_INTERVAL = 30  # seconds between BBO polls
-
-
-def measure_taker_velocity(client: PolyClient,
-                           candidates: list[dict],
-                           interval: int = VELOCITY_POLL_INTERVAL) -> None:
-    """Measure taker velocity via 2-poll BBO delta on passing candidates.
-
-    Mutates candidates in-place, adding 'taker_velocity' field.
-    Only polls passing candidates to minimize API calls.
-    """
-    passing = [c for c in candidates if c.get("passes")]
-    if not passing:
-        return
-
-    print(f"  Measuring taker velocity ({interval}s window, "
-          f"{len(passing)} markets)...", flush=True)
-
-    # First poll: record shares_traded
-    snap1: dict[str, int] = {}
-    for c in passing:
-        try:
-            bbo = client.get_bbo(c["slug"])
-            snap1[c["slug"]] = bbo.get("shares_traded", 0)
-        except Exception:
-            snap1[c["slug"]] = c.get("shares_traded", 0)
-        time.sleep(0.05)
-
-    # Wait
-    time.sleep(interval)
-
-    # Second poll: measure delta
-    for c in passing:
-        try:
-            bbo = client.get_bbo(c["slug"])
-            shares_after = bbo.get("shares_traded", 0)
-        except Exception:
-            shares_after = snap1.get(c["slug"], 0)
-
-        shares_before = snap1.get(c["slug"], 0)
-        c["taker_velocity"] = estimate_taker_velocity(
-            shares_before, shares_after, interval)
-        time.sleep(0.05)
-
-    # Non-passing get velocity 0
-    for c in candidates:
-        if "taker_velocity" not in c:
-            c["taker_velocity"] = 0
-
-
 ACTIVE_SLUGS_PATH = "data/poly_active_slugs.json"
 PENDING_MARKETS_PATH = "data/pending_poly_markets.json"
 
@@ -705,11 +653,8 @@ def main():
     # Phase 2b: Filter out distant/imminent games
     checked = filter_by_hours_to_game(checked, max_hours=18, min_hours=3)
 
-    # Phase 2c: Measure taker velocity (2-poll BBO delta, ~30s)
-    measure_taker_velocity(client, checked)
-
-    # Phase 2d: Filter out dead-water markets
-    checked = filter_by_taker_velocity(checked, min_velocity=50)
+    # Phase 2c: Filter out dead-water markets (uses shares_traded from BBO)
+    checked = filter_by_taker_velocity(checked, min_shares=MIN_SHARES_TRADED)
 
     # Phase 3: Rank passing candidates
     ranked = rank_candidates(checked)
@@ -722,7 +667,7 @@ def main():
     print()
     header = (f"{'#':>2} {'Pass':>4} {'Series':<12} {'Type':<10} "
               f"{'Sprd':>4} {'Net':>5} {'Mid':>4} {'Sym':>5} "
-              f"{'L1Q':>6} {'TotQ':>6} {'Vel':>5} {'Rank':>5} "
+              f"{'L1Q':>6} {'TotQ':>6} {'Vol':>7} {'Rank':>5} "
               f"{'Question':<35}")
     print(header)
     print("-" * len(header))
@@ -736,11 +681,11 @@ def main():
         net = c.get("net_spread", 0)
         best_depth = max(c.get("best_yes_depth", 0), c.get("best_no_depth", 0))
         totq = c.get("binding_queue", 0)
-        vel = c.get("taker_velocity", 0)
+        vol = c.get("shares_traded", 0)
         rank_s = f"{c['composite_rank']:.1f}" if "composite_rank" in c else "-"
         print(f"{i:2d} {flag} {series:<12} {mt:<10} "
               f"{c['spread']:4d} {net:5.1f} {c['midpoint']:4.0f} {sym_s:>5} "
-              f"{best_depth:6d} {totq:6d} {vel:5d} {rank_s:>5} "
+              f"{best_depth:6d} {totq:6d} {vol:7d} {rank_s:>5} "
               f"{c.get('question', '')[:35]}")
 
     # Rank detail for passing
@@ -760,7 +705,7 @@ def main():
         for t in targets:
             print(f"    {t['slug']:<45} spread={t['spread']}c "
                   f"net={t['net_spread']:.1f}c sym={t['symmetry']:.2f} "
-                  f"queue={t['binding_queue']} vel={t.get('taker_velocity', 0)}/hr")
+                  f"queue={t['binding_queue']} vol={t.get('shares_traded', 0)}")
     else:
         print("\n  No markets pass all filters.")
 

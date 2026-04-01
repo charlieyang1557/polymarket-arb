@@ -239,69 +239,61 @@ def test_filter_accepts_game_at_8h():
     assert result[0]["passes"] is True
 
 
-# --- taker velocity filter ---
+# --- volume-based taker velocity filter ---
+# Replaced the 2-poll BBO delta approach (too slow for 50+ markets)
+# with shares_traded from BBO metadata — already fetched, zero extra API calls.
 
-from scripts.poly_daily_scan import filter_by_taker_velocity
+from scripts.poly_daily_scan import filter_by_taker_velocity, MIN_SHARES_TRADED
 
 
 def test_velocity_rejects_dead_market():
-    """Market with 0 trades/hr → rejected."""
+    """Market with 0 shares_traded → rejected (dead water)."""
     candidates = [
-        {"slug": "dead-water", "passes": True, "taker_velocity": 0},
+        {"slug": "dead-water", "passes": True, "shares_traded": 0},
     ]
-    result = filter_by_taker_velocity(candidates, min_velocity=50)
+    result = filter_by_taker_velocity(candidates, min_shares=MIN_SHARES_TRADED)
     assert result[0]["passes"] is False
-    assert "low taker velocity" in result[0].get("skip_reason", "").lower()
+    assert "low volume" in result[0].get("skip_reason", "").lower()
 
 
 def test_velocity_accepts_active_market():
-    """Market with 100 trades/hr → accepted."""
+    """Market with high shares_traded → accepted."""
     candidates = [
-        {"slug": "active", "passes": True, "taker_velocity": 100},
+        {"slug": "active", "passes": True, "shares_traded": 50000},
     ]
-    result = filter_by_taker_velocity(candidates, min_velocity=50)
+    result = filter_by_taker_velocity(candidates, min_shares=MIN_SHARES_TRADED)
     assert result[0]["passes"] is True
 
 
 def test_velocity_skips_non_passing():
     """Non-passing candidates untouched."""
     candidates = [
-        {"slug": "already-failed", "passes": False, "taker_velocity": 0},
+        {"slug": "already-failed", "passes": False, "shares_traded": 0},
     ]
-    result = filter_by_taker_velocity(candidates, min_velocity=50)
+    result = filter_by_taker_velocity(candidates, min_shares=MIN_SHARES_TRADED)
     assert result[0]["passes"] is False  # unchanged, no skip_reason added
 
 
 def test_velocity_at_threshold():
     """Exactly at threshold → accepted."""
     candidates = [
-        {"slug": "borderline", "passes": True, "taker_velocity": 50},
+        {"slug": "borderline", "passes": True,
+         "shares_traded": MIN_SHARES_TRADED},
     ]
-    result = filter_by_taker_velocity(candidates, min_velocity=50)
+    result = filter_by_taker_velocity(candidates, min_shares=MIN_SHARES_TRADED)
     assert result[0]["passes"] is True
 
 
-# --- estimate_taker_velocity ---
-
-from scripts.poly_daily_scan import estimate_taker_velocity
-
-
-def test_estimate_velocity_from_delta():
-    """Delta of 100 shares over 30s = 12000/hr."""
-    vel = estimate_taker_velocity(
-        shares_before=1000, shares_after=1100, interval_seconds=30)
-    assert vel == 12000
+def test_velocity_just_below_threshold():
+    """One below threshold → rejected."""
+    candidates = [
+        {"slug": "almost", "passes": True,
+         "shares_traded": MIN_SHARES_TRADED - 1},
+    ]
+    result = filter_by_taker_velocity(candidates, min_shares=MIN_SHARES_TRADED)
+    assert result[0]["passes"] is False
 
 
-def test_estimate_velocity_zero_delta():
-    """No change in shares → 0 velocity."""
-    vel = estimate_taker_velocity(
-        shares_before=1000, shares_after=1000, interval_seconds=30)
-    assert vel == 0
-
-
-def test_estimate_velocity_handles_zero_interval():
-    """Zero interval → 0 velocity (avoid division by zero)."""
-    vel = estimate_taker_velocity(
-        shares_before=1000, shares_after=1100, interval_seconds=0)
-    assert vel == 0
+def test_min_shares_traded_is_reasonable():
+    """MIN_SHARES_TRADED should be conservative (100-10000 range)."""
+    assert 100 <= MIN_SHARES_TRADED <= 10000
