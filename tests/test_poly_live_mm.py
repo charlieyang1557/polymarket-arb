@@ -14,21 +14,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # ---------------------------------------------------------------------------
 
 class TestShouldRequote:
-    """REQUOTE_TOL = 1c. Only requote if |target - current| >= REQUOTE_TOL."""
+    """MIN_REQUOTE_DELTA = 2c. Only requote if |target - current| >= 2."""
 
     def test_no_requote_same_price(self):
         from scripts.poly_live_mm import should_requote
         assert should_requote(target_price=42, current_price=42) is False
 
+    def test_no_requote_1c_diff(self):
+        from scripts.poly_live_mm import should_requote
+        # 1c diff < MIN_REQUOTE_DELTA (2) → no requote, preserve queue
+        assert should_requote(target_price=43, current_price=42) is False
+
     def test_requote_at_threshold(self):
         from scripts.poly_live_mm import should_requote
-        # Exactly 1c diff → requote
-        assert should_requote(target_price=43, current_price=42) is True
-
-    def test_no_requote_below_threshold(self):
-        from scripts.poly_live_mm import should_requote
-        # 0c diff — same price
-        assert should_requote(target_price=42, current_price=42) is False
+        # Exactly 2c diff → requote
+        assert should_requote(target_price=44, current_price=42) is True
 
     def test_requote_large_diff(self):
         from scripts.poly_live_mm import should_requote
@@ -469,3 +469,90 @@ class TestLocalOrderTracking:
         result = mgr.poll_open_orders(["some-api-slug"])
         assert "some-api-slug" in result
         assert result["some-api-slug"]["no"]["order_id"] == "ord-unknown"
+
+
+# ---------------------------------------------------------------------------
+# Test: MIN_REQUOTE_DELTA — sticky quotes preserve queue priority
+# ---------------------------------------------------------------------------
+
+class TestMinRequoteDelta:
+    """MIN_REQUOTE_DELTA = 2c. Don't cancel+replace unless price moves >= 2c.
+
+    Root cause: 1c spread markets where every requote (cancel+replace)
+    sends us to back of queue. Bot requoted 27 times in a live session,
+    destroying queue priority each time. Zero fills in 9 hours.
+    """
+
+    def test_1c_move_no_requote(self):
+        """Price moves 1c → delta < MIN_REQUOTE_DELTA (2) → keep existing."""
+        from scripts.poly_live_mm import should_requote, MIN_REQUOTE_DELTA
+        assert MIN_REQUOTE_DELTA == 2
+        assert should_requote(target_price=43, current_price=42) is False
+
+    def test_2c_move_triggers_requote(self):
+        """Price moves 2c → delta >= MIN_REQUOTE_DELTA → requote."""
+        from scripts.poly_live_mm import should_requote
+        assert should_requote(target_price=44, current_price=42) is True
+
+    def test_0c_move_no_requote(self):
+        """Same price → no requote (already covered, but verify with new delta)."""
+        from scripts.poly_live_mm import should_requote
+        assert should_requote(target_price=42, current_price=42) is False
+
+    def test_3c_move_triggers_requote(self):
+        """Large move → requote."""
+        from scripts.poly_live_mm import should_requote
+        assert should_requote(target_price=45, current_price=42) is True
+
+    def test_negative_2c_move_triggers_requote(self):
+        """Price drops 2c → requote."""
+        from scripts.poly_live_mm import should_requote
+        assert should_requote(target_price=40, current_price=42) is True
+
+    def test_negative_1c_move_no_requote(self):
+        """Price drops 1c → no requote."""
+        from scripts.poly_live_mm import should_requote
+        assert should_requote(target_price=41, current_price=42) is False
+
+
+class TestShouldRequoteWithOverrides:
+    """Test should_requote_or_force — respects MIN_REQUOTE_DELTA but allows
+    force-requote on soft-close, first placement, and inventory change."""
+
+    def test_soft_close_always_requotes(self):
+        """SOFT_CLOSE mode → always requote even if delta < 2."""
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(
+            target_price=43, current_price=42,
+            force_requote=True) is True
+
+    def test_first_placement_always_places(self):
+        """No existing order → always place (existing=None path, not tested
+        via should_requote_or_force but verified in integration)."""
+        # First placement is handled by checking existing is None before
+        # calling should_requote, so this tests the force flag pathway
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(
+            target_price=43, current_price=42,
+            force_requote=True) is True
+
+    def test_inventory_change_forces_requote(self):
+        """Fill detected (inventory changed) → force requote even if delta < 2."""
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(
+            target_price=43, current_price=42,
+            force_requote=True) is True
+
+    def test_no_force_respects_delta(self):
+        """Normal tick, no force → respects MIN_REQUOTE_DELTA."""
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(
+            target_price=43, current_price=42,
+            force_requote=False) is False
+
+    def test_no_force_large_delta_requotes(self):
+        """Normal tick with large delta → requote."""
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(
+            target_price=44, current_price=42,
+            force_requote=False) is True

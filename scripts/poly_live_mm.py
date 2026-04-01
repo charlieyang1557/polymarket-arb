@@ -57,7 +57,8 @@ from src.mm.db import MMDatabase
 # Constants
 # ---------------------------------------------------------------------------
 
-REQUOTE_TOL = 1  # cents — only cancel+replace if |new - current| >= this
+MIN_REQUOTE_DELTA = 2  # cents — only cancel+replace if |new - current| >= this
+                       # Preserves queue priority in tight-spread markets
 WORST_CASE_PER_CONTRACT = 50
 MAX_ACTIVE_MARKETS = 10
 ACTIVE_SLUGS_PATH = "data/poly_active_slugs.json"
@@ -78,8 +79,26 @@ def clamp_price(price_cents: int) -> int:
 
 
 def should_requote(target_price: int, current_price: int) -> bool:
-    """Whether to cancel+replace an order based on price difference."""
-    return abs(target_price - current_price) >= REQUOTE_TOL
+    """Whether to cancel+replace an order based on price difference.
+
+    Only requotes if the new price differs by >= MIN_REQUOTE_DELTA cents.
+    In tight-spread markets (1-2c), this preserves queue priority by
+    avoiding unnecessary cancel+replace cycles.
+    """
+    return abs(target_price - current_price) >= MIN_REQUOTE_DELTA
+
+
+def should_requote_or_force(target_price: int, current_price: int,
+                            force_requote: bool = False) -> bool:
+    """Like should_requote, but with a force override.
+
+    force_requote=True bypasses MIN_REQUOTE_DELTA check. Used when:
+    - SOFT_CLOSE or AGGRESS_FLATTEN mode (risk overrides queue priority)
+    - Inventory changed (fill detected, skew shifted)
+    """
+    if force_requote:
+        return target_price != current_price
+    return should_requote(target_price, current_price)
 
 
 def max_order_value_check(price_cents: int, count: int,
@@ -741,6 +760,7 @@ def main():
             curr_orders = live_mgr.merged_orders(raw_polled)
 
             # Detect fills from order state changes
+            inv_changed_slugs: set = set()
             fills = live_mgr.check_fills(curr_orders)
             for f in fills:
                 slug = f["slug"]
@@ -756,6 +776,8 @@ def main():
                 fee = maker_fee_cents(price, filled)
                 ms.total_fees += fee
                 ms.realized_pnl -= fee
+
+                inv_changed_slugs.add(slug)
 
                 if side == "yes":
                     ms.yes_queue.extend([price] * filled)
@@ -951,7 +973,8 @@ def main():
                         curr_orders, args.size,
                         risk["max_inventory"],
                         time_soft_close=time_soft_close,
-                        max_unhedged_exit=risk["max_unhedged_exit"])
+                        max_unhedged_exit=risk["max_unhedged_exit"],
+                        inventory_changed=slug in inv_changed_slugs)
 
                 # Snapshot every 6th tick
                 tick_count += 1
@@ -1119,7 +1142,8 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
                         curr_orders: dict, order_size: int,
                         max_inventory: int,
                         time_soft_close: bool = False,
-                        max_unhedged_exit: int = 5):
+                        max_unhedged_exit: int = 5,
+                        inventory_changed: bool = False):
     """Manage live quote placement with requote tolerance."""
     now = datetime.now(timezone.utc)
     net_inventory = ms.net_inventory
@@ -1156,8 +1180,8 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
             size = min(order_size, abs(net_inventory))
 
             existing = slug_orders.get(reduce_side)
-            if existing is None or should_requote(price,
-                                                   existing["price_cents"]):
+            if existing is None or should_requote_or_force(
+                    price, existing["price_cents"], force_requote=True):
                 if existing:
                     live_mgr.cancel_order(slug, reduce_side,
                                           existing["order_id"])
@@ -1212,7 +1236,14 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
         existing = slug_orders.get(side)
 
         if existing is not None:
-            if not should_requote(quote_price, existing["price_cents"]):
+            force = inventory_changed
+            if not should_requote_or_force(
+                    quote_price, existing["price_cents"],
+                    force_requote=force):
+                delta = abs(quote_price - existing["price_cents"])
+                print(f"    SKIP_REQUOTE {slug} {side} "
+                      f"old={existing['price_cents']}c new={quote_price}c "
+                      f"delta={delta}c", flush=True)
                 continue  # keep existing order — preserve queue priority
             # Cancel old order
             live_mgr.cancel_order(slug, side, existing["order_id"])
