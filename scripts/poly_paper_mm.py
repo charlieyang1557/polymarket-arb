@@ -178,6 +178,105 @@ class DepthFillSimulator:
         return fills
 
 
+class QueuePositionSimulator:
+    """Simulates fills using realistic FIFO queue position tracking.
+
+    Instead of using depth changes * factor (DepthFillSimulator), this
+    tracks our actual position in the queue:
+      - On placement: queue_ahead = total depth at our price
+      - Each tick: queue_ahead = min(queue_ahead, current_depth)
+        (depth decrease = contracts ahead of us got filled/cancelled)
+      - Fill when: queue_ahead reaches 0
+      - On requote: queue_ahead resets to new depth (back of queue!)
+
+    Key insight: depth INCREASES don't affect our queue position
+    (new makers join behind us). Only decreases advance our position.
+    """
+
+    def __init__(self):
+        # {slug: {side: {price, size, remaining, queue_ahead, placed_at,
+        #                depth_at_placement, prev_depth}}}
+        self._orders: dict[str, dict] = {}
+
+    def place_order(self, slug: str, side: str, price: int, size: int,
+                    depth_at_price: int):
+        """Place a new paper order at back of queue."""
+        if slug not in self._orders:
+            self._orders[slug] = {}
+        self._orders[slug][side] = {
+            "price": price,
+            "size": size,
+            "remaining": size,
+            "queue_ahead": depth_at_price,
+            "placed_at": datetime.now(timezone.utc),
+            "depth_at_placement": depth_at_price,
+            "prev_depth": depth_at_price,
+        }
+
+    def get_order(self, slug: str, side: str) -> dict | None:
+        """Get order info, or None if no order exists."""
+        return self._orders.get(slug, {}).get(side)
+
+    def cancel_order(self, slug: str, side: str):
+        """Cancel an order."""
+        if slug in self._orders:
+            self._orders[slug].pop(side, None)
+
+    def requote(self, slug: str, side: str, new_price: int,
+                new_depth: int):
+        """Cancel + place at new price = back of new queue."""
+        old = self.get_order(slug, side)
+        size = old["size"] if old else 0
+        if size > 0:
+            self.place_order(slug, side, new_price, size, new_depth)
+
+    def update_tick(self, slug: str, side: str, price: int,
+                    current_depth: int) -> list[dict]:
+        """Update queue position based on current depth. Returns fills."""
+        order = self.get_order(slug, side)
+        if order is None:
+            return []
+
+        if price != order["price"]:
+            return []  # price mismatch — stale order
+
+        prev_depth = order["prev_depth"]
+        order["prev_depth"] = current_depth
+
+        # Depth decrease = contracts ahead of us consumed
+        # Depth increase = new makers behind us (no effect on our position)
+        if current_depth < prev_depth:
+            depth_decrease = prev_depth - current_depth
+            order["queue_ahead"] = max(0, order["queue_ahead"] - depth_decrease)
+
+        # Check fill
+        if order["queue_ahead"] <= 0:
+            waited = (datetime.now(timezone.utc) -
+                      order["placed_at"]).total_seconds()
+            filled = order["remaining"]
+            fill = {
+                "side": side,
+                "filled": filled,
+                "price": order["price"],
+                "waited_seconds": round(waited, 1),
+                "depth_at_placement": order["depth_at_placement"],
+            }
+            # Remove filled order
+            self._orders[slug].pop(side, None)
+            print(f"    SIM_FILL {slug} {side} {filled}@{price}c "
+                  f"waited={waited:.0f}s", flush=True)
+            return [fill]
+
+        # Log queue status
+        depth_decrease = max(0, prev_depth - current_depth)
+        if depth_decrease > 0:
+            print(f"    QUEUE {slug} {side} price={price}c "
+                  f"ahead={order['queue_ahead']} depth={current_depth} "
+                  f"drain={depth_decrease}", flush=True)
+
+        return []
+
+
 def write_active_slugs_file(slugs: list[str], session_id: str,
                              path: str = ACTIVE_SLUGS_PATH):
     """Write current active slugs to state file (atomic)."""
@@ -267,6 +366,41 @@ def consume_pending_markets(gs, pending_path: str = PENDING_MARKETS_PATH,
     return added
 
 
+def _queue_sim_tick(sim: QueuePositionSimulator, slug: str,
+                    ms, yes_book: list, no_book: list) -> list[dict]:
+    """Drive QueuePositionSimulator for one tick on one market.
+
+    Syncs sim state with engine's SimOrder state (handles placement,
+    requotes, cancels), then calls update_tick for each side.
+    """
+    fills = []
+    for order, book, side in [
+        (ms.yes_order, yes_book, "yes"),
+        (ms.no_order, no_book, "no"),
+    ]:
+        sim_order = sim.get_order(slug, side)
+
+        if order is None or order.remaining <= 0:
+            # Engine cancelled or filled — sync sim
+            if sim_order is not None:
+                sim.cancel_order(slug, side)
+            continue
+
+        depth = compute_depth_at_price(book, order.price, side)
+
+        if sim_order is None:
+            # New order placed by engine — register in sim
+            sim.place_order(slug, side, order.price, order.remaining, depth)
+        elif sim_order["price"] != order.price:
+            # Engine requoted — back of queue at new price
+            sim.requote(slug, side, order.price, depth)
+
+        side_fills = sim.update_tick(slug, side, order.price, depth)
+        fills.extend(side_fills)
+
+    return fills
+
+
 def main():
     # Replace Kalshi fee formula with Polymarket rebate BEFORE engine init
     _apply_poly_fee_patch()
@@ -284,6 +418,9 @@ def main():
     parser.add_argument("--capital", type=int, default=2500,
                         help="Capital in cents (default: 2500 = $25)")
     parser.add_argument("--db-path", default="data/poly_mm_paper.db")
+    parser.add_argument("--sim-mode", choices=["depth", "queue"],
+                        default="depth",
+                        help="Fill sim: 'depth' (legacy) or 'queue' (realistic)")
     args = parser.parse_args()
 
     # Auth is optional for paper trading (we only read orderbooks)
@@ -350,7 +487,12 @@ def main():
     engine = MMEngine(client, db, gs, order_size=args.size,
                       max_inventory=risk["max_inventory"],
                       max_unhedged_exit=risk["max_unhedged_exit"])
-    fill_sim = DepthFillSimulator(factor=DRAIN_FACTOR)
+    if args.sim_mode == "queue":
+        fill_sim = QueuePositionSimulator()
+        print(f"  Fill sim: QueuePositionSimulator (realistic queue)", flush=True)
+    else:
+        fill_sim = DepthFillSimulator(factor=DRAIN_FACTOR)
+        print(f"  Fill sim: DepthFillSimulator (legacy)", flush=True)
 
     # Track rebates earned per market for session summary
     rebates_earned = {slug: 0.0 for slug in slugs}
@@ -435,9 +577,7 @@ def main():
                 try:
                     engine.tick_one_market(ms)
 
-                    # --- Depth-based fill simulation ---
-                    # Engine's trade-based drain was a no-op (empty trades).
-                    # Now check for fills via orderbook depth changes.
+                    # --- Fill simulation ---
                     if ms.active and (ms.yes_order or ms.no_order):
                         try:
                             book_data = client.get_orderbook(slug)
@@ -449,31 +589,35 @@ def main():
                             no_book = [[round(float(p) * 100), int(float(q))]
                                        for p, q in no_raw]
 
-                            fills = fill_sim.check_fills(
-                                slug, ms.yes_order, ms.no_order,
-                                yes_book, no_book)
+                            if isinstance(fill_sim, QueuePositionSimulator):
+                                fills = _queue_sim_tick(
+                                    fill_sim, slug, ms, yes_book, no_book)
+                            else:
+                                fills = fill_sim.check_fills(
+                                    slug, ms.yes_order, ms.no_order,
+                                    yes_book, no_book)
+                                for f in fills:
+                                    order = (ms.yes_order if f["side"] == "yes"
+                                             else ms.no_order)
+                                    if order is None:
+                                        continue
+                                    print(f"    DEPTH {slug} "
+                                          f"{f['side']}@{f['price']}: "
+                                          f"{f['prev_depth']}→{f['curr_depth']} "
+                                          f"drain={f['drain']} "
+                                          f"qpos→{order.queue_pos}",
+                                          flush=True)
 
                             for f in fills:
                                 order = (ms.yes_order if f["side"] == "yes"
                                          else ms.no_order)
                                 if order is None:
                                     continue
-
-                                print(f"    DEPTH {slug} "
-                                      f"{f['side']}@{f['price']}: "
-                                      f"{f['prev_depth']}→{f['curr_depth']} "
-                                      f"drain={f['drain']} "
-                                      f"qpos→{order.queue_pos}",
-                                      flush=True)
-
-                                # Record fill via engine's pipeline
                                 best_yb = yes_book[-1][0] if yes_book else 50
                                 best_nb = no_book[-1][0] if no_book else 50
                                 engine._record_fill(
                                     ms, order, f["filled"],
                                     best_yb, best_nb)
-
-                                # Track rebate (negative fee = income)
                                 rebate = abs(calculate_maker_fee(
                                     f["price"], count=f["filled"]))
                                 rebates_earned[slug] += rebate
