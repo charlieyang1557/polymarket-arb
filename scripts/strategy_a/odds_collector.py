@@ -163,7 +163,7 @@ def fetch_polymarket_slugs(client) -> list[str]:
 
 
 def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
-                   db_path: str = DB_PATH):
+                   db_path: str = DB_PATH, verbose: bool = False):
     """Main collection loop."""
     now = datetime.now(timezone.utc)
     ts = now.isoformat(timespec="seconds")
@@ -225,10 +225,13 @@ def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
             sport=pin["sport"],
             commence_time=pin["commence_time"],
             slugs=slugs,
+            verbose=verbose,
         )
 
         if slug is None:
-            unmatched.append(f"{pin['home_team']} vs {pin['away_team']}")
+            unmatched.append(
+                f"{pin['home_team']} vs {pin['away_team']} "
+                f"[{pin['sport']}]")
             continue
 
         # Fetch Polymarket BBO
@@ -291,6 +294,12 @@ def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
         snapshots.append(snapshot)
         matched += 1
 
+        # Print each matched pair
+        direction = "Pin>Poly" if delta_home > 0 else "Poly>Pin"
+        print(f"    {event_str[:40]:40s} Pin={home_prob:.1%}/{away_prob:.1%} "
+              f"Poly={yes_price:.0%}/{1-yes_price:.0%} "
+              f"Δ={delta_home:+.1%} ({direction})", flush=True)
+
     db.close()
 
     # Step 5: Summary
@@ -312,6 +321,20 @@ def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
               f"({max_event['event'][:40]})")
         print(f"    |delta| > 3%:       {big} ({100*big/len(deltas):.0f}%)")
 
+        # Per-sport breakdown
+        from collections import defaultdict
+        by_sport = defaultdict(list)
+        for s in snapshots:
+            by_sport[s["sport"]].append(s)
+        if len(by_sport) > 1:
+            print(f"\n  Per-sport:")
+            for sport, rows in sorted(by_sport.items(),
+                                       key=lambda x: -len(x[1])):
+                d = [abs(r["delta_home"]) for r in rows]
+                avg = sum(d) / len(d)
+                print(f"    {sport:<30s}: {len(rows):3d} matched, "
+                      f"avg |Δ|={avg:.1%}")
+
     if unmatched:
         print(f"\n  Unmatched events (first 10):")
         for u in unmatched[:10]:
@@ -327,6 +350,8 @@ def main():
                         help="Sports to check (default: all major)")
     parser.add_argument("--db", default=DB_PATH,
                         help="SQLite database path")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Show detailed matching debug output")
     args = parser.parse_args()
 
     db_path = args.db
@@ -338,7 +363,7 @@ def main():
         sys.exit(1)
 
     run_collection(args.sports, api_key or "", dry_run=args.dry_run,
-                   db_path=db_path)
+                   db_path=db_path, verbose=args.verbose)
 
 
 if __name__ == "__main__":

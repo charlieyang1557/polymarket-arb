@@ -85,12 +85,23 @@ class TestEventMatching:
         assert teams == ("bos", "mia")
 
     def test_normalize_team_name(self):
-        """Normalize full team names to abbreviation."""
+        """Normalize full team names to Polymarket slug abbreviation."""
         from src.strategy_a.matching import normalize_team
         assert normalize_team("Boston Celtics") == "bos"
         assert normalize_team("Miami Heat") == "mia"
         assert normalize_team("Los Angeles Lakers") == "lal"
         assert normalize_team("LA Lakers") == "lal"
+        # Polymarket-specific abbreviations (verified from live slugs)
+        assert normalize_team("New York Knicks") == "ny"   # not nyk
+        assert normalize_team("Golden State Warriors") == "gs"  # not gsw
+        assert normalize_team("Phoenix Suns") == "pho"  # not phx
+        assert normalize_team("Los Angeles Kings") == "la"  # not lak
+        assert normalize_team("San Jose Sharks") == "sj"  # not sjk
+        assert normalize_team("Montréal Canadiens") == "mtl"  # accent
+        assert normalize_team("Vegas Golden Knights") == "veg"  # not vgk
+        assert normalize_team("Arizona Diamondbacks") == "az"  # not ari
+        assert normalize_team("Washington Nationals") == "wsh"  # not was
+        assert normalize_team("Chicago White Sox") == "cws"  # not chw
 
     def test_match_event_to_slug(self):
         """Full matching: odds-api event → polymarket slug."""
