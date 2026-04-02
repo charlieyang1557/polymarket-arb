@@ -370,27 +370,36 @@ def rank_candidates(candidates: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def scan_active_markets(client: PolyClient) -> list[dict]:
-    """Fetch all active open markets and extract BBO data."""
-    print("  Fetching active markets...")
+    """Fetch all active open markets via events endpoint.
+
+    The markets.list() endpoint returns stale data (all closed=True).
+    events.list() with startTimeMin returns current events with
+    embedded markets that have gameStartTime and BBO data.
+    """
+    print("  Fetching active markets via events...")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
     all_markets = []
+    seen_slugs: set = set()
     offset = 0
     page_size = 100
 
     while True:
-        resp = client.client.markets.list({
+        resp = client.client.events.list({
             "limit": page_size,
             "offset": offset,
-            "active": True,
-            "closed": False,
-            "orderBy": ["volume"],
-            "orderDirection": "desc",
+            "startTimeMin": today,
         })
-        batch = resp.get("markets", [])
-        if not batch:
+        events = resp.get("events", []) if isinstance(resp, dict) else []
+        if not events:
             break
-        all_markets.extend(batch)
+        for event in events:
+            for m in event.get("markets", []):
+                slug = m.get("slug", "")
+                if slug and slug not in seen_slugs:
+                    seen_slugs.add(slug)
+                    all_markets.append(m)
         offset += page_size
-        if len(batch) < page_size:
+        if len(events) < page_size:
             break
         time.sleep(0.1)
 
