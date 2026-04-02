@@ -567,8 +567,8 @@ class TestShouldRequoteWithOverrides:
 class TestActivitiesFillDetection:
     """Fill detection via portfolio.activities() — exchange-confirmed data.
 
-    Eliminates phantom fills from order disappearance/slug remap issues.
-    Uses trade IDs to avoid double-counting.
+    Only counts passive maker fills that match our tracked orders.
+    Does NOT clean up tracking on partial fills.
     """
 
     def _make_manager(self):
@@ -707,25 +707,28 @@ class TestActivitiesFillDetection:
         fills = mgr.check_fills(["slug-a"])
         assert len(fills) == 0
 
-    def test_fill_cleans_local_orders(self):
-        """After fill detected, _local_orders entry is removed."""
+    def test_partial_fill_preserves_tracking(self):
+        """Partial fill does NOT remove tracking — remainder still resting."""
         mgr, client = self._make_manager()
         mgr._local_orders["slug-a"] = {"yes": {
             "order_id": "ord-1", "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
         }}
         mgr._live_order_ids["slug-a"] = {"yes": "ord-1"}
+        # Partial fill: 1 of 2
         client.get_activities.return_value = {"activities": [
-            self._trade_activity("t-1", "slug-a", "0.48", 2),
+            self._trade_activity("t-1", "slug-a", "0.48", 1),
         ]}
         fills = mgr.check_fills(["slug-a"])
         assert len(fills) == 1
-        # Local tracking should be cleaned
-        assert "yes" not in mgr._local_orders.get("slug-a", {})
-        assert "yes" not in mgr._live_order_ids.get("slug-a", {})
+        assert fills[0]["filled"] == 1
+        # Tracking should be PRESERVED (remainder still on exchange)
+        assert "yes" in mgr._local_orders.get("slug-a", {})
+        assert "yes" in mgr._live_order_ids.get("slug-a", {})
 
-    def test_fill_cleanup_prevents_merged_orders_resurrection(self):
-        """After fill cleans local tracking, merged_orders doesn't
-        resurrect the filled order."""
+    def test_partial_fill_order_still_in_merged_orders(self):
+        """After partial fill, merged_orders still shows the order
+        (from poll or local tracking)."""
         mgr, client = self._make_manager()
         mgr._local_orders["slug-a"] = {"yes": {
             "order_id": "ord-1", "price_cents": 48,
@@ -733,15 +736,44 @@ class TestActivitiesFillDetection:
         }}
         mgr._live_order_ids["slug-a"] = {"yes": "ord-1"}
         client.get_activities.return_value = {"activities": [
-            self._trade_activity("t-1", "slug-a", "0.48", 2),
+            self._trade_activity("t-1", "slug-a", "0.48", 1),
         ]}
         mgr.check_fills(["slug-a"])
 
-        # Poll returns empty (order is gone from exchange)
-        merged = mgr.merged_orders({})
-        # Filled order should NOT be resurrected
-        assert "yes" not in merged.get("slug-a", {}), \
-            "Filled order resurrected by merged_orders"
+        # Poll shows order with reduced qty (remainder)
+        polled = {"slug-a": {"yes": {
+            "order_id": "ord-1", "price_cents": 48,
+            "original_qty": 2, "filled_qty": 1, "remaining_qty": 1,
+        }}}
+        merged = mgr.merged_orders(polled)
+        assert "yes" in merged["slug-a"]
+        assert merged["slug-a"]["yes"]["remaining_qty"] == 1
+
+    def test_aggressor_trade_ignored(self):
+        """Aggressor (taker) trade → NOT counted as our maker fill."""
+        mgr, client = self._make_manager()
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 48,
+        }}
+        client.get_activities.return_value = {"activities": [
+            self._trade_activity("t-1", "slug-a", "0.48", 2,
+                                 is_aggressor=True),
+        ]}
+        fills = mgr.check_fills(["slug-a"])
+        assert len(fills) == 0
+
+    def test_unmatched_price_trade_ignored(self):
+        """Trade at price not matching any tracked order → ignored."""
+        mgr, client = self._make_manager()
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 48,
+        }}
+        # Trade at 60c — doesn't match our 48c order
+        client.get_activities.return_value = {"activities": [
+            self._trade_activity("t-1", "slug-a", "0.60", 2),
+        ]}
+        fills = mgr.check_fills(["slug-a"])
+        assert len(fills) == 0
 
     def test_new_trade_after_session_start_detected(self):
         """Trade after session start → detected as fill."""

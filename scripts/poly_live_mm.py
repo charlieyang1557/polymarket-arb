@@ -480,10 +480,13 @@ class LiveOrderManager:
             [{"slug": ..., "side": ..., "filled": ..., "price_cents": ...}]
 
         Guards:
+        - Passive only (isAggressor=False — our maker fills)
         - Trade ID uniqueness (no double-counting)
         - Session watermark (ignore trades before this session)
-        - Order ID matching (only count trades for our tracked orders)
-        - Cleans up _local_orders/_live_order_ids after confirmed fill
+        - Matched to tracked orders by slug + price
+        - Does NOT clean up _local_orders/_live_order_ids — partial
+          fills may leave a remainder. Let poll_open_orders handle
+          order lifecycle naturally.
         """
         if self.dry_run:
             return []
@@ -497,12 +500,6 @@ class LiveOrderManager:
         activities = resp.get("activities", [])
         fills = []
 
-        # Build reverse map: order_id → (slug, side) for matching
-        tracked_orders: dict[str, tuple[str, str]] = {}
-        for slug, sides in self._live_order_ids.items():
-            for side, oid in sides.items():
-                tracked_orders[oid] = (slug, side)
-
         active_slug_set = set(active_slugs)
 
         for activity in activities:
@@ -510,6 +507,10 @@ class LiveOrderManager:
                 continue
             trade = activity.get("trade")
             if trade is None:
+                continue
+
+            # Only count passive executions (our maker fills)
+            if trade.get("isAggressor", False):
                 continue
 
             trade_id = trade.get("id", "")
@@ -546,8 +547,10 @@ class LiveOrderManager:
             if qty <= 0:
                 continue
 
-            # Determine side: match by price against tracked orders
-            side = self._infer_side_from_trade(our_slug, price_cents)
+            # Match to our tracked orders by slug + price
+            side = self._match_trade_to_order(our_slug, price_cents)
+            if side is None:
+                continue  # no matching tracked order
 
             fills.append({
                 "slug": our_slug,
@@ -556,29 +559,24 @@ class LiveOrderManager:
                 "price_cents": price_cents,
             })
 
-            # Clean up local tracking for the filled order
-            if our_slug in self._local_orders:
-                self._local_orders[our_slug].pop(side, None)
-            if our_slug in self._live_order_ids:
-                self._live_order_ids[our_slug].pop(side, None)
-
             print(f"    FILL {our_slug} {side}@{price_cents}c x{qty} "
                   f"(trade={trade_id})", flush=True)
 
         return fills
 
-    def _infer_side_from_trade(self, slug: str, price_cents: int) -> str:
-        """Infer trade side from tracked orders and price.
+    def _match_trade_to_order(self, slug: str,
+                              price_cents: int) -> str | None:
+        """Match a trade to one of our tracked orders.
 
-        Checks _local_orders for matching slug+price. Falls back to
-        price heuristic: price <= 50 → YES (buying low), > 50 → NO.
+        Returns the side ("yes"/"no") if matched, None if no match.
+        Requires an exact or near-exact price match against a tracked
+        order on this slug.
         """
         local = self._local_orders.get(slug, {})
         for side, info in local.items():
             if abs(info.get("price_cents", 0) - price_cents) <= 1:
                 return side
-        # Fallback: heuristic
-        return "yes" if price_cents <= 50 else "no"
+        return None  # no matching order — skip this trade
 
     def register_slug_remap(self, our_slug: str, api_slug: str):
         """Register a mapping from API marketSlug to our internal slug."""
