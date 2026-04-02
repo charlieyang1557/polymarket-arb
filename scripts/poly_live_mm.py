@@ -292,6 +292,8 @@ class LiveOrderManager:
         self._local_orders: dict = {}
         # Fill detection via portfolio.activities() — track seen trade IDs
         self._seen_trade_ids: set = set()
+        # Session start time — ignore trades from before this session
+        self._session_start: datetime = datetime.now(timezone.utc)
         # Reverse map: slug remap from API marketSlug → our internal slug
         self._slug_remap: dict[str, str] = {}
         self._api_backoff = 0  # exponential backoff counter for 429s
@@ -477,9 +479,11 @@ class LiveOrderManager:
         Returns list of fill events:
             [{"slug": ..., "side": ..., "filled": ..., "price_cents": ...}]
 
-        Uses trade IDs to avoid double-counting. Only processes trades
-        for our active slugs. Completely eliminates phantom fills from
-        order disappearance/slug remap issues.
+        Guards:
+        - Trade ID uniqueness (no double-counting)
+        - Session watermark (ignore trades before this session)
+        - Order ID matching (only count trades for our tracked orders)
+        - Cleans up _local_orders/_live_order_ids after confirmed fill
         """
         if self.dry_run:
             return []
@@ -493,7 +497,12 @@ class LiveOrderManager:
         activities = resp.get("activities", [])
         fills = []
 
-        # Build set of active API slugs for matching
+        # Build reverse map: order_id → (slug, side) for matching
+        tracked_orders: dict[str, tuple[str, str]] = {}
+        for slug, sides in self._live_order_ids.items():
+            for side, oid in sides.items():
+                tracked_orders[oid] = (slug, side)
+
         active_slug_set = set(active_slugs)
 
         for activity in activities:
@@ -507,14 +516,26 @@ class LiveOrderManager:
             if not trade_id or trade_id in self._seen_trade_ids:
                 continue  # already processed
 
+            # Session watermark: ignore trades from before this session
+            trade_time_str = (trade.get("createTime")
+                              or trade.get("updateTime") or "")
+            if trade_time_str:
+                try:
+                    trade_time = datetime.fromisoformat(
+                        trade_time_str.replace("Z", "+00:00"))
+                    if trade_time < self._session_start:
+                        self._seen_trade_ids.add(trade_id)
+                        continue  # pre-session trade
+                except (ValueError, TypeError):
+                    pass  # can't parse — accept the trade
+
             self._seen_trade_ids.add(trade_id)
 
             api_slug = trade.get("marketSlug", "")
-            # Map API slug to our internal slug
             our_slug = self._slug_remap.get(api_slug, api_slug)
 
             if our_slug not in active_slug_set:
-                continue  # not one of our markets
+                continue
 
             price_str = trade.get("price", "0")
             if isinstance(price_str, dict):
@@ -525,7 +546,7 @@ class LiveOrderManager:
             if qty <= 0:
                 continue
 
-            # Determine side from our tracked orders
+            # Determine side: match by price against tracked orders
             side = self._infer_side_from_trade(our_slug, price_cents)
 
             fills.append({
@@ -534,6 +555,13 @@ class LiveOrderManager:
                 "filled": qty,
                 "price_cents": price_cents,
             })
+
+            # Clean up local tracking for the filled order
+            if our_slug in self._local_orders:
+                self._local_orders[our_slug].pop(side, None)
+            if our_slug in self._live_order_ids:
+                self._live_order_ids[our_slug].pop(side, None)
+
             print(f"    FILL {our_slug} {side}@{price_cents}c x{qty} "
                   f"(trade={trade_id})", flush=True)
 

@@ -575,17 +575,21 @@ class TestActivitiesFillDetection:
         from scripts.poly_live_mm import LiveOrderManager
         client = MagicMock()
         mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+        # Set session start to a known time for deterministic tests
+        mgr._session_start = datetime(2026, 4, 2, 10, 0, 0,
+                                      tzinfo=timezone.utc)
         return mgr, client
 
     def _trade_activity(self, trade_id: str, slug: str, price: str,
-                        qty: int, is_aggressor: bool = False):
+                        qty: int, is_aggressor: bool = False,
+                        create_time: str = "2026-04-02T12:00:00Z"):
         return {
             "type": "ACTIVITY_TYPE_TRADE",
             "trade": {
                 "id": trade_id,
                 "marketSlug": slug,
                 "state": "TRADE_STATE_FILLED",
-                "createTime": "2026-04-02T12:00:00Z",
+                "createTime": create_time,
                 "price": price,
                 "qty": str(qty),
                 "isAggressor": is_aggressor,
@@ -687,6 +691,71 @@ class TestActivitiesFillDetection:
         fills = mgr.check_fills(["slug-a"])
         assert len(fills) == 0
         client.get_activities.assert_not_called()
+
+    def test_old_trade_before_session_ignored(self):
+        """Trade from before session start → not counted as fill."""
+        mgr, client = self._make_manager()
+        # Session started at 2026-04-02T10:00:00Z
+        # Trade is from 2026-04-02T08:00:00Z (before session)
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 48,
+        }}
+        client.get_activities.return_value = {"activities": [
+            self._trade_activity("t-old", "slug-a", "0.48", 2,
+                                 create_time="2026-04-02T08:00:00Z"),
+        ]}
+        fills = mgr.check_fills(["slug-a"])
+        assert len(fills) == 0
+
+    def test_fill_cleans_local_orders(self):
+        """After fill detected, _local_orders entry is removed."""
+        mgr, client = self._make_manager()
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 48,
+        }}
+        mgr._live_order_ids["slug-a"] = {"yes": "ord-1"}
+        client.get_activities.return_value = {"activities": [
+            self._trade_activity("t-1", "slug-a", "0.48", 2),
+        ]}
+        fills = mgr.check_fills(["slug-a"])
+        assert len(fills) == 1
+        # Local tracking should be cleaned
+        assert "yes" not in mgr._local_orders.get("slug-a", {})
+        assert "yes" not in mgr._live_order_ids.get("slug-a", {})
+
+    def test_fill_cleanup_prevents_merged_orders_resurrection(self):
+        """After fill cleans local tracking, merged_orders doesn't
+        resurrect the filled order."""
+        mgr, client = self._make_manager()
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}
+        mgr._live_order_ids["slug-a"] = {"yes": "ord-1"}
+        client.get_activities.return_value = {"activities": [
+            self._trade_activity("t-1", "slug-a", "0.48", 2),
+        ]}
+        mgr.check_fills(["slug-a"])
+
+        # Poll returns empty (order is gone from exchange)
+        merged = mgr.merged_orders({})
+        # Filled order should NOT be resurrected
+        assert "yes" not in merged.get("slug-a", {}), \
+            "Filled order resurrected by merged_orders"
+
+    def test_new_trade_after_session_start_detected(self):
+        """Trade after session start → detected as fill."""
+        mgr, client = self._make_manager()
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 50,
+        }}
+        # Session at 10:00, trade at 11:00
+        client.get_activities.return_value = {"activities": [
+            self._trade_activity("t-new", "slug-a", "0.50", 1,
+                                 create_time="2026-04-02T11:00:00Z"),
+        ]}
+        fills = mgr.check_fills(["slug-a"])
+        assert len(fills) == 1
 
 
 # ---------------------------------------------------------------------------
