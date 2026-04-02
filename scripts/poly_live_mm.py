@@ -530,13 +530,11 @@ class LiveOrderManager:
                 except (ValueError, TypeError):
                     pass  # can't parse — accept the trade
 
-            self._seen_trade_ids.add(trade_id)
-
             api_slug = trade.get("marketSlug", "")
             our_slug = self._slug_remap.get(api_slug, api_slug)
 
             if our_slug not in active_slug_set:
-                continue
+                continue  # not our market — retry if remap changes
 
             price_str = trade.get("price", "0")
             if isinstance(price_str, dict):
@@ -545,12 +543,16 @@ class LiveOrderManager:
             qty = int(trade.get("qty", 0))
 
             if qty <= 0:
+                self._seen_trade_ids.add(trade_id)
                 continue
 
             # Match to our tracked orders by slug + price
             side = self._match_trade_to_order(our_slug, price_cents)
             if side is None:
-                continue  # no matching tracked order
+                continue  # no match — will retry next tick
+
+            # Only mark seen after successful match
+            self._seen_trade_ids.add(trade_id)
 
             fills.append({
                 "slug": our_slug,
