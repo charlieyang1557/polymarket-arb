@@ -298,8 +298,8 @@ class LiveOrderManager:
     def cancel_all_orders(self, slugs: list[str] | None = None):
         """Cancel ALL open orders. Called on startup, shutdown, crash.
 
-        Marks order IDs as cancelled only after confirmed success.
-        For dry_run, assumes all would be cancelled.
+        After cancelling, reconciles via open-orders poll to detect
+        any fills that raced with the cancel request.
         """
         # Collect all tracked IDs (to mark after success)
         all_tracked_ids: set = set()
@@ -325,16 +325,44 @@ class LiveOrderManager:
             # Mark only confirmed cancelled IDs
             for oid in cancelled:
                 self._cancelled_order_ids.add(oid)
-            # If API doesn't return specific IDs, assume all tracked
-            if not cancelled:
-                self._cancelled_order_ids.update(all_tracked_ids)
             print(f"  Cancelled {len(cancelled)} open orders", flush=True)
         except Exception as e:
-            # Cancel failed — do NOT mark any as cancelled
             print(f"  WARNING: cancel_all failed: {e}", file=sys.stderr,
                   flush=True)
+
+        # Reconciliation: check if any orders survived the cancel
+        remaining = self._reconcile_after_cancel()
+        # IDs NOT in remaining were successfully cancelled
+        remaining_ids = {
+            info.get("order_id", "")
+            for sides in remaining.values()
+            for info in sides.values()
+        }
+        for oid in all_tracked_ids:
+            if oid not in remaining_ids:
+                self._cancelled_order_ids.add(oid)
+
         self._live_order_ids.clear()
         self._local_orders.clear()
+
+    def _reconcile_after_cancel(self) -> dict:
+        """Poll open orders after cancel to detect survivors.
+
+        Returns remaining orders dict. Best-effort — returns {}
+        on failure (startup position sync is the final safety net).
+        """
+        try:
+            resp = self.client.list_orders(slugs=[])
+            remaining = parse_open_orders(resp)
+            if remaining:
+                order_count = sum(
+                    len(sides) for sides in remaining.values())
+                print(f"  RECONCILE: {order_count} orders still open "
+                      f"after cancel_all", flush=True)
+            return remaining
+        except Exception as e:
+            print(f"  RECONCILE_ERROR: {e}", file=sys.stderr, flush=True)
+            return {}
 
     def place_order(self, slug: str, side: str, price_cents: int,
                     count: int) -> str | None:
@@ -524,6 +552,9 @@ class LiveOrderManager:
                     prev_oid = prev_info.get("order_id", "")
                     if prev_oid in self._cancelled_order_ids:
                         # Explicitly cancelled — not a fill
+                        print(f"    CANCEL_CONFIRMED: {slug} {side} "
+                              f"{prev_oid} (cancelled, not filled)",
+                              flush=True)
                         self._cancelled_order_ids.discard(prev_oid)
                         continue
 
@@ -590,6 +621,8 @@ class LiveOrderManager:
         """Fetch real positions from exchange and sync to MarketState.
 
         Called on startup to reconcile local state with exchange truth.
+        This is the final safety net: catches ANY missed fills from
+        previous sessions, cancel/fill races, or detection gaps.
         """
         try:
             resp = self.client.get_positions()

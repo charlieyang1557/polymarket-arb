@@ -941,3 +941,123 @@ class TestConfirmedCancelOnly:
 
         # Should NOT detect as fill
         assert len(fills) == 0
+
+
+# ---------------------------------------------------------------------------
+# Test: post-cancel reconciliation + observability
+# ---------------------------------------------------------------------------
+
+class TestPostCancelReconciliation:
+    """After cancel_all, reconcile via open-orders poll to detect
+    fills that raced with the cancel. Also verify CANCEL_CONFIRMED
+    log output for observability."""
+
+    def test_cancel_all_reconciles_remaining_orders(self):
+        """cancel_all polls open orders after cancel. Orders still open
+        are NOT marked as cancelled."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # Track two orders
+        mgr._live_order_ids = {
+            "slug-a": {"yes": "ord-1"},
+            "slug-b": {"no": "ord-2"},
+        }
+        mgr._local_orders = {
+            "slug-a": {"yes": {"order_id": "ord-1", "price_cents": 48,
+                               "original_qty": 2, "filled_qty": 0,
+                               "remaining_qty": 2}},
+            "slug-b": {"no": {"order_id": "ord-2", "price_cents": 50,
+                              "original_qty": 2, "filled_qty": 0,
+                              "remaining_qty": 2}},
+        }
+
+        # cancel_all succeeds, reports ord-1 cancelled
+        client.cancel_all_orders.return_value = {
+            "canceledOrderIds": ["ord-1"]
+        }
+        # Reconciliation poll: ord-2 still open (raced with cancel)
+        client.list_orders.return_value = {"orders": [{
+            "id": "ord-2",
+            "marketSlug": "slug-b",
+            "intent": "ORDER_INTENT_BUY_SHORT",
+            "price": {"value": "0.500", "currency": "USD"},
+            "quantity": 2, "cumQuantity": 0, "leavesQuantity": 2,
+            "state": "ORDER_STATE_NEW",
+        }]}
+
+        mgr.cancel_all_orders()
+
+        # ord-1 was confirmed cancelled
+        assert "ord-1" in mgr._cancelled_order_ids
+        # ord-2 is still open — should NOT be marked cancelled
+        assert "ord-2" not in mgr._cancelled_order_ids
+
+    def test_cancel_all_dry_run_skips_reconciliation(self):
+        """Dry run marks all as cancelled without API calls."""
+        mgr_cls = __import__("scripts.poly_live_mm",
+                             fromlist=["LiveOrderManager"]).LiveOrderManager
+        client = MagicMock()
+        mgr = mgr_cls(client, dry_run=True, capital_cents=2500)
+
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        mgr.cancel_all_orders()
+
+        assert oid in mgr._cancelled_order_ids
+        assert mgr._local_orders == {}
+
+    def test_cancel_confirmed_log_output(self, capsys):
+        """When cancelled order disappears, CANCEL_CONFIRMED is logged."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=True, capital_cents=2500)
+
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        # Set up prev_orders
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Cancel the order
+        mgr.cancel_order("slug-a", "yes", oid)
+
+        # Next tick: order gone
+        curr_orders = mgr.merged_orders({}, poll_ok=True)
+        fills = mgr.check_fills(curr_orders)
+
+        assert len(fills) == 0
+
+        captured = capsys.readouterr()
+        assert "CANCEL_CONFIRMED" in captured.out
+        assert oid in captured.out
+
+    def test_startup_sync_catches_missed_fills(self):
+        """sync_positions overwrites local inventory with exchange truth."""
+        from scripts.poly_live_mm import LiveOrderManager, parse_positions
+        from src.mm.state import MarketState, GlobalState
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        gs = GlobalState()
+        gs.markets["slug-a"] = MarketState(ticker="slug-a")
+
+        # Local state thinks inventory is 0
+        assert len(gs.markets["slug-a"].yes_queue) == 0
+
+        # Exchange says we have 4 YES contracts (from missed fills)
+        client.get_positions.return_value = {"positions": {
+            "slug-a": {"netPosition": "4", "qtyBought": "4",
+                       "qtySold": "0", "cost": {"value": "2.00"}},
+        }}
+
+        mgr.sync_positions(gs, ["slug-a"])
+
+        # Local state should now reflect exchange truth
+        assert len(gs.markets["slug-a"].yes_queue) == 4
