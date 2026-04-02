@@ -1,0 +1,1619 @@
+{
+  "data_caveat": "Data is from Polymarket GLOBAL (Gamma API), NOT Polymarket US. Different platform, different markets, different pricing dynamics.",
+  "sports_count": 28281,
+  "non_sports_count": 86104,
+  "sport_counts": {
+    "Tennis": 8591,
+    "Soccer": 1653,
+    "NBA": 7924,
+    "NCAA": 6924,
+    "Motorsport": 330,
+    "NHL": 755,
+    "UFC": 366,
+    "NFL": 221,
+    "MLB": 101,
+    "Boxing": 13,
+    "Golf": 66,
+    "Cricket": 24,
+    "Olympics": 1313
+  },
+  "sports_calibration": [
+    {
+      "lo": 0,
+      "hi": 10,
+      "n": 3333,
+      "implied_prob": 0.0298,
+      "actual_win_rate": 0.0006,
+      "bias": -0.0292,
+      "ci_95_lo": -0.0002,
+      "ci_95_hi": 0.0014
+    },
+    {
+      "lo": 10,
+      "hi": 20,
+      "n": 655,
+      "implied_prob": 0.1538,
+      "actual_win_rate": 0.0015,
+      "bias": -0.1522,
+      "ci_95_lo": -0.0015,
+      "ci_95_hi": 0.0045
+    },
+    {
+      "lo": 20,
+      "hi": 30,
+      "n": 505,
+      "implied_prob": 0.2591,
+      "actual_win_rate": 0.002,
+      "bias": -0.2571,
+      "ci_95_lo": -0.0019,
+      "ci_95_hi": 0.0059
+    },
+    {
+      "lo": 30,
+      "hi": 40,
+      "n": 707,
+      "implied_prob": 0.3616,
+      "actual_win_rate": 0.0099,
+      "bias": -0.3517,
+      "ci_95_lo": 0.0026,
+      "ci_95_hi": 0.0172
+    },
+    {
+      "lo": 40,
+      "hi": 50,
+      "n": 2000,
+      "implied_prob": 0.4662,
+      "actual_win_rate": 0.0085,
+      "bias": -0.4577,
+      "ci_95_lo": 0.0045,
+      "ci_95_hi": 0.0125
+    },
+    {
+      "lo": 50,
+      "hi": 60,
+      "n": 1975,
+      "implied_prob": 0.5428,
+      "actual_win_rate": 0.0111,
+      "bias": -0.5317,
+      "ci_95_lo": 0.0065,
+      "ci_95_hi": 0.0158
+    },
+    {
+      "lo": 60,
+      "hi": 70,
+      "n": 314,
+      "implied_prob": 0.6451,
+      "actual_win_rate": 0.051,
+      "bias": -0.5942,
+      "ci_95_lo": 0.0266,
+      "ci_95_hi": 0.0753
+    },
+    {
+      "lo": 70,
+      "hi": 80,
+      "n": 136,
+      "implied_prob": 0.7534,
+      "actual_win_rate": 0.0662,
+      "bias": -0.6872,
+      "ci_95_lo": 0.0244,
+      "ci_95_hi": 0.108
+    },
+    {
+      "lo": 80,
+      "hi": 90,
+      "n": 92,
+      "implied_prob": 0.8552,
+      "actual_win_rate": 0.1196,
+      "bias": -0.7357,
+      "ci_95_lo": 0.0533,
+      "ci_95_hi": 0.1859
+    },
+    {
+      "lo": 90,
+      "hi": 100,
+      "n": 15089,
+      "implied_prob": 0.9975,
+      "actual_win_rate": 0.9775,
+      "bias": -0.02,
+      "ci_95_lo": 0.9751,
+      "ci_95_hi": 0.9798
+    }
+  ],
+  "non_sports_calibration": [
+    {
+      "lo": 0,
+      "hi": 10,
+      "n": 20584,
+      "implied_prob": 0.024,
+      "actual_win_rate": 0.0049,
+      "bias": -0.0191,
+      "ci_95_lo": 0.0039,
+      "ci_95_hi": 0.0058
+    },
+    {
+      "lo": 10,
+      "hi": 20,
+      "n": 2575,
+      "implied_prob": 0.1503,
+      "actual_win_rate": 0.0466,
+      "bias": -0.1037,
+      "ci_95_lo": 0.0385,
+      "ci_95_hi": 0.0547
+    },
+    {
+      "lo": 20,
+      "hi": 30,
+      "n": 1638,
+      "implied_prob": 0.2524,
+      "actual_win_rate": 0.1129,
+      "bias": -0.1394,
+      "ci_95_lo": 0.0976,
+      "ci_95_hi": 0.1283
+    },
+    {
+      "lo": 30,
+      "hi": 40,
+      "n": 1290,
+      "implied_prob": 0.3544,
+      "actual_win_rate": 0.169,
+      "bias": -0.1854,
+      "ci_95_lo": 0.1485,
+      "ci_95_hi": 0.1894
+    },
+    {
+      "lo": 40,
+      "hi": 50,
+      "n": 1291,
+      "implied_prob": 0.4589,
+      "actual_win_rate": 0.2881,
+      "bias": -0.1707,
+      "ci_95_lo": 0.2634,
+      "ci_95_hi": 0.3129
+    },
+    {
+      "lo": 50,
+      "hi": 60,
+      "n": 1038,
+      "implied_prob": 0.552,
+      "actual_win_rate": 0.3873,
+      "bias": -0.1647,
+      "ci_95_lo": 0.3576,
+      "ci_95_hi": 0.4169
+    },
+    {
+      "lo": 60,
+      "hi": 70,
+      "n": 856,
+      "implied_prob": 0.6554,
+      "actual_win_rate": 0.5164,
+      "bias": -0.139,
+      "ci_95_lo": 0.4829,
+      "ci_95_hi": 0.5498
+    },
+    {
+      "lo": 70,
+      "hi": 80,
+      "n": 800,
+      "implied_prob": 0.7557,
+      "actual_win_rate": 0.6312,
+      "bias": -0.1244,
+      "ci_95_lo": 0.5978,
+      "ci_95_hi": 0.6647
+    },
+    {
+      "lo": 80,
+      "hi": 90,
+      "n": 918,
+      "implied_prob": 0.8591,
+      "actual_win_rate": 0.7527,
+      "bias": -0.1064,
+      "ci_95_lo": 0.7248,
+      "ci_95_hi": 0.7806
+    },
+    {
+      "lo": 90,
+      "hi": 100,
+      "n": 37272,
+      "implied_prob": 0.9943,
+      "actual_win_rate": 0.9845,
+      "bias": -0.0098,
+      "ci_95_lo": 0.9832,
+      "ci_95_hi": 0.9857
+    }
+  ],
+  "sports_brier": {
+    "market": 0.061774,
+    "50pct": 0.25,
+    "fade_extremes": 0.063285
+  },
+  "sports_pnl": [
+    {
+      "threshold": 0.01,
+      "num_trades": 24806,
+      "win_rate": 0.402,
+      "gross_pnl": 294232,
+      "fees": 12217,
+      "net_pnl": 282015,
+      "avg_edge": 11.37,
+      "sharpe": 7.87
+    },
+    {
+      "threshold": 0.02,
+      "num_trades": 24806,
+      "win_rate": 0.402,
+      "gross_pnl": 294232,
+      "fees": 12217,
+      "net_pnl": 282015,
+      "avg_edge": 11.37,
+      "sharpe": 7.87
+    },
+    {
+      "threshold": 0.03,
+      "num_trades": 6384,
+      "win_rate": 0.9868,
+      "gross_pnl": 272744,
+      "fees": 6384,
+      "net_pnl": 266360,
+      "avg_edge": 41.72,
+      "sharpe": 37.24
+    },
+    {
+      "threshold": 0.05,
+      "num_trades": 6384,
+      "win_rate": 0.9868,
+      "gross_pnl": 272744,
+      "fees": 6384,
+      "net_pnl": 266360,
+      "avg_edge": 41.72,
+      "sharpe": 37.24
+    },
+    {
+      "threshold": 0.07,
+      "num_trades": 6384,
+      "win_rate": 0.9868,
+      "gross_pnl": 272744,
+      "fees": 6384,
+      "net_pnl": 266360,
+      "avg_edge": 41.72,
+      "sharpe": 37.24
+    },
+    {
+      "threshold": 0.1,
+      "num_trades": 6384,
+      "win_rate": 0.9868,
+      "gross_pnl": 272744,
+      "fees": 6384,
+      "net_pnl": 266360,
+      "avg_edge": 41.72,
+      "sharpe": 37.24
+    }
+  ],
+  "sport_breakdowns": {
+    "Tennis": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 717,
+        "implied_prob": 0.0291,
+        "actual_win_rate": 0.0014,
+        "bias": -0.0277,
+        "ci_95_lo": -0.0013,
+        "ci_95_hi": 0.0041
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 181,
+        "implied_prob": 0.1533,
+        "actual_win_rate": 0.0,
+        "bias": -0.1533,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 163,
+        "implied_prob": 0.258,
+        "actual_win_rate": 0.0061,
+        "bias": -0.2519,
+        "ci_95_lo": -0.0059,
+        "ci_95_hi": 0.0181
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 248,
+        "implied_prob": 0.3641,
+        "actual_win_rate": 0.0242,
+        "bias": -0.3399,
+        "ci_95_lo": 0.0051,
+        "ci_95_hi": 0.0433
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 414,
+        "implied_prob": 0.4568,
+        "actual_win_rate": 0.0314,
+        "bias": -0.4254,
+        "ci_95_lo": 0.0146,
+        "ci_95_hi": 0.0482
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 366,
+        "implied_prob": 0.5466,
+        "actual_win_rate": 0.0519,
+        "bias": -0.4946,
+        "ci_95_lo": 0.0292,
+        "ci_95_hi": 0.0746
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 121,
+        "implied_prob": 0.6488,
+        "actual_win_rate": 0.1074,
+        "bias": -0.5414,
+        "ci_95_lo": 0.0523,
+        "ci_95_hi": 0.1626
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 48,
+        "implied_prob": 0.746,
+        "actual_win_rate": 0.125,
+        "bias": -0.621,
+        "ci_95_lo": 0.0314,
+        "ci_95_hi": 0.2186
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 30,
+        "implied_prob": 0.8527,
+        "actual_win_rate": 0.1667,
+        "bias": -0.686,
+        "ci_95_lo": 0.0333,
+        "ci_95_hi": 0.3
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 5652,
+        "implied_prob": 0.9972,
+        "actual_win_rate": 0.9878,
+        "bias": -0.0094,
+        "ci_95_lo": 0.9849,
+        "ci_95_hi": 0.9907
+      }
+    ],
+    "NBA": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 869,
+        "implied_prob": 0.026,
+        "actual_win_rate": 0.0,
+        "bias": -0.026,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 88,
+        "implied_prob": 0.1614,
+        "actual_win_rate": 0.0,
+        "bias": -0.1614,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 99,
+        "implied_prob": 0.2647,
+        "actual_win_rate": 0.0,
+        "bias": -0.2647,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 225,
+        "implied_prob": 0.3629,
+        "actual_win_rate": 0.0,
+        "bias": -0.3629,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 652,
+        "implied_prob": 0.4671,
+        "actual_win_rate": 0.0031,
+        "bias": -0.4641,
+        "ci_95_lo": -0.0012,
+        "ci_95_hi": 0.0073
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 754,
+        "implied_prob": 0.5465,
+        "actual_win_rate": 0.0027,
+        "bias": -0.5438,
+        "ci_95_lo": -0.001,
+        "ci_95_hi": 0.0063
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 109,
+        "implied_prob": 0.6398,
+        "actual_win_rate": 0.0,
+        "bias": -0.6398,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 33,
+        "implied_prob": 0.7542,
+        "actual_win_rate": 0.0606,
+        "bias": -0.6936,
+        "ci_95_lo": -0.0208,
+        "ci_95_hi": 0.142
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 23,
+        "implied_prob": 0.8683,
+        "actual_win_rate": 0.0,
+        "bias": -0.8683,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 4394,
+        "implied_prob": 0.9981,
+        "actual_win_rate": 0.9624,
+        "bias": -0.0356,
+        "ci_95_lo": 0.9568,
+        "ci_95_hi": 0.9681
+      }
+    ],
+    "NCAA": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 834,
+        "implied_prob": 0.0309,
+        "actual_win_rate": 0.0012,
+        "bias": -0.0297,
+        "ci_95_lo": -0.0011,
+        "ci_95_hi": 0.0035
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 129,
+        "implied_prob": 0.1529,
+        "actual_win_rate": 0.0,
+        "bias": -0.1529,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 92,
+        "implied_prob": 0.2558,
+        "actual_win_rate": 0.0,
+        "bias": -0.2558,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 121,
+        "implied_prob": 0.3647,
+        "actual_win_rate": 0.0,
+        "bias": -0.3647,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 848,
+        "implied_prob": 0.4708,
+        "actual_win_rate": 0.0,
+        "bias": -0.4708,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 802,
+        "implied_prob": 0.5372,
+        "actual_win_rate": 0.0,
+        "bias": -0.5372,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 55,
+        "implied_prob": 0.6445,
+        "actual_win_rate": 0.0,
+        "bias": -0.6445,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 33,
+        "implied_prob": 0.7576,
+        "actual_win_rate": 0.0,
+        "bias": -0.7576,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 23,
+        "implied_prob": 0.8474,
+        "actual_win_rate": 0.087,
+        "bias": -0.7604,
+        "ci_95_lo": -0.0282,
+        "ci_95_hi": 0.2021
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 3569,
+        "implied_prob": 0.997,
+        "actual_win_rate": 0.9773,
+        "bias": -0.0197,
+        "ci_95_lo": 0.9724,
+        "ci_95_hi": 0.9822
+      }
+    ],
+    "Soccer": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 451,
+        "implied_prob": 0.0404,
+        "actual_win_rate": 0.0,
+        "bias": -0.0404,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 148,
+        "implied_prob": 0.1491,
+        "actual_win_rate": 0.0068,
+        "bias": -0.1424,
+        "ci_95_lo": -0.0064,
+        "ci_95_hi": 0.02
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 49,
+        "implied_prob": 0.2573,
+        "actual_win_rate": 0.0,
+        "bias": -0.2573,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 37,
+        "implied_prob": 0.3459,
+        "actual_win_rate": 0.0,
+        "bias": -0.3459,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 26,
+        "implied_prob": 0.4588,
+        "actual_win_rate": 0.0769,
+        "bias": -0.3819,
+        "ci_95_lo": -0.0255,
+        "ci_95_hi": 0.1794
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 11,
+        "implied_prob": 0.5491,
+        "actual_win_rate": 0.0909,
+        "bias": -0.4582,
+        "ci_95_lo": -0.079,
+        "ci_95_hi": 0.2608
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 8,
+        "implied_prob": 0.65,
+        "actual_win_rate": 0.125,
+        "bias": -0.525,
+        "ci_95_lo": -0.1042,
+        "ci_95_hi": 0.3542
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 8,
+        "implied_prob": 0.78,
+        "actual_win_rate": 0.125,
+        "bias": -0.655,
+        "ci_95_lo": -0.1042,
+        "ci_95_hi": 0.3542
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 3,
+        "implied_prob": 0.8333,
+        "actual_win_rate": 0.3333,
+        "bias": -0.5,
+        "ci_95_lo": -0.2001,
+        "ci_95_hi": 0.8668
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 580,
+        "implied_prob": 0.9978,
+        "actual_win_rate": 0.981,
+        "bias": -0.0168,
+        "ci_95_lo": 0.9699,
+        "ci_95_hi": 0.9921
+      }
+    ],
+    "Olympics": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 187,
+        "implied_prob": 0.0195,
+        "actual_win_rate": 0.0,
+        "bias": -0.0195,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 18,
+        "implied_prob": 0.1472,
+        "actual_win_rate": 0.0,
+        "bias": -0.1472,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 6,
+        "implied_prob": 0.2617,
+        "actual_win_rate": 0.0,
+        "bias": -0.2617,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 7,
+        "implied_prob": 0.3657,
+        "actual_win_rate": 0.0,
+        "bias": -0.3657,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 2,
+        "implied_prob": 0.43,
+        "actual_win_rate": 0.0,
+        "bias": -0.43,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 1,
+        "implied_prob": 0.57,
+        "actual_win_rate": 0.0,
+        "bias": -0.57,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 3,
+        "implied_prob": 0.65,
+        "actual_win_rate": 0.0,
+        "bias": -0.65,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 0,
+        "implied_prob": 0.75,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 1,
+        "implied_prob": 0.82,
+        "actual_win_rate": 0.0,
+        "bias": -0.82,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 116,
+        "implied_prob": 0.9999,
+        "actual_win_rate": 1.0,
+        "bias": 0.0001,
+        "ci_95_lo": 1.0,
+        "ci_95_hi": 1.0
+      }
+    ],
+    "NHL": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 92,
+        "implied_prob": 0.0353,
+        "actual_win_rate": 0.0,
+        "bias": -0.0353,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 57,
+        "implied_prob": 0.1565,
+        "actual_win_rate": 0.0,
+        "bias": -0.1565,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 66,
+        "implied_prob": 0.2597,
+        "actual_win_rate": 0.0,
+        "bias": -0.2597,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 32,
+        "implied_prob": 0.3478,
+        "actual_win_rate": 0.0,
+        "bias": -0.3478,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 30,
+        "implied_prob": 0.4553,
+        "actual_win_rate": 0.0,
+        "bias": -0.4553,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 17,
+        "implied_prob": 0.5571,
+        "actual_win_rate": 0.0,
+        "bias": -0.5571,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 8,
+        "implied_prob": 0.655,
+        "actual_win_rate": 0.125,
+        "bias": -0.53,
+        "ci_95_lo": -0.1042,
+        "ci_95_hi": 0.3542
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 6,
+        "implied_prob": 0.7433,
+        "actual_win_rate": 0.0,
+        "bias": -0.7433,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 2,
+        "implied_prob": 0.84,
+        "actual_win_rate": 0.5,
+        "bias": -0.34,
+        "ci_95_lo": -0.193,
+        "ci_95_hi": 1.193
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 360,
+        "implied_prob": 0.9976,
+        "actual_win_rate": 0.9889,
+        "bias": -0.0087,
+        "ci_95_lo": 0.9781,
+        "ci_95_hi": 0.9997
+      }
+    ],
+    "UFC": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 40,
+        "implied_prob": 0.0223,
+        "actual_win_rate": 0.0,
+        "bias": -0.0223,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 16,
+        "implied_prob": 0.16,
+        "actual_win_rate": 0.0,
+        "bias": -0.16,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 21,
+        "implied_prob": 0.2595,
+        "actual_win_rate": 0.0,
+        "bias": -0.2595,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 25,
+        "implied_prob": 0.3552,
+        "actual_win_rate": 0.0,
+        "bias": -0.3552,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 9,
+        "implied_prob": 0.4578,
+        "actual_win_rate": 0.0,
+        "bias": -0.4578,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 14,
+        "implied_prob": 0.545,
+        "actual_win_rate": 0.0,
+        "bias": -0.545,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 6,
+        "implied_prob": 0.65,
+        "actual_win_rate": 0.0,
+        "bias": -0.65,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 5,
+        "implied_prob": 0.74,
+        "actual_win_rate": 0.0,
+        "bias": -0.74,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 6,
+        "implied_prob": 0.8683,
+        "actual_win_rate": 0.0,
+        "bias": -0.8683,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 168,
+        "implied_prob": 0.9967,
+        "actual_win_rate": 0.9643,
+        "bias": -0.0324,
+        "ci_95_lo": 0.9362,
+        "ci_95_hi": 0.9923
+      }
+    ],
+    "Motorsport": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 58,
+        "implied_prob": 0.03,
+        "actual_win_rate": 0.0,
+        "bias": -0.03,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 8,
+        "implied_prob": 0.165,
+        "actual_win_rate": 0.0,
+        "bias": -0.165,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 7,
+        "implied_prob": 0.2557,
+        "actual_win_rate": 0.0,
+        "bias": -0.2557,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 7,
+        "implied_prob": 0.3457,
+        "actual_win_rate": 0.0,
+        "bias": -0.3457,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 11,
+        "implied_prob": 0.4509,
+        "actual_win_rate": 0.0,
+        "bias": -0.4509,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 3,
+        "implied_prob": 0.5433,
+        "actual_win_rate": 0.0,
+        "bias": -0.5433,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 0,
+        "implied_prob": 0.65,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 2,
+        "implied_prob": 0.79,
+        "actual_win_rate": 0.0,
+        "bias": -0.79,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 2,
+        "implied_prob": 0.895,
+        "actual_win_rate": 0.5,
+        "bias": -0.395,
+        "ci_95_lo": -0.193,
+        "ci_95_hi": 1.193
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 90,
+        "implied_prob": 0.9967,
+        "actual_win_rate": 0.9667,
+        "bias": -0.03,
+        "ci_95_lo": 0.9296,
+        "ci_95_hi": 1.0038
+      }
+    ],
+    "NFL": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 42,
+        "implied_prob": 0.0226,
+        "actual_win_rate": 0.0,
+        "bias": -0.0226,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 4,
+        "implied_prob": 0.1525,
+        "actual_win_rate": 0.0,
+        "bias": -0.1525,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 1,
+        "implied_prob": 0.21,
+        "actual_win_rate": 0.0,
+        "bias": -0.21,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 2,
+        "implied_prob": 0.375,
+        "actual_win_rate": 0.0,
+        "bias": -0.375,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 7,
+        "implied_prob": 0.4857,
+        "actual_win_rate": 0.0,
+        "bias": -0.4857,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 6,
+        "implied_prob": 0.5317,
+        "actual_win_rate": 0.0,
+        "bias": -0.5317,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 0,
+        "implied_prob": 0.65,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 0,
+        "implied_prob": 0.75,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 0,
+        "implied_prob": 0.85,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 79,
+        "implied_prob": 0.9992,
+        "actual_win_rate": 1.0,
+        "bias": 0.0008,
+        "ci_95_lo": 1.0,
+        "ci_95_hi": 1.0
+      }
+    ],
+    "MLB": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 22,
+        "implied_prob": 0.0382,
+        "actual_win_rate": 0.0,
+        "bias": -0.0382,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 6,
+        "implied_prob": 0.1517,
+        "actual_win_rate": 0.0,
+        "bias": -0.1517,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 1,
+        "implied_prob": 0.29,
+        "actual_win_rate": 0.0,
+        "bias": -0.29,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 3,
+        "implied_prob": 0.3467,
+        "actual_win_rate": 0.3333,
+        "bias": -0.0133,
+        "ci_95_lo": -0.2001,
+        "ci_95_hi": 0.8668
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 1,
+        "implied_prob": 0.46,
+        "actual_win_rate": 0.0,
+        "bias": -0.46,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 0,
+        "implied_prob": 0.55,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 3,
+        "implied_prob": 0.6433,
+        "actual_win_rate": 0.3333,
+        "bias": -0.31,
+        "ci_95_lo": -0.2001,
+        "ci_95_hi": 0.8668
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 1,
+        "implied_prob": 0.78,
+        "actual_win_rate": 0.0,
+        "bias": -0.78,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 1,
+        "implied_prob": 0.81,
+        "actual_win_rate": 1.0,
+        "bias": 0.19,
+        "ci_95_lo": 1.0,
+        "ci_95_hi": 1.0
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 54,
+        "implied_prob": 0.9983,
+        "actual_win_rate": 0.9815,
+        "bias": -0.0169,
+        "ci_95_lo": 0.9455,
+        "ci_95_hi": 1.0174
+      }
+    ],
+    "Golf": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 19,
+        "implied_prob": 0.0205,
+        "actual_win_rate": 0.0,
+        "bias": -0.0205,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 0,
+        "implied_prob": 0.15,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 0,
+        "implied_prob": 0.25,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 0,
+        "implied_prob": 0.35,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 0,
+        "implied_prob": 0.45,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 0,
+        "implied_prob": 0.55,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 0,
+        "implied_prob": 0.65,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 0,
+        "implied_prob": 0.75,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 1,
+        "implied_prob": 0.83,
+        "actual_win_rate": 0.0,
+        "bias": -0.83,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 14,
+        "implied_prob": 0.9986,
+        "actual_win_rate": 1.0,
+        "bias": 0.0014,
+        "ci_95_lo": 1.0,
+        "ci_95_hi": 1.0
+      }
+    ],
+    "Cricket": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 0,
+        "implied_prob": 0.05,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 0,
+        "implied_prob": 0.15,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 0,
+        "implied_prob": 0.25,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 0,
+        "implied_prob": 0.35,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 0,
+        "implied_prob": 0.45,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 0,
+        "implied_prob": 0.55,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 1,
+        "implied_prob": 0.65,
+        "actual_win_rate": 0.0,
+        "bias": -0.65,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 0,
+        "implied_prob": 0.75,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 0,
+        "implied_prob": 0.85,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 3,
+        "implied_prob": 0.9967,
+        "actual_win_rate": 1.0,
+        "bias": 0.0033,
+        "ci_95_lo": 1.0,
+        "ci_95_hi": 1.0
+      }
+    ],
+    "Boxing": [
+      {
+        "lo": 0,
+        "hi": 10,
+        "n": 2,
+        "implied_prob": 0.025,
+        "actual_win_rate": 0.0,
+        "bias": -0.025,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 10,
+        "hi": 20,
+        "n": 0,
+        "implied_prob": 0.15,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 20,
+        "hi": 30,
+        "n": 0,
+        "implied_prob": 0.25,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 30,
+        "hi": 40,
+        "n": 0,
+        "implied_prob": 0.35,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 40,
+        "hi": 50,
+        "n": 0,
+        "implied_prob": 0.45,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 50,
+        "hi": 60,
+        "n": 1,
+        "implied_prob": 0.58,
+        "actual_win_rate": 0.0,
+        "bias": -0.58,
+        "ci_95_lo": 0.0,
+        "ci_95_hi": 0.0
+      },
+      {
+        "lo": 60,
+        "hi": 70,
+        "n": 0,
+        "implied_prob": 0.65,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 70,
+        "hi": 80,
+        "n": 0,
+        "implied_prob": 0.75,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 80,
+        "hi": 90,
+        "n": 0,
+        "implied_prob": 0.85,
+        "actual_win_rate": null,
+        "bias": null,
+        "ci_95_lo": null,
+        "ci_95_hi": null
+      },
+      {
+        "lo": 90,
+        "hi": 100,
+        "n": 10,
+        "implied_prob": 1.0,
+        "actual_win_rate": 1.0,
+        "bias": 0.0,
+        "ci_95_lo": 1.0,
+        "ci_95_hi": 1.0
+      }
+    ]
+  }
+}
