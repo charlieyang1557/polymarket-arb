@@ -32,7 +32,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
 
 from src.strategy_a.devig import devig_decimal
 from src.strategy_a.matching import (
-    match_event_to_slugs, normalize_team, SPORT_TO_SLUG,
+    match_event_to_slugs, normalize_team, extract_teams_from_slug,
+    SPORT_TO_SLUG,
 )
 from src.strategy_a.odds_db import OddsDB
 
@@ -83,8 +84,15 @@ def fetch_odds_api(sport: str, api_key: str) -> list[dict]:
 def extract_pinnacle_odds(event: dict) -> dict | None:
     """Extract Pinnacle h2h odds from an event.
 
-    Returns {home_odds, away_odds, home_team, away_team} or None.
+    Uses the event-level home_team/away_team fields to correctly assign
+    odds from the bookmaker outcomes (which may be in any order).
+
+    Returns {home_team, away_team, home_odds, away_odds,
+             team_odds: {team_name: decimal_odds}} or None.
     """
+    event_home = event.get("home_team", "")
+    event_away = event.get("away_team", "")
+
     for bm in event.get("bookmakers", []):
         if bm.get("key") != "pinnacle":
             continue
@@ -97,20 +105,39 @@ def extract_pinnacle_odds(event: dict) -> dict | None:
             if len(outcomes) != 2:
                 continue
 
-            # outcomes[0] = home, outcomes[1] = away (by convention)
-            home_name = outcomes[0].get("name", "")
-            away_name = outcomes[1].get("name", "")
-            home_odds = float(outcomes[0].get("price", 0))
-            away_odds = float(outcomes[1].get("price", 0))
+            # Build name → odds map (don't assume ordering)
+            team_odds = {}
+            for o in outcomes:
+                name = o.get("name", "")
+                price = float(o.get("price", 0))
+                if price > 1.0:
+                    team_odds[name] = price
+
+            if len(team_odds) != 2:
+                continue
+
+            # Match to event-level home/away by name
+            home_odds = team_odds.get(event_home, 0)
+            away_odds = team_odds.get(event_away, 0)
+
+            # If exact name match fails, try partial matching
+            if not home_odds or not away_odds:
+                for name, odds in team_odds.items():
+                    name_lower = name.lower()
+                    if event_home.lower() in name_lower or name_lower in event_home.lower():
+                        home_odds = odds
+                    elif event_away.lower() in name_lower or name_lower in event_away.lower():
+                        away_odds = odds
 
             if home_odds <= 1.0 or away_odds <= 1.0:
                 continue
 
             return {
-                "home_team": home_name,
-                "away_team": away_name,
+                "home_team": event_home,
+                "away_team": event_away,
                 "home_odds": home_odds,
                 "away_odds": away_odds,
+                "team_odds": team_odds,
             }
 
     return None
@@ -256,6 +283,36 @@ def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
         except ValueError:
             continue
 
+        # CRITICAL: Determine which Pinnacle team = Polymarket YES.
+        # Polymarket YES = first team in slug (verified from SDK).
+        # We must map Pinnacle home/away to slug team1/team2.
+        slug_teams = extract_teams_from_slug(slug)
+        if slug_teams is None:
+            continue
+        slug_yes_abbr, slug_no_abbr = slug_teams
+
+        home_abbr = normalize_team(pin["home_team"])
+        away_abbr = normalize_team(pin["away_team"])
+
+        if slug_yes_abbr == home_abbr:
+            # Polymarket YES = Pinnacle home
+            pin_yes_prob = home_prob
+            pin_no_prob = away_prob
+        elif slug_yes_abbr == away_abbr:
+            # Polymarket YES = Pinnacle away
+            pin_yes_prob = away_prob
+            pin_no_prob = home_prob
+        else:
+            # Fallback: pick orientation with smaller delta (diagnostic)
+            delta_normal = abs(home_prob - yes_price)
+            delta_flipped = abs(away_prob - yes_price)
+            if delta_flipped < delta_normal:
+                pin_yes_prob = away_prob
+                pin_no_prob = home_prob
+            else:
+                pin_yes_prob = home_prob
+                pin_no_prob = away_prob
+
         # Hours to game
         hours_to_game = 0
         try:
@@ -265,8 +322,9 @@ def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
         except (ValueError, TypeError):
             pass
 
-        delta_home = round(home_prob - yes_price, 4)
-        delta_away = round(away_prob - no_price, 4)
+        # Delta: positive = Pinnacle thinks YES more likely than Polymarket
+        delta_yes = round(pin_yes_prob - yes_price, 4)
+        delta_no = round(pin_no_prob - (1 - yes_price), 4)
 
         event_str = f"{pin['home_team']} vs {pin['away_team']}"
 
@@ -277,16 +335,16 @@ def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
             "event": event_str,
             "game_start": pin["commence_time"],
             "hours_to_game": round(hours_to_game, 1),
-            "pinnacle_home_prob": home_prob,
-            "pinnacle_away_prob": away_prob,
+            "pinnacle_home_prob": pin_yes_prob,   # aligned to Poly YES
+            "pinnacle_away_prob": pin_no_prob,     # aligned to Poly NO
             "pinnacle_raw_home": pin["home_odds"],
             "pinnacle_raw_away": pin["away_odds"],
             "pinnacle_vig": vig,
             "poly_yes_price": yes_price,
             "poly_no_price": no_price,
             "poly_spread": spread,
-            "delta_home": delta_home,
-            "delta_away": delta_away,
+            "delta_home": delta_yes,   # delta aligned to YES side
+            "delta_away": delta_no,    # delta aligned to NO side
             "market_type": "moneyline",
         }
 
@@ -294,11 +352,12 @@ def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
         snapshots.append(snapshot)
         matched += 1
 
-        # Print each matched pair
-        direction = "Pin>Poly" if delta_home > 0 else "Poly>Pin"
-        print(f"    {event_str[:40]:40s} Pin={home_prob:.1%}/{away_prob:.1%} "
-              f"Poly={yes_price:.0%}/{1-yes_price:.0%} "
-              f"Δ={delta_home:+.1%} ({direction})", flush=True)
+        # Print each matched pair (YES-aligned)
+        yes_team = slug_yes_abbr.upper()
+        direction = "Pin>Poly" if delta_yes > 0 else "Poly>Pin"
+        print(f"    {event_str[:35]:35s} YES={yes_team:3s} "
+              f"Pin={pin_yes_prob:.1%} Poly={yes_price:.0%} "
+              f"Δ={delta_yes:+.1%} ({direction})", flush=True)
 
     db.close()
 
@@ -321,19 +380,29 @@ def run_collection(sports: list[str], api_key: str, dry_run: bool = False,
               f"({max_event['event'][:40]})")
         print(f"    |delta| > 3%:       {big} ({100*big/len(deltas):.0f}%)")
 
-        # Per-sport breakdown
+        # Per-sport breakdown with verdict
         from collections import defaultdict
         by_sport = defaultdict(list)
         for s in snapshots:
             by_sport[s["sport"]].append(s)
-        if len(by_sport) > 1:
-            print(f"\n  Per-sport:")
-            for sport, rows in sorted(by_sport.items(),
-                                       key=lambda x: -len(x[1])):
-                d = [abs(r["delta_home"]) for r in rows]
-                avg = sum(d) / len(d)
-                print(f"    {sport:<30s}: {len(rows):3d} matched, "
-                      f"avg |Δ|={avg:.1%}")
+
+        FEE_THRESHOLD = 0.02  # ~2% taker fee
+        print(f"\n  Per-sport verdict (fee threshold = {FEE_THRESHOLD:.0%}):")
+        for sport, rows in sorted(by_sport.items(),
+                                   key=lambda x: -len(x[1])):
+            d = [abs(r["delta_home"]) for r in rows]
+            avg = sum(d) / len(d)
+            verdict = "ABOVE" if avg > FEE_THRESHOLD else "BELOW"
+            print(f"    {sport:<30s}: {len(rows):3d} matched, "
+                  f"avg |Δ|={avg:.1%} — {verdict} fee threshold")
+
+        # Flag remaining large deltas for manual review
+        large = [s for s in snapshots if abs(s["delta_home"]) > 0.05]
+        if large:
+            print(f"\n  |delta| > 5% (verify manually):")
+            for s in sorted(large, key=lambda x: -abs(x["delta_home"])):
+                print(f"    {s['event'][:40]:40s} |Δ|={abs(s['delta_home']):.1%} "
+                      f"slug={s['slug'][:40]}")
 
     if unmatched:
         print(f"\n  Unmatched events (first 10):")
