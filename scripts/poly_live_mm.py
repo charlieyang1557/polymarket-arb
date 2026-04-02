@@ -607,12 +607,14 @@ class LiveOrderManager:
         for slug, sides in polled.items():
             merged[slug] = dict(sides)
 
-        # Remap: for each prev_orders entry missing from polled,
-        # check if the order_id exists under a different polled slug
+        # Remap: for each (slug, side) in prev_orders missing from polled,
+        # check if the order_id exists under a different polled slug.
+        # Per-side granularity: one side may remap correctly while the
+        # other appears under a different API slug.
         for slug, sides in self._prev_orders.items():
-            if slug in merged:
-                continue  # already present
             for side, prev_info in sides.items():
+                if slug in merged and side in merged[slug]:
+                    continue  # this side already present
                 prev_oid = prev_info.get("order_id", "")
                 if prev_oid and prev_oid in polled_by_oid:
                     # Order exists but under a different slug — remap it

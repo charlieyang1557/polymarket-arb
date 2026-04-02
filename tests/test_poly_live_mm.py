@@ -1187,3 +1187,68 @@ class TestPhantomFillSlugRemap:
             f"Our slug missing from merged. Keys: {list(curr.keys())}"
         )
         assert curr["det-phi"]["yes"]["order_id"] == "ord-123"
+
+    def test_mixed_side_remap_no_partial_phantom_fill(self):
+        """Both sides placed. YES polls under our slug, NO polls under
+        API slug (remap lost). Per-side remap must find NO by order_id.
+        No phantom fill on either side."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # Both sides tracked
+        mgr._live_order_ids["det-phi"] = {
+            "yes": "ord-yes-1", "no": "ord-no-2"}
+        mgr._local_orders["det-phi"] = {
+            "yes": {"order_id": "ord-yes-1", "price_cents": 50,
+                    "original_qty": 2, "filled_qty": 0,
+                    "remaining_qty": 2},
+            "no": {"order_id": "ord-no-2", "price_cents": 47,
+                   "original_qty": 2, "filled_qty": 0,
+                   "remaining_qty": 2},
+        }
+
+        # Tick N: both sides visible
+        tick_n = {
+            "det-phi": {
+                "yes": {"order_id": "ord-yes-1", "price_cents": 50,
+                        "original_qty": 2, "filled_qty": 0,
+                        "remaining_qty": 2},
+                "no": {"order_id": "ord-no-2", "price_cents": 47,
+                       "original_qty": 2, "filled_qty": 0,
+                       "remaining_qty": 2},
+            }
+        }
+        mgr.update_prev_orders(tick_n)
+
+        # Simulate: _live_order_ids loses NO remap only
+        mgr._live_order_ids["det-phi"] = {"yes": "ord-yes-1"}
+
+        # Tick N+1: YES remaps correctly, NO appears under API slug
+        client.list_orders.return_value = {"orders": [
+            {
+                "id": "ord-yes-1",
+                "marketSlug": "det-phi",
+                "intent": "ORDER_INTENT_BUY_LONG",
+                "price": {"value": "0.500", "currency": "USD"},
+                "quantity": 2, "cumQuantity": 0, "leavesQuantity": 2,
+                "state": "ORDER_STATE_NEW",
+            },
+            {
+                "id": "ord-no-2",
+                "marketSlug": "det-phi-totals-over-198-5",
+                "intent": "ORDER_INTENT_BUY_SHORT",
+                "price": {"value": "0.470", "currency": "USD"},
+                "quantity": 2, "cumQuantity": 0, "leavesQuantity": 2,
+                "state": "ORDER_STATE_NEW",
+            },
+        ]}
+        raw_polled, poll_ok = mgr.poll_open_orders(["det-phi"])
+        curr = mgr.merged_orders(raw_polled, poll_ok)
+        fills = mgr.check_fills(curr)
+
+        # Both sides must be present under our slug
+        assert "det-phi" in curr
+        assert "yes" in curr["det-phi"], "YES side missing"
+        assert "no" in curr["det-phi"], "NO side missing — partial remap bug"
+        assert len(fills) == 0, f"Phantom fill: {fills}"
