@@ -585,15 +585,39 @@ class LiveOrderManager:
         - Local data fills gaps only for freshly placed orders (not in
           _prev_orders). Previously tracked orders that disappear are
           left absent so check_fills() can detect fills.
+        - Orders under mismatched slugs are matched by order_id to
+          prevent phantom fills from slug remap failures.
         """
         if not poll_ok:
             # Stale data — return previous tick unchanged
             return dict(self._prev_orders)
 
+        # Build order_id index from polled data for cross-slug matching.
+        # This catches orders that appear under a different API slug
+        # when _live_order_ids has lost the remap entry.
+        polled_by_oid: dict[str, tuple[str, str, dict]] = {}
+        for slug, sides in polled.items():
+            for side, info in sides.items():
+                oid = info.get("order_id", "")
+                if oid:
+                    polled_by_oid[oid] = (slug, side, info)
+
         merged = {}
         # Start with polled data
         for slug, sides in polled.items():
             merged[slug] = dict(sides)
+
+        # Remap: for each prev_orders entry missing from polled,
+        # check if the order_id exists under a different polled slug
+        for slug, sides in self._prev_orders.items():
+            if slug in merged:
+                continue  # already present
+            for side, prev_info in sides.items():
+                prev_oid = prev_info.get("order_id", "")
+                if prev_oid and prev_oid in polled_by_oid:
+                    # Order exists but under a different slug — remap it
+                    _, _, matched_info = polled_by_oid[prev_oid]
+                    merged.setdefault(slug, {})[side] = matched_info
         # Fill gaps from local tracking — but only for orders not yet
         # seen in a previous poll (not in _prev_orders)
         for slug, sides in self._local_orders.items():

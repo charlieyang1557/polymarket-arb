@@ -1061,3 +1061,129 @@ class TestPostCancelReconciliation:
 
         # Local state should now reflect exchange truth
         assert len(gs.markets["slug-a"].yes_queue) == 4
+
+
+# ---------------------------------------------------------------------------
+# Test: phantom fills from slug remap failure
+# ---------------------------------------------------------------------------
+
+class TestPhantomFillSlugRemap:
+    """BUG: When poll_open_orders returns an order under a different API slug
+    and _live_order_ids has lost the remap entry (e.g. after phantom fill
+    cleanup), the order appears under api-slug in polled but under our-slug
+    in _prev_orders. check_fills sees our-slug missing → phantom fill.
+
+    After the phantom fill cleanup removes _live_order_ids, subsequent
+    ticks can't remap → infinite phantom fill loop.
+    """
+
+    def test_order_under_different_api_slug_no_phantom_fill(self):
+        """Order returned by API under different slug but same order_id.
+        Should NOT report as fill when remap is in _live_order_ids."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # Place order — stores in _live_order_ids and _local_orders
+        mgr._live_order_ids["det-phi"] = {"yes": "ord-123"}
+        mgr._local_orders["det-phi"] = {"yes": {
+            "order_id": "ord-123", "price_cents": 50,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}
+
+        # Tick N: poll returns correctly remapped
+        client.list_orders.return_value = {"orders": [{
+            "id": "ord-123",
+            "marketSlug": "det-phi-totals-over-198-5",
+            "intent": "ORDER_INTENT_BUY_LONG",
+            "price": {"value": "0.500", "currency": "USD"},
+            "quantity": 2, "cumQuantity": 0, "leavesQuantity": 2,
+            "state": "ORDER_STATE_NEW",
+        }]}
+        raw_polled, poll_ok = mgr.poll_open_orders(["det-phi"])
+        curr = mgr.merged_orders(raw_polled, poll_ok)
+        mgr.update_prev_orders(curr)
+
+        # Tick N+1: same poll result
+        raw_polled, poll_ok = mgr.poll_open_orders(["det-phi"])
+        curr = mgr.merged_orders(raw_polled, poll_ok)
+        fills = mgr.check_fills(curr)
+
+        assert len(fills) == 0, f"Phantom fill detected: {fills}"
+
+    def test_remap_lost_after_fill_cleanup_causes_phantom_loop(self):
+        """After check_fills cleanup removes _live_order_ids entry,
+        subsequent polls can't remap → phantom fill loop.
+
+        This test reproduces the infinite phantom fill bug.
+        """
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # Place order
+        mgr._live_order_ids["det-phi"] = {"yes": "ord-123"}
+        mgr._local_orders["det-phi"] = {"yes": {
+            "order_id": "ord-123", "price_cents": 50,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}
+
+        # Tick N: poll returns under different API slug, remap works
+        api_order = {
+            "id": "ord-123",
+            "marketSlug": "det-phi-totals-over-198-5",
+            "intent": "ORDER_INTENT_BUY_LONG",
+            "price": {"value": "0.500", "currency": "USD"},
+            "quantity": 2, "cumQuantity": 0, "leavesQuantity": 2,
+            "state": "ORDER_STATE_NEW",
+        }
+        client.list_orders.return_value = {"orders": [api_order]}
+        raw_polled, poll_ok = mgr.poll_open_orders(["det-phi"])
+        curr = mgr.merged_orders(raw_polled, poll_ok)
+        mgr.update_prev_orders(curr)
+
+        # Simulate: _live_order_ids cleared (e.g. by phantom fill cleanup)
+        mgr._live_order_ids.clear()
+
+        # Tick N+1: remap fails → order stays under api-slug
+        client.list_orders.return_value = {"orders": [api_order]}
+        raw_polled, poll_ok = mgr.poll_open_orders(["det-phi"])
+
+        # The order should still be found via order_id matching
+        curr = mgr.merged_orders(raw_polled, poll_ok)
+        fills = mgr.check_fills(curr)
+
+        # MUST NOT detect phantom fill — order is still on exchange
+        assert len(fills) == 0, (
+            f"Phantom fill loop: {fills}. "
+            f"polled keys={list(raw_polled.keys())}, "
+            f"curr keys={list(curr.keys())}"
+        )
+
+    def test_merged_orders_matches_by_order_id_across_slugs(self):
+        """merged_orders should recognize an order from _prev_orders
+        even when it appears under a different slug key in polled data,
+        by matching on order_id."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # _prev_orders has our-slug
+        mgr._prev_orders = {"det-phi": {"yes": {
+            "order_id": "ord-123", "price_cents": 50,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+
+        # polled has api-slug (remap failed)
+        polled = {"det-phi-totals-over-198-5": {"yes": {
+            "order_id": "ord-123", "price_cents": 50,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+
+        curr = mgr.merged_orders(polled, poll_ok=True)
+
+        # Our slug should be in curr (matched by order_id)
+        assert "det-phi" in curr, (
+            f"Our slug missing from merged. Keys: {list(curr.keys())}"
+        )
+        assert curr["det-phi"]["yes"]["order_id"] == "ord-123"
