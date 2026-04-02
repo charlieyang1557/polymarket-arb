@@ -556,3 +556,176 @@ class TestShouldRequoteWithOverrides:
         assert should_requote_or_force(
             target_price=44, current_price=42,
             force_requote=False) is True
+
+
+# ---------------------------------------------------------------------------
+# Test: fill detection — disappeared orders must be detected as fills
+# ---------------------------------------------------------------------------
+
+class TestFillDetectionDisappearedOrders:
+    """P0 BUG: When a fully filled order disappears from poll_open_orders(),
+    check_fills() fails to detect it. Three compounding bugs:
+
+    1. merged_orders() fills in stale local data for disappeared orders,
+       masking the disappearance from check_fills().
+    2. check_fills() has a `pass` for disappeared orders — does nothing.
+    3. The condition `filled_qty > 0` misses orders that go from 0 to fully
+       filled in a single tick.
+
+    These tests verify the fix: when a tracked order disappears and was not
+    explicitly cancelled, it should be detected as a fill.
+    """
+
+    def _make_manager(self):
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=True, capital_cents=2500)
+        return mgr
+
+    def test_fully_filled_order_disappears_detected_as_fill(self):
+        """Order placed tick N, disappears tick N+1 → detected as full fill.
+
+        This is the primary bug: 2-lot order at 48c gets fully filled,
+        disappears from poll, but merged_orders fills in stale local data
+        so check_fills never sees it vanish.
+        """
+        mgr = self._make_manager()
+        # Place order
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        # Tick N: order visible in poll
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Tick N+1: order disappeared from poll (fully filled)
+        raw_polled = {}  # exchange returns nothing for this slug
+        curr_orders = mgr.merged_orders(raw_polled)
+        fills = mgr.check_fills(curr_orders)
+
+        # MUST detect 2 fills
+        assert len(fills) == 1
+        assert fills[0]["slug"] == "slug-a"
+        assert fills[0]["side"] == "yes"
+        assert fills[0]["filled"] == 2
+        assert fills[0]["price_cents"] == 48
+
+    def test_cancelled_order_not_detected_as_fill(self):
+        """Order cancelled then disappears → NOT a fill."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Cancel the order
+        mgr.cancel_order("slug-a", "yes", oid)
+
+        # Tick N+1: order gone from poll
+        raw_polled = {}
+        curr_orders = mgr.merged_orders(raw_polled)
+        fills = mgr.check_fills(curr_orders)
+
+        # Should NOT detect as fill — it was cancelled
+        assert len(fills) == 0
+
+    def test_partial_fill_then_disappear_detects_remaining(self):
+        """Order partially filled (1 of 2), then disappears → 1 more filled."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        # Tick N: partially filled (1 of 2 filled)
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 1, "remaining_qty": 1,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Tick N+1: order disappeared (remaining 1 filled)
+        raw_polled = {}
+        curr_orders = mgr.merged_orders(raw_polled)
+        fills = mgr.check_fills(curr_orders)
+
+        # Should detect the remaining 1 fill
+        assert len(fills) == 1
+        assert fills[0]["filled"] == 1
+
+    def test_order_still_open_no_false_fill(self):
+        """Order still visible and unchanged → no fill detected."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Tick N+1: order still there, unchanged
+        raw_polled = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        curr_orders = mgr.merged_orders(raw_polled)
+        fills = mgr.check_fills(curr_orders)
+
+        assert len(fills) == 0
+
+    def test_multi_market_fills_detected_independently(self):
+        """Fills across multiple markets detected independently."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        mgr.place_order("slug-b", "no", 50, 2)
+        oid_a = mgr._local_orders["slug-a"]["yes"]["order_id"]
+        oid_b = mgr._local_orders["slug-b"]["no"]["order_id"]
+
+        tick_n = {
+            "slug-a": {"yes": {
+                "order_id": oid_a, "price_cents": 48,
+                "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+            }},
+            "slug-b": {"no": {
+                "order_id": oid_b, "price_cents": 50,
+                "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+            }},
+        }
+        mgr.update_prev_orders(tick_n)
+
+        # Tick N+1: both orders disappeared (filled)
+        raw_polled = {}
+        curr_orders = mgr.merged_orders(raw_polled)
+        fills = mgr.check_fills(curr_orders)
+
+        assert len(fills) == 2
+        slugs_filled = {f["slug"] for f in fills}
+        assert slugs_filled == {"slug-a", "slug-b"}
+
+    def test_local_orders_cleaned_after_fill_detected(self):
+        """After detecting a fill, _local_orders should be cleaned up."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Tick N+1: order disappeared
+        raw_polled = {}
+        curr_orders = mgr.merged_orders(raw_polled)
+        fills = mgr.check_fills(curr_orders)
+
+        assert len(fills) == 1
+        # Local orders should be cleaned for the filled side
+        assert "yes" not in mgr._local_orders.get("slug-a", {})

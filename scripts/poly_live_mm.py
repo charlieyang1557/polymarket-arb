@@ -290,10 +290,21 @@ class LiveOrderManager:
         # Local order tracking: {slug: {side: {order_id, price_cents, ...}}}
         # Prevents requote thrashing when poll_open_orders returns empty
         self._local_orders: dict = {}
+        # Track order IDs we explicitly cancelled — {order_id}
+        # Used to distinguish "disappeared because filled" from "cancelled"
+        self._cancelled_order_ids: set = set()
         self._api_backoff = 0  # exponential backoff counter for 429s
 
     def cancel_all_orders(self, slugs: list[str] | None = None):
         """Cancel ALL open orders. Called on startup, shutdown, crash."""
+        # Record all tracked order IDs as cancelled before clearing
+        for slug_sides in self._live_order_ids.values():
+            for oid in slug_sides.values():
+                self._cancelled_order_ids.add(oid)
+        for slug_sides in self._local_orders.values():
+            for info in slug_sides.values():
+                self._cancelled_order_ids.add(info.get("order_id", ""))
+
         if self.dry_run:
             print("  [DRY-RUN] Would cancel all orders", flush=True)
             self._live_order_ids.clear()
@@ -305,6 +316,8 @@ class LiveOrderManager:
             else:
                 resp = self.client.cancel_all_orders()
             cancelled = resp.get("canceledOrderIds", [])
+            for oid in cancelled:
+                self._cancelled_order_ids.add(oid)
             print(f"  Cancelled {len(cancelled)} open orders", flush=True)
         except Exception as e:
             print(f"  WARNING: cancel_all failed: {e}", file=sys.stderr,
@@ -407,6 +420,7 @@ class LiveOrderManager:
 
     def cancel_order(self, slug: str, side: str, order_id: str):
         """Cancel a specific order."""
+        self._cancelled_order_ids.add(order_id)
         if self.dry_run:
             print(f"    [DRY-RUN] Would cancel {side} order {order_id} "
                   f"on {slug}", flush=True)
@@ -466,6 +480,11 @@ class LiveOrderManager:
 
         Returns list of fill events:
             [{"slug": ..., "side": ..., "filled": ..., "price_cents": ...}]
+
+        Handles three cases:
+        1. Order still visible: compare cumQuantity (partial fills)
+        2. Order disappeared + was cancelled: not a fill
+        3. Order disappeared + NOT cancelled: was filled (remaining qty)
         """
         fills = []
         for slug, sides in self._prev_orders.items():
@@ -481,31 +500,59 @@ class LiveOrderManager:
                             "price_cents": prev_info["price_cents"],
                         })
                 else:
-                    # Order disappeared — might be fully filled
+                    # Order disappeared — check if it was cancelled
+                    prev_oid = prev_info.get("order_id", "")
+                    if prev_oid in self._cancelled_order_ids:
+                        # Explicitly cancelled — not a fill
+                        self._cancelled_order_ids.discard(prev_oid)
+                        continue
+
+                    # Not cancelled → was filled. Count remaining qty.
                     remaining = prev_info["remaining_qty"]
-                    if remaining > 0 and prev_info["filled_qty"] > 0:
-                        # Partial info lost — log it
-                        pass
+                    if remaining > 0:
+                        fills.append({
+                            "slug": slug,
+                            "side": side,
+                            "filled": remaining,
+                            "price_cents": prev_info["price_cents"],
+                        })
+                        # Clean up local tracking for filled order
+                        if slug in self._local_orders:
+                            self._local_orders[slug].pop(side, None)
+                        if slug in self._live_order_ids:
+                            self._live_order_ids[slug].pop(side, None)
         return fills
 
     def merged_orders(self, polled: dict) -> dict:
         """Merge poll results with local tracking.
 
         When poll returns data for a (slug, side), exchange truth wins
-        and local tracking is updated. When poll is empty (API lag/error),
+        and local tracking is updated. When poll is empty for an order
+        that was NOT in _prev_orders (i.e., just placed, not yet polled),
         local tracking fills the gap so should_requote can fire.
+
+        CRITICAL: If an order was in _prev_orders but is now missing from
+        the poll, do NOT fill the gap — the order may have been filled.
+        Let check_fills() see the disappearance.
         """
         merged = {}
         # Start with polled data
         for slug, sides in polled.items():
             merged[slug] = dict(sides)
-        # Fill gaps from local tracking
+        # Fill gaps from local tracking — but only for orders not yet
+        # seen in a previous poll (not in _prev_orders)
         for slug, sides in self._local_orders.items():
             if slug not in merged:
                 merged[slug] = {}
             for side, info in sides.items():
                 if side not in merged[slug]:
-                    merged[slug][side] = dict(info)
+                    # Only fill from local if this order wasn't tracked
+                    # in the previous tick. If it was tracked and now
+                    # disappeared, it was likely filled.
+                    was_tracked = (slug in self._prev_orders
+                                   and side in self._prev_orders[slug])
+                    if not was_tracked:
+                        merged[slug][side] = dict(info)
                 else:
                     # Exchange truth — update local tracking
                     self._local_orders[slug][side] = dict(merged[slug][side])
