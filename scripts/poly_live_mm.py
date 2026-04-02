@@ -290,79 +290,32 @@ class LiveOrderManager:
         # Local order tracking: {slug: {side: {order_id, price_cents, ...}}}
         # Prevents requote thrashing when poll_open_orders returns empty
         self._local_orders: dict = {}
-        # Track order IDs we explicitly cancelled — {order_id}
-        # Used to distinguish "disappeared because filled" from "cancelled"
-        self._cancelled_order_ids: set = set()
+        # Fill detection via portfolio.activities() — track seen trade IDs
+        self._seen_trade_ids: set = set()
+        # Reverse map: slug remap from API marketSlug → our internal slug
+        self._slug_remap: dict[str, str] = {}
         self._api_backoff = 0  # exponential backoff counter for 429s
 
     def cancel_all_orders(self, slugs: list[str] | None = None):
         """Cancel ALL open orders. Called on startup, shutdown, crash.
 
-        After cancelling, reconciles via open-orders poll to detect
-        any fills that raced with the cancel request.
+        Fill detection uses portfolio.activities() not order disappearance,
+        so no reconciliation needed here.
         """
-        # Collect all tracked IDs (to mark after success)
-        all_tracked_ids: set = set()
-        for slug_sides in self._live_order_ids.values():
-            for oid in slug_sides.values():
-                all_tracked_ids.add(oid)
-        for slug_sides in self._local_orders.values():
-            for info in slug_sides.values():
-                all_tracked_ids.add(info.get("order_id", ""))
-
         if self.dry_run:
             print("  [DRY-RUN] Would cancel all orders", flush=True)
-            self._cancelled_order_ids.update(all_tracked_ids)
             self._live_order_ids.clear()
             self._local_orders.clear()
             return
         try:
-            if slugs:
-                resp = self.client.cancel_all_orders()
-            else:
-                resp = self.client.cancel_all_orders()
+            resp = self.client.cancel_all_orders()
             cancelled = resp.get("canceledOrderIds", [])
-            # Mark only confirmed cancelled IDs
-            for oid in cancelled:
-                self._cancelled_order_ids.add(oid)
             print(f"  Cancelled {len(cancelled)} open orders", flush=True)
         except Exception as e:
             print(f"  WARNING: cancel_all failed: {e}", file=sys.stderr,
                   flush=True)
-
-        # Reconciliation: check if any orders survived the cancel
-        remaining = self._reconcile_after_cancel()
-        # IDs NOT in remaining were successfully cancelled
-        remaining_ids = {
-            info.get("order_id", "")
-            for sides in remaining.values()
-            for info in sides.values()
-        }
-        for oid in all_tracked_ids:
-            if oid not in remaining_ids:
-                self._cancelled_order_ids.add(oid)
-
         self._live_order_ids.clear()
         self._local_orders.clear()
-
-    def _reconcile_after_cancel(self) -> dict:
-        """Poll open orders after cancel to detect survivors.
-
-        Returns remaining orders dict. Best-effort — returns {}
-        on failure (startup position sync is the final safety net).
-        """
-        try:
-            resp = self.client.list_orders(slugs=[])
-            remaining = parse_open_orders(resp)
-            if remaining:
-                order_count = sum(
-                    len(sides) for sides in remaining.values())
-                print(f"  RECONCILE: {order_count} orders still open "
-                      f"after cancel_all", flush=True)
-            return remaining
-        except Exception as e:
-            print(f"  RECONCILE_ERROR: {e}", file=sys.stderr, flush=True)
-            return {}
 
     def place_order(self, slug: str, side: str, price_cents: int,
                     count: int) -> str | None:
@@ -458,13 +411,8 @@ class LiveOrderManager:
             return None
 
     def cancel_order(self, slug: str, side: str, order_id: str):
-        """Cancel a specific order.
-
-        Only marks order as cancelled AFTER confirmed success.
-        Failed cancels leave the order trackable for fill detection.
-        """
+        """Cancel a specific order."""
         if self.dry_run:
-            self._cancelled_order_ids.add(order_id)
             print(f"    [DRY-RUN] Would cancel {side} order {order_id} "
                   f"on {slug}", flush=True)
             if slug in self._local_orders:
@@ -473,15 +421,12 @@ class LiveOrderManager:
 
         try:
             self.client.cancel_order(order_id, slug=slug)
-            # Only mark as cancelled after exchange confirms
-            self._cancelled_order_ids.add(order_id)
             if slug in self._live_order_ids:
                 self._live_order_ids[slug].pop(side, None)
             if slug in self._local_orders:
                 self._local_orders[slug].pop(side, None)
             self._api_backoff = 0
         except Exception as e:
-            # Do NOT mark as cancelled — cancel may not have reached exchange
             err_str = str(e)
             if "429" in err_str or "rate" in err_str.lower():
                 self._api_backoff = min(self._api_backoff + 1, 5)
@@ -517,123 +462,118 @@ class LiveOrderManager:
                 for side, info in sides.items():
                     oid = info.get("order_id", "")
                     real_slug = id_to_slug.get(oid, api_slug)
+                    if real_slug != api_slug:
+                        # Record remap for activities-based fill detection
+                        self._slug_remap[api_slug] = real_slug
                     fixed.setdefault(real_slug, {})[side] = info
             return fixed, True
         except Exception as e:
             print(f"    POLL ERROR: {e}", file=sys.stderr, flush=True)
             return {}, False
 
-    def check_fills(self, curr_orders: dict) -> list[dict]:
-        """Compare current orders to previous tick to detect fills.
+    def check_fills(self, active_slugs: list[str]) -> list[dict]:
+        """Detect fills via portfolio.activities() — exchange-confirmed data.
 
         Returns list of fill events:
             [{"slug": ..., "side": ..., "filled": ..., "price_cents": ...}]
 
-        Handles three cases:
-        1. Order still visible: compare cumQuantity (partial fills)
-        2. Order disappeared + was cancelled: not a fill
-        3. Order disappeared + NOT cancelled: was filled (remaining qty)
+        Uses trade IDs to avoid double-counting. Only processes trades
+        for our active slugs. Completely eliminates phantom fills from
+        order disappearance/slug remap issues.
         """
-        fills = []
-        for slug, sides in self._prev_orders.items():
-            for side, prev_info in sides.items():
-                curr_info = curr_orders.get(slug, {}).get(side)
-                if curr_info is not None:
-                    n = detect_fills(prev_info, curr_info)
-                    if n > 0:
-                        fills.append({
-                            "slug": slug,
-                            "side": side,
-                            "filled": n,
-                            "price_cents": prev_info["price_cents"],
-                        })
-                else:
-                    # Order disappeared — check if it was cancelled
-                    prev_oid = prev_info.get("order_id", "")
-                    if prev_oid in self._cancelled_order_ids:
-                        # Explicitly cancelled — not a fill
-                        print(f"    CANCEL_CONFIRMED: {slug} {side} "
-                              f"{prev_oid} (cancelled, not filled)",
-                              flush=True)
-                        self._cancelled_order_ids.discard(prev_oid)
-                        continue
+        if self.dry_run:
+            return []
 
-                    # Not cancelled → was filled. Count remaining qty.
-                    remaining = prev_info["remaining_qty"]
-                    if remaining > 0:
-                        fills.append({
-                            "slug": slug,
-                            "side": side,
-                            "filled": remaining,
-                            "price_cents": prev_info["price_cents"],
-                        })
-                        # Clean up local tracking for filled order
-                        if slug in self._local_orders:
-                            self._local_orders[slug].pop(side, None)
-                        if slug in self._live_order_ids:
-                            self._live_order_ids[slug].pop(side, None)
+        try:
+            resp = self.client.get_activities(limit=50)
+        except Exception as e:
+            print(f"    ACTIVITIES_ERROR: {e}", file=sys.stderr, flush=True)
+            return []
+
+        activities = resp.get("activities", [])
+        fills = []
+
+        # Build set of active API slugs for matching
+        active_slug_set = set(active_slugs)
+
+        for activity in activities:
+            if activity.get("type") != "ACTIVITY_TYPE_TRADE":
+                continue
+            trade = activity.get("trade")
+            if trade is None:
+                continue
+
+            trade_id = trade.get("id", "")
+            if not trade_id or trade_id in self._seen_trade_ids:
+                continue  # already processed
+
+            self._seen_trade_ids.add(trade_id)
+
+            api_slug = trade.get("marketSlug", "")
+            # Map API slug to our internal slug
+            our_slug = self._slug_remap.get(api_slug, api_slug)
+
+            if our_slug not in active_slug_set:
+                continue  # not one of our markets
+
+            price_str = trade.get("price", "0")
+            if isinstance(price_str, dict):
+                price_str = price_str.get("value", "0")
+            price_cents = round(float(price_str) * 100)
+            qty = int(trade.get("qty", 0))
+
+            if qty <= 0:
+                continue
+
+            # Determine side from our tracked orders
+            side = self._infer_side_from_trade(our_slug, price_cents)
+
+            fills.append({
+                "slug": our_slug,
+                "side": side,
+                "filled": qty,
+                "price_cents": price_cents,
+            })
+            print(f"    FILL {our_slug} {side}@{price_cents}c x{qty} "
+                  f"(trade={trade_id})", flush=True)
+
         return fills
 
-    def merged_orders(self, polled: dict, poll_ok: bool = True) -> dict:
+    def _infer_side_from_trade(self, slug: str, price_cents: int) -> str:
+        """Infer trade side from tracked orders and price.
+
+        Checks _local_orders for matching slug+price. Falls back to
+        price heuristic: price <= 50 → YES (buying low), > 50 → NO.
+        """
+        local = self._local_orders.get(slug, {})
+        for side, info in local.items():
+            if abs(info.get("price_cents", 0) - price_cents) <= 1:
+                return side
+        # Fallback: heuristic
+        return "yes" if price_cents <= 50 else "no"
+
+    def register_slug_remap(self, our_slug: str, api_slug: str):
+        """Register a mapping from API marketSlug to our internal slug."""
+        self._slug_remap[api_slug] = our_slug
+
+    def merged_orders(self, polled: dict) -> dict:
         """Merge poll results with local tracking.
 
-        When poll_ok=False (API error), returns previous tick's orders
-        unchanged to prevent phantom fill detection.
-
-        When poll_ok=True:
-        - Exchange data wins for orders present in poll
-        - Local data fills gaps only for freshly placed orders (not in
-          _prev_orders). Previously tracked orders that disappear are
-          left absent so check_fills() can detect fills.
-        - Orders under mismatched slugs are matched by order_id to
-          prevent phantom fills from slug remap failures.
+        Simple merge: exchange data wins, local data fills gaps.
+        Fill detection is handled by check_fills() via activities API,
+        so no disappearance inference needed here.
         """
-        if not poll_ok:
-            # Stale data — return previous tick unchanged
-            return dict(self._prev_orders)
-
-        # Build order_id index from polled data for cross-slug matching.
-        # This catches orders that appear under a different API slug
-        # when _live_order_ids has lost the remap entry.
-        polled_by_oid: dict[str, tuple[str, str, dict]] = {}
-        for slug, sides in polled.items():
-            for side, info in sides.items():
-                oid = info.get("order_id", "")
-                if oid:
-                    polled_by_oid[oid] = (slug, side, info)
-
         merged = {}
         # Start with polled data
         for slug, sides in polled.items():
             merged[slug] = dict(sides)
-
-        # Remap: for each (slug, side) in prev_orders missing from polled,
-        # check if the order_id exists under a different polled slug.
-        # Per-side granularity: one side may remap correctly while the
-        # other appears under a different API slug.
-        for slug, sides in self._prev_orders.items():
-            for side, prev_info in sides.items():
-                if slug in merged and side in merged[slug]:
-                    continue  # this side already present
-                prev_oid = prev_info.get("order_id", "")
-                if prev_oid and prev_oid in polled_by_oid:
-                    # Order exists but under a different slug — remap it
-                    _, _, matched_info = polled_by_oid[prev_oid]
-                    merged.setdefault(slug, {})[side] = matched_info
-        # Fill gaps from local tracking — but only for orders not yet
-        # seen in a previous poll (not in _prev_orders)
+        # Fill gaps from local tracking
         for slug, sides in self._local_orders.items():
             if slug not in merged:
                 merged[slug] = {}
             for side, info in sides.items():
                 if side not in merged[slug]:
-                    # Only fill from local if this order wasn't tracked
-                    # in the previous tick. If it was tracked and now
-                    # disappeared, it was likely filled.
-                    was_tracked = (slug in self._prev_orders
-                                   and side in self._prev_orders[slug])
-                    if not was_tracked:
-                        merged[slug][side] = dict(info)
+                    merged[slug][side] = dict(info)
                 else:
                     # Exchange truth — update local tracking
                     self._local_orders[slug][side] = dict(merged[slug][side])
@@ -887,16 +827,11 @@ def main():
 
             # Poll open orders for all active slugs (one API call)
             raw_polled, poll_ok = live_mgr.poll_open_orders(active_slugs)
-            curr_orders = live_mgr.merged_orders(raw_polled, poll_ok)
+            curr_orders = live_mgr.merged_orders(raw_polled)
 
-            # Detect fills from order state changes (only on clean poll)
+            # Detect fills via portfolio.activities() (exchange-confirmed)
             inv_changed_slugs: set = set()
-            if poll_ok:
-                fills = live_mgr.check_fills(curr_orders)
-            else:
-                fills = []
-                print("    SKIP_FILL_CHECK: poll failed, using stale state",
-                      flush=True)
+            fills = live_mgr.check_fills(active_slugs)
             for f in fills:
                 slug = f["slug"]
                 ms = gs.markets.get(slug)

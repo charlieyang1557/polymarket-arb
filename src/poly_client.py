@@ -370,3 +370,43 @@ class PolyClient:
         except Exception as e:
             logger.error("get_positions failed: %s", e)
             return {"positions": []}
+
+    def get_activities(self, limit: int = 50) -> dict:
+        """Get recent account activity (trades, resolutions, etc.).
+
+        Returns raw SDK response with 'activities' list.
+        Each trade activity has: type, trade.id, trade.marketSlug,
+        trade.price, trade.qty, trade.createTime, trade.isAggressor.
+        """
+        if not self._authenticated:
+            return {"activities": []}
+        try:
+            resp = self.client.portfolio.activities(
+                {"limit": limit, "types": ["ACTIVITY_TYPE_TRADE"]})
+            if hasattr(resp, "activities"):
+                # SDK returns typed object — convert to dict
+                activities = []
+                for a in resp.activities:
+                    trade = a.trade if hasattr(a, "trade") else None
+                    if trade is None:
+                        continue
+                    price_val = (trade.price.value
+                                 if hasattr(trade.price, "value")
+                                 else str(trade.price))
+                    activities.append({
+                        "type": a.type,
+                        "trade": {
+                            "id": trade.id,
+                            "marketSlug": trade.marketSlug,
+                            "state": trade.state,
+                            "createTime": trade.createTime,
+                            "price": price_val,
+                            "qty": trade.qty,
+                            "isAggressor": trade.isAggressor,
+                        },
+                    })
+                return {"activities": activities}
+            return resp if isinstance(resp, dict) else {"activities": []}
+        except Exception as e:
+            logger.error("get_activities failed: %s", e)
+            return {"activities": []}
