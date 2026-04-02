@@ -377,7 +377,9 @@ def scan_active_markets(client: PolyClient) -> list[dict]:
     embedded markets that have gameStartTime and BBO data.
     """
     print("  Fetching active markets via events...")
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+    # Rolling 12h window so US evening games aren't dropped after UTC midnight
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=12)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
     all_markets = []
     seen_slugs: set = set()
     offset = 0
@@ -387,7 +389,7 @@ def scan_active_markets(client: PolyClient) -> list[dict]:
         resp = client.client.events.list({
             "limit": page_size,
             "offset": offset,
-            "startTimeMin": today,
+            "startTimeMin": cutoff,
         })
         events = resp.get("events", []) if isinstance(resp, dict) else []
         if not events:
