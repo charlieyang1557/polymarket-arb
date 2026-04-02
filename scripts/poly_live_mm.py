@@ -296,17 +296,23 @@ class LiveOrderManager:
         self._api_backoff = 0  # exponential backoff counter for 429s
 
     def cancel_all_orders(self, slugs: list[str] | None = None):
-        """Cancel ALL open orders. Called on startup, shutdown, crash."""
-        # Record all tracked order IDs as cancelled before clearing
+        """Cancel ALL open orders. Called on startup, shutdown, crash.
+
+        Marks order IDs as cancelled only after confirmed success.
+        For dry_run, assumes all would be cancelled.
+        """
+        # Collect all tracked IDs (to mark after success)
+        all_tracked_ids: set = set()
         for slug_sides in self._live_order_ids.values():
             for oid in slug_sides.values():
-                self._cancelled_order_ids.add(oid)
+                all_tracked_ids.add(oid)
         for slug_sides in self._local_orders.values():
             for info in slug_sides.values():
-                self._cancelled_order_ids.add(info.get("order_id", ""))
+                all_tracked_ids.add(info.get("order_id", ""))
 
         if self.dry_run:
             print("  [DRY-RUN] Would cancel all orders", flush=True)
+            self._cancelled_order_ids.update(all_tracked_ids)
             self._live_order_ids.clear()
             self._local_orders.clear()
             return
@@ -316,10 +322,15 @@ class LiveOrderManager:
             else:
                 resp = self.client.cancel_all_orders()
             cancelled = resp.get("canceledOrderIds", [])
+            # Mark only confirmed cancelled IDs
             for oid in cancelled:
                 self._cancelled_order_ids.add(oid)
+            # If API doesn't return specific IDs, assume all tracked
+            if not cancelled:
+                self._cancelled_order_ids.update(all_tracked_ids)
             print(f"  Cancelled {len(cancelled)} open orders", flush=True)
         except Exception as e:
+            # Cancel failed — do NOT mark any as cancelled
             print(f"  WARNING: cancel_all failed: {e}", file=sys.stderr,
                   flush=True)
         self._live_order_ids.clear()
@@ -385,7 +396,7 @@ class LiveOrderManager:
                 print(f"    TIMEOUT placing {slug} {side}@{price_cents}c: "
                       f"verifying exchange state...", flush=True)
                 try:
-                    exchange_orders = self.poll_open_orders([slug])
+                    exchange_orders, _ = self.poll_open_orders([slug])
                     if slug in exchange_orders and side in exchange_orders[slug]:
                         oid = exchange_orders[slug][side]["order_id"]
                         print(f"    TIMEOUT RECOVERED: order {oid} exists "
@@ -419,9 +430,13 @@ class LiveOrderManager:
             return None
 
     def cancel_order(self, slug: str, side: str, order_id: str):
-        """Cancel a specific order."""
-        self._cancelled_order_ids.add(order_id)
+        """Cancel a specific order.
+
+        Only marks order as cancelled AFTER confirmed success.
+        Failed cancels leave the order trackable for fill detection.
+        """
         if self.dry_run:
+            self._cancelled_order_ids.add(order_id)
             print(f"    [DRY-RUN] Would cancel {side} order {order_id} "
                   f"on {slug}", flush=True)
             if slug in self._local_orders:
@@ -430,12 +445,15 @@ class LiveOrderManager:
 
         try:
             self.client.cancel_order(order_id, slug=slug)
+            # Only mark as cancelled after exchange confirms
+            self._cancelled_order_ids.add(order_id)
             if slug in self._live_order_ids:
                 self._live_order_ids[slug].pop(side, None)
             if slug in self._local_orders:
                 self._local_orders[slug].pop(side, None)
             self._api_backoff = 0
         except Exception as e:
+            # Do NOT mark as cancelled — cancel may not have reached exchange
             err_str = str(e)
             if "429" in err_str or "rate" in err_str.lower():
                 self._api_backoff = min(self._api_backoff + 1, 5)
@@ -446,10 +464,12 @@ class LiveOrderManager:
                 print(f"    CANCEL ERROR {order_id}: {e}",
                       file=sys.stderr, flush=True)
 
-    def poll_open_orders(self, slugs: list[str]) -> dict:
+    def poll_open_orders(self, slugs: list[str]) -> tuple[dict, bool]:
         """Fetch current open orders for active slugs.
 
-        Returns parsed order map: {slug: {side: order_info}}.
+        Returns (parsed_order_map, poll_succeeded).
+        poll_succeeded=False means the data is stale — callers must not
+        infer fills from missing orders.
         Remaps API marketSlug to our slug via order_id lookup in
         _live_order_ids, so slug format mismatches don't break tracking.
         """
@@ -470,10 +490,10 @@ class LiveOrderManager:
                     oid = info.get("order_id", "")
                     real_slug = id_to_slug.get(oid, api_slug)
                     fixed.setdefault(real_slug, {})[side] = info
-            return fixed
+            return fixed, True
         except Exception as e:
             print(f"    POLL ERROR: {e}", file=sys.stderr, flush=True)
-            return {}
+            return {}, False
 
     def check_fills(self, curr_orders: dict) -> list[dict]:
         """Compare current orders to previous tick to detect fills.
@@ -523,18 +543,22 @@ class LiveOrderManager:
                             self._live_order_ids[slug].pop(side, None)
         return fills
 
-    def merged_orders(self, polled: dict) -> dict:
+    def merged_orders(self, polled: dict, poll_ok: bool = True) -> dict:
         """Merge poll results with local tracking.
 
-        When poll returns data for a (slug, side), exchange truth wins
-        and local tracking is updated. When poll is empty for an order
-        that was NOT in _prev_orders (i.e., just placed, not yet polled),
-        local tracking fills the gap so should_requote can fire.
+        When poll_ok=False (API error), returns previous tick's orders
+        unchanged to prevent phantom fill detection.
 
-        CRITICAL: If an order was in _prev_orders but is now missing from
-        the poll, do NOT fill the gap — the order may have been filled.
-        Let check_fills() see the disappearance.
+        When poll_ok=True:
+        - Exchange data wins for orders present in poll
+        - Local data fills gaps only for freshly placed orders (not in
+          _prev_orders). Previously tracked orders that disappear are
+          left absent so check_fills() can detect fills.
         """
+        if not poll_ok:
+            # Stale data — return previous tick unchanged
+            return dict(self._prev_orders)
+
         merged = {}
         # Start with polled data
         for slug, sides in polled.items():
@@ -803,12 +827,17 @@ def main():
             sleep_time = args.interval / max(len(active_slugs), 1)
 
             # Poll open orders for all active slugs (one API call)
-            raw_polled = live_mgr.poll_open_orders(active_slugs)
-            curr_orders = live_mgr.merged_orders(raw_polled)
+            raw_polled, poll_ok = live_mgr.poll_open_orders(active_slugs)
+            curr_orders = live_mgr.merged_orders(raw_polled, poll_ok)
 
-            # Detect fills from order state changes
+            # Detect fills from order state changes (only on clean poll)
             inv_changed_slugs: set = set()
-            fills = live_mgr.check_fills(curr_orders)
+            if poll_ok:
+                fills = live_mgr.check_fills(curr_orders)
+            else:
+                fills = []
+                print("    SKIP_FILL_CHECK: poll failed, using stale state",
+                      flush=True)
             for f in fills:
                 slug = f["slug"]
                 ms = gs.markets.get(slug)

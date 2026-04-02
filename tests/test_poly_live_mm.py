@@ -442,7 +442,8 @@ class TestLocalOrderTracking:
             "state": "ORDER_STATE_NEW",
         }]}
 
-        result = mgr.poll_open_orders(["my-slug-123"])
+        result, ok = mgr.poll_open_orders(["my-slug-123"])
+        assert ok is True
         # Should be keyed by OUR slug, not the API's
         assert "my-slug-123" in result
         assert "api-slug-xyz" not in result
@@ -466,7 +467,8 @@ class TestLocalOrderTracking:
             "state": "ORDER_STATE_NEW",
         }]}
 
-        result = mgr.poll_open_orders(["some-api-slug"])
+        result, ok = mgr.poll_open_orders(["some-api-slug"])
+        assert ok is True
         assert "some-api-slug" in result
         assert result["some-api-slug"]["no"]["order_id"] == "ord-unknown"
 
@@ -729,3 +731,213 @@ class TestFillDetectionDisappearedOrders:
         assert len(fills) == 1
         # Local orders should be cleaned for the filled side
         assert "yes" not in mgr._local_orders.get("slug-a", {})
+
+
+# ---------------------------------------------------------------------------
+# Test: poll-success gate — phantom fills on API failure
+# ---------------------------------------------------------------------------
+
+class TestPollSuccessGate:
+    """Adversarial review finding: poll_open_orders() returns {} on exception.
+    New merged_orders logic stops backfilling local data for tracked orders,
+    so a failed poll makes all orders appear "filled" → phantom inventory.
+
+    Fix: poll_open_orders returns (orders, poll_ok). When poll_ok=False,
+    skip fill detection and preserve previous state.
+    """
+
+    def _make_manager(self):
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=True, capital_cents=2500)
+        return mgr
+
+    def test_poll_failure_no_phantom_fills(self):
+        """Poll fails → check_fills returns [] (no phantom fills)."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Poll fails — returns ({}, False)
+        raw_polled, poll_ok = {}, False
+        curr_orders = mgr.merged_orders(raw_polled, poll_ok)
+
+        # poll_ok=False → should NOT detect fills
+        if poll_ok:
+            fills = mgr.check_fills(curr_orders)
+        else:
+            fills = []
+
+        assert len(fills) == 0
+
+    def test_poll_failure_preserves_previous_state(self):
+        """Poll fails → merged_orders returns previous tick unchanged."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Poll fails
+        raw_polled, poll_ok = {}, False
+        curr_orders = mgr.merged_orders(raw_polled, poll_ok)
+
+        # Should return previous tick's state
+        assert "slug-a" in curr_orders
+        assert "yes" in curr_orders["slug-a"]
+        assert curr_orders["slug-a"]["yes"]["order_id"] == oid
+
+    def test_poll_success_still_detects_fills(self):
+        """Poll succeeds and order gone → fill detected normally."""
+        mgr = self._make_manager()
+        mgr.place_order("slug-a", "yes", 48, 2)
+        oid = mgr._local_orders["slug-a"]["yes"]["order_id"]
+
+        tick_n = {"slug-a": {"yes": {
+            "order_id": oid, "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+        mgr.update_prev_orders(tick_n)
+
+        # Poll succeeds, order gone
+        raw_polled, poll_ok = {}, True
+        curr_orders = mgr.merged_orders(raw_polled, poll_ok)
+        fills = mgr.check_fills(curr_orders)
+
+        assert len(fills) == 1
+        assert fills[0]["filled"] == 2
+
+    def test_poll_open_orders_returns_tuple(self):
+        """poll_open_orders must return (dict, bool) tuple."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # Successful poll
+        client.list_orders.return_value = {"orders": []}
+        result = mgr.poll_open_orders(["slug-a"])
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        orders, ok = result
+        assert isinstance(orders, dict)
+        assert ok is True
+
+    def test_poll_open_orders_failure_returns_false(self):
+        """poll_open_orders exception → ({}, False)."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        client.list_orders.side_effect = Exception("API timeout")
+        result = mgr.poll_open_orders(["slug-a"])
+        orders, ok = result
+        assert orders == {}
+        assert ok is False
+
+
+# ---------------------------------------------------------------------------
+# Test: confirmed-cancel-only — failed cancels must not suppress fills
+# ---------------------------------------------------------------------------
+
+class TestConfirmedCancelOnly:
+    """Adversarial review finding: cancel_order() adds to _cancelled_order_ids
+    BEFORE the API call. If cancel fails, ID stays marked as cancelled.
+    A real fill later gets suppressed because check_fills thinks it was cancelled.
+
+    Fix: Only mark as cancelled after successful API response.
+    """
+
+    def test_failed_cancel_does_not_mark_cancelled(self):
+        """Cancel API throws → order ID NOT in _cancelled_order_ids."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        # Simulate a placed order
+        mgr._live_order_ids["slug-a"] = {"yes": "ord-123"}
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-123", "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}
+
+        # Cancel fails
+        client.cancel_order.side_effect = Exception("API timeout")
+        mgr.cancel_order("slug-a", "yes", "ord-123")
+
+        # Order ID should NOT be marked as cancelled
+        assert "ord-123" not in mgr._cancelled_order_ids
+
+    def test_failed_cancel_then_fill_detected(self):
+        """Cancel fails, then order fills → fill IS detected."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        mgr._live_order_ids["slug-a"] = {"yes": "ord-123"}
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-123", "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}
+
+        # Set up prev_orders as if we saw the order last tick
+        mgr._prev_orders = {"slug-a": {"yes": {
+            "order_id": "ord-123", "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+
+        # Cancel fails
+        client.cancel_order.side_effect = Exception("API timeout")
+        mgr.cancel_order("slug-a", "yes", "ord-123")
+
+        # Next tick: order disappeared (it was actually filled)
+        client.list_orders.return_value = {"orders": []}
+        raw_polled, poll_ok = mgr.poll_open_orders(["slug-a"])
+        curr_orders = mgr.merged_orders(raw_polled, poll_ok)
+        fills = mgr.check_fills(curr_orders)
+
+        # Fill MUST be detected (not suppressed)
+        assert len(fills) == 1
+        assert fills[0]["filled"] == 2
+
+    def test_successful_cancel_suppresses_fill(self):
+        """Cancel succeeds → order disappears → NOT detected as fill."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+
+        mgr._live_order_ids["slug-a"] = {"yes": "ord-123"}
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-123", "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}
+
+        mgr._prev_orders = {"slug-a": {"yes": {
+            "order_id": "ord-123", "price_cents": 48,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}}
+
+        # Cancel succeeds
+        client.cancel_order.return_value = {}
+        mgr.cancel_order("slug-a", "yes", "ord-123")
+
+        # Verify ID is marked cancelled
+        assert "ord-123" in mgr._cancelled_order_ids
+
+        # Next tick: order gone from poll
+        client.list_orders.return_value = {"orders": []}
+        raw_polled, poll_ok = mgr.poll_open_orders(["slug-a"])
+        curr_orders = mgr.merged_orders(raw_polled, poll_ok)
+        fills = mgr.check_fills(curr_orders)
+
+        # Should NOT detect as fill
+        assert len(fills) == 0
