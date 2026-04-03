@@ -1,22 +1,55 @@
 # polymarket-arb
 
-Automated scanner and trader that detects arbitrage opportunities on Polymarket.
+Automated sports market making bot for **Polymarket US** and **Kalshi**. Quotes both sides of pre-game sports markets (NBA, NHL, MLB, NCAA spreads/totals), captures the bid-ask spread, and exits all positions before game start.
+
+## Strategy
+
+- **Pre-game market making**: OBI microprice, continuous inventory skew, dynamic volatility-based spread
+- **Pre-game only**: exit all positions before live game starts (time-based + frequency-based detection)
+- **Dual platform**: Polymarket US (live) + Kalshi (paper)
+- **4-layer risk management**: per-order validation, inventory limits, session P&L gates, system circuit breakers
 
 ## Architecture
 
 ```
-MAIN LOOP (every 30s)
-    ├── RebalanceScanner (Type 1)   — sum of all YES prices < $1 in a neg-risk event
-    └── LogicalScanner (Type 2)    — logically related markets with inconsistent prices
-            ↓
-    OpportunityEvaluator           — fee calc, liquidity check, min edge filter
-            ↓
-    RiskManager                    — position limits, stop-loss, circuit breakers
-            ↓
-    PaperTrader (Phase 1-2) / LiveTrader (Phase 3+)
-            ↓
-    Dashboard + SQLite logging
+scripts/poly_daily_scan.py       Market scanner (events API, rank-based scoring)
+scripts/poly_live_mm.py          Live market maker (real orders via Polymarket SDK)
+scripts/poly_paper_mm.py         Paper trading (simulated fills)
+
+src/poly_client.py               Polymarket US API client
+src/kalshi_client.py             Kalshi API client (RSA-PSS auth)
+src/mm/engine.py                 Market making engine (10s tick loop)
+src/mm/state.py                  OBI microprice, skewed quotes, dynamic spread
+src/mm/risk.py                   4-layer risk management (L1-L4)
+src/mm/db.py                     SQLite persistence (fills, orders, snapshots)
 ```
+
+### Data Flow
+
+```
+Scanner selects markets
+  → Engine quotes both sides (YES + NO)
+  → Fills detected via portfolio.activities() API
+  → Inventory skew adjusts quotes
+  → Pre-game exit on game start detection
+```
+
+### Fill Detection
+
+Fill detection uses `portfolio.activities()` for exchange-confirmed trade data:
+- Session watermark (ignores pre-session trades)
+- Passive-only filter (maker fills, not taker)
+- Price-matched to tracked orders
+- Trade ID dedup (no double-counting)
+
+## Risk Management
+
+| Layer | Scope | Controls |
+|-------|-------|----------|
+| L1 | Per-order | Fat-finger check (price within 10% of mid), max 5 contracts |
+| L2 | Inventory | Continuous skew (gamma=0.5c), single-side cap at 10, time-based flatten |
+| L3 | Session P&L | Daily loss limit $5, consecutive loss pause, per-market exit at -$10 |
+| L4 | System | Price jump detection, crossed book skip, API disconnect cancel, pre-game exit |
 
 ## Setup
 
@@ -24,50 +57,42 @@ MAIN LOOP (every 30s)
 git clone https://github.com/charlieyang1557/polymarket-arb.git
 cd polymarket-arb
 pip install -r requirements.txt
-cp .env.example .env   # fill in keys only for Phase 3+ live trading
+cp .env.example .env  # add Polymarket API credentials
 ```
 
 ## Usage
 
 ```bash
-# One-shot scan (no trades)
-python scripts/scan_once.py
+# Daily scanner — find tradeable markets
+python scripts/poly_daily_scan.py --max-markets 5 --max-check 50
 
-# Paper trading loop
-python main.py
+# Paper trading
+python scripts/poly_paper_mm.py --slugs SLUG1,SLUG2 --duration 86400
 
-# Live trading (Phase 3+, requires API keys in .env)
-python main.py --live
+# Live trading (real orders, $25 bankroll)
+python scripts/poly_live_mm.py --slugs SLUG1,SLUG2 --capital 2500 --size 2 --interval 10
 
-# Export trade history
-python scripts/export_trades.py --output trades.csv
+# Dry run (previews orders without submitting)
+python scripts/poly_live_mm.py --dry-run --slugs SLUG1,SLUG2 --capital 2500
+
+# Tests
+python -m pytest tests/test_poly_live_mm.py -q
 ```
 
-## Phase Roadmap
+## Platforms
 
-| Phase | Mode | Goal |
-|-------|------|------|
-| 1 — Scanner | Read-only | Measure opportunity frequency & size |
-| 2 — Paper trading | Simulated | Validate strategy P&L |
-| 3 — Small live ($100–200) | Real | Discover real-world execution issues |
-| 4 — Scale up ($500–1,000) | Real | Optimize, add WebSocket, Type 2 embeddings |
+| Platform | Auth | Status | Notes |
+|----------|------|--------|-------|
+| Polymarket US | SDK key/secret | Live | Sports markets, maker rebates |
+| Kalshi | RSA-PSS signatures | Paper | CFTC-regulated, event contracts |
 
-## Key Config
+## Key Design Decisions
 
-All risk parameters are in `config/settings.py`:
-- Max trade size: $20 | Max total exposure: $200
-- Min edge: 1% (Type 1), 3% (Type 2)
-- Daily loss limit: $20 | Max drawdown: 10%
-
-## Polymarket Notes
-
-- **Neg-risk markets**: multi-outcome mutually exclusive events (Type 1 targets)
-- **Fee**: 0.01% per trade on Polymarket US (use limit/maker orders for 0 fee)
-- **No shorting**: can only buy YES or NO tokens
-- **Settlement**: profit realized when market resolves (days to months)
-- **KYC required**: set up account via Polymarket iOS app before live trading
-- **API keys**: Ed25519 format, generated via `py-clob-client`
+- **Cross-tick losses are stop-losses, not bugs**: negative round-trips (YES+NO > 100c) are natural stop-losses when market moves between fills
+- **Pre-game only**: 10s polling can't compete with sub-second HFT during live events
+- **Spread P&L is the edge**: directional profits from inventory are luck, not repeatable
+- **Activities-based fill detection**: order-disappearance inference was abandoned after persistent phantom fill bugs from slug remap issues
 
 ---
 
-> **Disclaimer:** For educational purposes. Trading involves risk of loss.
+> **Disclaimer**: For educational and research purposes. Trading involves risk of loss.
