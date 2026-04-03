@@ -540,7 +540,7 @@ class LiveOrderManager:
             if isinstance(price_str, dict):
                 price_str = price_str.get("value", "0")
             price_cents = round(float(price_str) * 100)
-            qty = int(trade.get("qty", 0))
+            qty = int(float(trade.get("qty", 0)))
 
             if qty <= 0:
                 self._seen_trade_ids.add(trade_id)

@@ -611,6 +611,20 @@ class TestActivitiesFillDetection:
         assert fills[0]["filled"] == 2
         assert fills[0]["price_cents"] == 48
 
+    def test_decimal_qty_string_parsed(self):
+        """API returns qty as '2.000' — must parse without ValueError."""
+        mgr, client = self._make_manager()
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 48,
+        }}
+        # qty as decimal string like real API returns
+        activity = self._trade_activity("t-dec", "slug-a", "0.48", 2)
+        activity["trade"]["qty"] = "2.000"
+        client.get_activities.return_value = {"activities": [activity]}
+        fills = mgr.check_fills(["slug-a"])
+        assert len(fills) == 1
+        assert fills[0]["filled"] == 2
+
     def test_same_trade_not_double_counted(self):
         """Same trade ID on second call → not counted again."""
         mgr, client = self._make_manager()
