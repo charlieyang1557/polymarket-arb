@@ -968,7 +968,8 @@ def main():
                         ms.active = False
                         ms.deactivation_reason = "orderbook_dead"
                         discord_notify(
-                            f"**LIVE MM** orderbook dead: {slug}")
+                            f"**LIVE MM** {ms.deactivation_reason}: {slug} | "
+                            f"inv={ms.net_inventory} pnl={ms.realized_pnl:.1f}c")
                     continue
 
                 ms.consecutive_skip_ticks = 0
@@ -1009,8 +1010,8 @@ def main():
                     ms.active = False
                     ms.deactivation_reason = "game_started"
                     discord_notify(
-                        f"**LIVE MM** game started: {slug} "
-                        f"inv={ms.net_inventory}")
+                        f"**LIVE MM** {ms.deactivation_reason}: {slug} | "
+                        f"inv={ms.net_inventory} pnl={ms.realized_pnl:.1f}c")
                     continue
 
                 # Layer 4 risk
@@ -1029,6 +1030,9 @@ def main():
                         _cancel_market_orders(live_mgr, slug, curr_orders)
                         ms.active = False
                         ms.deactivation_reason = "EXIT_MARKET (L4)"
+                        discord_notify(
+                            f"**LIVE MM** {ms.deactivation_reason}: {slug} | "
+                            f"inv={ms.net_inventory} pnl={ms.realized_pnl:.1f}c")
                     elif l4 == Action.CANCEL_ALL:
                         _cancel_market_orders(live_mgr, slug, curr_orders)
                     continue
@@ -1057,6 +1061,9 @@ def main():
                     _cancel_market_orders(live_mgr, slug, curr_orders)
                     ms.active = False
                     ms.deactivation_reason = "EXIT_MARKET (L2/L3)"
+                    discord_notify(
+                        f"**LIVE MM** {ms.deactivation_reason}: {slug} | "
+                        f"inv={ms.net_inventory} pnl={ms.realized_pnl:.1f}c")
                     continue
                 if action == Action.PAUSE_30MIN:
                     apply_pause_30min(ms)
