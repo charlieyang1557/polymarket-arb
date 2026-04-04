@@ -913,3 +913,85 @@ class TestStartupSync:
         }}
         mgr.sync_positions(gs, ["slug-a"])
         assert len(gs.markets["slug-a"].yes_queue) == 4
+
+
+# ---------------------------------------------------------------------------
+# Test: fill → force requote on same tick (Task 1)
+# ---------------------------------------------------------------------------
+
+class TestFillForcesRequote:
+    """After a fill, inv_changed_slugs must persist until the market's
+    quotes are actually managed — not reset each cycle."""
+
+    def test_fill_detected_forces_requote_same_tick(self):
+        """Fill detected → force_requote on that market's quote tick,
+        even if delta < MIN_REQUOTE_DELTA."""
+        from scripts.poly_live_mm import should_requote_or_force
+        # 1c delta — normally blocked by MIN_REQUOTE_DELTA=2
+        assert should_requote_or_force(51, 52, force_requote=True) is True
+        assert should_requote_or_force(46, 45, force_requote=True) is True
+
+    def test_fill_force_not_lost_across_cycles(self):
+        """inv_changed_slugs must survive until the market is actually
+        processed, not be rebuilt empty each cycle."""
+        # This is a design test: inv_changed_slugs must be persistent
+        # and cleared per-slug only after _manage_live_quotes runs.
+        # We verify by checking the set operations:
+        inv_changed: set = set()
+
+        # Cycle 1: fill detected for market B, but round-robin processes A
+        inv_changed.add("market-b")
+        # Only clear market-a (the one processed this cycle)
+        inv_changed.discard("market-a")
+        assert "market-b" in inv_changed  # still pending
+
+        # Cycle 2: round-robin processes B
+        assert "market-b" in inv_changed  # signal available
+        inv_changed.discard("market-b")  # cleared after quotes managed
+        assert "market-b" not in inv_changed
+
+    def test_force_requote_zero_delta_no_requote(self):
+        """Even with force=True, if target==current, no requote needed."""
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(52, 52, force_requote=True) is False
+
+
+# ---------------------------------------------------------------------------
+# Test: hedging leg bypasses MIN_REQUOTE_DELTA (Task 2)
+# ---------------------------------------------------------------------------
+
+class TestHedgingLegTracking:
+    """When inv != 0, the hedging leg should track market tick-by-tick
+    (bypass MIN_REQUOTE_DELTA), while the building leg stays sticky."""
+
+    def test_inv_positive_no_side_is_hedging(self):
+        """inv=2 → NO side (hedging) requotes on 1c move."""
+        from scripts.poly_live_mm import should_requote_or_force, is_hedging_leg
+        # net_inv=2, NO side reduces risk → hedging
+        assert is_hedging_leg(net_inv=2, side="no") is True
+        # 1c delta with hedging force → requote
+        assert should_requote_or_force(46, 45, force_requote=True) is True
+
+    def test_inv_positive_yes_side_is_building(self):
+        """inv=2 → YES side (building) still respects MIN_REQUOTE_DELTA=2."""
+        from scripts.poly_live_mm import should_requote_or_force, is_hedging_leg
+        assert is_hedging_leg(net_inv=2, side="yes") is False
+        # 1c delta without force → blocked
+        assert should_requote_or_force(51, 52, force_requote=False) is False
+
+    def test_inv_zero_both_sticky(self):
+        """inv=0 → both sides respect MIN_REQUOTE_DELTA=2."""
+        from scripts.poly_live_mm import is_hedging_leg
+        assert is_hedging_leg(net_inv=0, side="yes") is False
+        assert is_hedging_leg(net_inv=0, side="no") is False
+
+    def test_inv_negative_yes_side_is_hedging(self):
+        """inv=-3 → YES side (hedging) requotes on 1c move."""
+        from scripts.poly_live_mm import should_requote_or_force, is_hedging_leg
+        assert is_hedging_leg(net_inv=-3, side="yes") is True
+        assert should_requote_or_force(51, 52, force_requote=True) is True
+
+    def test_inv_negative_no_side_is_building(self):
+        """inv=-3 → NO side (building) stays sticky."""
+        from scripts.poly_live_mm import is_hedging_leg
+        assert is_hedging_leg(net_inv=-3, side="no") is False

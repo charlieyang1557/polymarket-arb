@@ -101,6 +101,18 @@ def should_requote_or_force(target_price: int, current_price: int,
     return should_requote(target_price, current_price)
 
 
+def is_hedging_leg(net_inv: int, side: str) -> bool:
+    """Whether this side reduces inventory risk.
+
+    When carrying inventory, the hedging leg should track market
+    tick-by-tick (bypass MIN_REQUOTE_DELTA) to maximize fill probability.
+    The building leg stays sticky to preserve queue priority.
+    """
+    if net_inv == 0:
+        return False
+    return (net_inv > 0 and side == "no") or (net_inv < 0 and side == "yes")
+
+
 def max_order_value_check(price_cents: int, count: int,
                           capital_cents: int) -> bool:
     """Check if order value is within 5% of capital limit."""
@@ -824,6 +836,7 @@ def main():
     last_summary_time = start
     SUMMARY_INTERVAL = 43200  # 12h
     tick_count = 0
+    inv_changed_slugs: set = set()  # persists across cycles until quotes managed
 
     def _lookup_game_start(slug):
         try:
@@ -858,7 +871,6 @@ def main():
             curr_orders = live_mgr.merged_orders(raw_polled)
 
             # Detect fills via portfolio.activities() (exchange-confirmed)
-            inv_changed_slugs: set = set()
             fills = live_mgr.check_fills(active_slugs)
             for f in fills:
                 slug = f["slug"]
@@ -1073,6 +1085,7 @@ def main():
                         time_soft_close=time_soft_close,
                         max_unhedged_exit=risk["max_unhedged_exit"],
                         inventory_changed=slug in inv_changed_slugs)
+                    inv_changed_slugs.discard(slug)
 
                 # Snapshot every 6th tick
                 tick_count += 1
@@ -1334,7 +1347,7 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
         existing = slug_orders.get(side)
 
         if existing is not None:
-            force = inventory_changed
+            force = inventory_changed or is_hedging_leg(net_inventory, side)
             if not should_requote_or_force(
                     quote_price, existing["price_cents"],
                     force_requote=force):
