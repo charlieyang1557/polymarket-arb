@@ -448,6 +448,7 @@ class LiveOrderManager:
                 except Exception as verify_err:
                     print(f"    TIMEOUT VERIFY FAILED: {verify_err}",
                           file=sys.stderr, flush=True)
+                _record_attempt()
                 return None
             elif "429" in err_str or "rate" in err_str.lower():
                 self._api_backoff = min(self._api_backoff + 1, 5)
@@ -645,7 +646,8 @@ class LiveOrderManager:
         """Register a mapping from API marketSlug to our internal slug."""
         self._slug_remap[api_slug] = our_slug
 
-    def merged_orders(self, polled: dict, poll_ok: bool = True) -> dict:
+    def merged_orders(self, polled: dict, poll_ok: bool = True,
+                      polled_slugs: set | None = None) -> dict:
         """Merge poll results with local tracking.
 
         Exchange data wins. cancel_pending locals are cleared when poll
@@ -667,7 +669,7 @@ class LiveOrderManager:
                     # Exchange truth wins — replace local (clears pending)
                     self._local_orders[slug][side] = dict(merged[slug][side])
                 elif info.get("cancel_pending"):
-                    if poll_ok:
+                    if poll_ok and (polled_slugs is None or slug in polled_slugs):
                         # Poll succeeded and side is absent → cancel confirmed
                         pending_to_clear.append((slug, side))
                     else:
@@ -926,7 +928,8 @@ def main():
 
             # Poll open orders for all active slugs (one API call)
             raw_polled, poll_ok = live_mgr.poll_open_orders(active_slugs)
-            curr_orders = live_mgr.merged_orders(raw_polled, poll_ok=poll_ok)
+            curr_orders = live_mgr.merged_orders(
+                raw_polled, poll_ok=poll_ok, polled_slugs=set(active_slugs))
 
             # Detect fills via portfolio.activities() (exchange-confirmed)
             fills = live_mgr.check_fills(active_slugs)
@@ -1370,6 +1373,8 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
                 return
 
             # No existing order — place the exit order
+            if live_mgr.has_recent_place_attempt(slug, reduce_side, price, size):
+                return
             live_mgr.place_order(slug, reduce_side, price, size)
             print(f"    SOFT-EXIT {slug}: {reduce_side}@{price}c "
                   f"(inv={net_inventory})", flush=True)

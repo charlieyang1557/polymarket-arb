@@ -1235,7 +1235,7 @@ class TestCancelPendingState:
             "cancel_pending": True,
         }}
         # Successful poll returns empty (no open orders anywhere)
-        merged = mgr.merged_orders({}, poll_ok=True)
+        merged = mgr.merged_orders({}, poll_ok=True, polled_slugs={"slug-a"})
         # cancel_pending should be cleared — not stuck
         assert "yes" not in mgr._local_orders.get("slug-a", {})
         assert "yes" not in merged.get("slug-a", {})
