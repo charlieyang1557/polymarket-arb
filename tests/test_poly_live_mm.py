@@ -957,99 +957,34 @@ class TestFillForcesRequote:
 
 
 # ---------------------------------------------------------------------------
-# Test: hedging leg bypasses MIN_REQUOTE_DELTA (Task 2)
+# Test: both legs use MIN_REQUOTE_DELTA=2 (no hedging special case)
 # ---------------------------------------------------------------------------
 
-class TestHedgingLegTracking:
-    """When inv != 0, the hedging leg should track market tick-by-tick
-    (bypass MIN_REQUOTE_DELTA), while the building leg stays sticky."""
+class TestRequoteBothLegsSticky:
+    """After removing hedging leg special case, both sides use
+    MIN_REQUOTE_DELTA=2. Only inventory_changed forces requote."""
 
-    def test_inv_positive_no_side_is_hedging(self):
-        """inv=2 → NO side (hedging) requotes on 1c move."""
-        from scripts.poly_live_mm import is_hedging_leg
-        assert is_hedging_leg(net_inv=2, side="no") is True
+    def test_delta1_no_requote_either_side(self):
+        """1c move → no requote on either side, regardless of inventory."""
+        from scripts.poly_live_mm import should_requote_or_force
+        # No force: 1c blocked
+        assert should_requote_or_force(51, 50, force_requote=False) is False
+        assert should_requote_or_force(49, 50, force_requote=False) is False
 
-    def test_inv_positive_yes_side_is_building(self):
-        """inv=2 → YES side (building) still respects MIN_REQUOTE_DELTA=2."""
-        from scripts.poly_live_mm import is_hedging_leg
-        assert is_hedging_leg(net_inv=2, side="yes") is False
+    def test_delta2_requotes(self):
+        """2c move → requote (normal threshold)."""
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(52, 50, force_requote=False) is True
 
-    def test_inv_zero_both_sticky(self):
-        """inv=0 → both sides respect MIN_REQUOTE_DELTA=2."""
-        from scripts.poly_live_mm import is_hedging_leg
-        assert is_hedging_leg(net_inv=0, side="yes") is False
-        assert is_hedging_leg(net_inv=0, side="no") is False
+    def test_delta0_never_requotes_even_with_force(self):
+        """Same price → never requote, even with force (fill tick)."""
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(50, 50, force_requote=True) is False
 
-    def test_inv_negative_yes_side_is_hedging(self):
-        """inv=-3 → YES side (hedging) requotes on 1c move."""
-        from scripts.poly_live_mm import is_hedging_leg
-        assert is_hedging_leg(net_inv=-3, side="yes") is True
-
-    def test_inv_negative_no_side_is_building(self):
-        """inv=-3 → NO side (building) stays sticky."""
-        from scripts.poly_live_mm import is_hedging_leg
-        assert is_hedging_leg(net_inv=-3, side="no") is False
-
-    def test_hedging_leg_delta0_no_requote(self):
-        """inv=2, hedging leg (NO), delta=0 → NO requote.
-        This is the P0 bug: hedging leg was requoting at same price."""
-        from scripts.poly_live_mm import should_requote_side
-        assert should_requote_side(
-            quote_price=50, existing_price=50,
-            net_inv=2, side="no",
-            inventory_changed=False) is False
-
-    def test_hedging_leg_delta1_requotes(self):
-        """inv=2, hedging leg (NO), delta=1 → requote."""
-        from scripts.poly_live_mm import should_requote_side
-        assert should_requote_side(
-            quote_price=51, existing_price=50,
-            net_inv=2, side="no",
-            inventory_changed=False) is True
-
-    def test_flat_delta1_no_requote(self):
-        """inv=0, both legs, delta=1 → NO requote (normal sticky)."""
-        from scripts.poly_live_mm import should_requote_side
-        assert should_requote_side(
-            quote_price=51, existing_price=50,
-            net_inv=0, side="yes",
-            inventory_changed=False) is False
-        assert should_requote_side(
-            quote_price=51, existing_price=50,
-            net_inv=0, side="no",
-            inventory_changed=False) is False
-
-    def test_building_leg_delta1_no_requote(self):
-        """inv=2, building leg (YES), delta=1 → NO requote (sticky)."""
-        from scripts.poly_live_mm import should_requote_side
-        assert should_requote_side(
-            quote_price=51, existing_price=52,
-            net_inv=2, side="yes",
-            inventory_changed=False) is False
-
-    def test_building_leg_delta2_requotes(self):
-        """inv=2, building leg (YES), delta=2 → requote (normal threshold)."""
-        from scripts.poly_live_mm import should_requote_side
-        assert should_requote_side(
-            quote_price=50, existing_price=52,
-            net_inv=2, side="yes",
-            inventory_changed=False) is True
-
-    def test_inventory_changed_forces_requote_delta1(self):
-        """Fill just happened → force requote on delta=1."""
-        from scripts.poly_live_mm import should_requote_side
-        assert should_requote_side(
-            quote_price=51, existing_price=50,
-            net_inv=2, side="yes",
-            inventory_changed=True) is True
-
-    def test_inventory_changed_no_requote_delta0(self):
-        """Fill happened but price unchanged → no requote."""
-        from scripts.poly_live_mm import should_requote_side
-        assert should_requote_side(
-            quote_price=50, existing_price=50,
-            net_inv=2, side="yes",
-            inventory_changed=True) is False
+    def test_inventory_changed_forces_delta1(self):
+        """Fill detected → force requote on 1c move."""
+        from scripts.poly_live_mm import should_requote_or_force
+        assert should_requote_or_force(51, 50, force_requote=True) is True
 
 
 # ---------------------------------------------------------------------------

@@ -101,39 +101,6 @@ def should_requote_or_force(target_price: int, current_price: int,
     return should_requote(target_price, current_price)
 
 
-def is_hedging_leg(net_inv: int, side: str) -> bool:
-    """Whether this side reduces inventory risk.
-
-    When carrying inventory, the hedging leg should track market
-    tick-by-tick (bypass MIN_REQUOTE_DELTA) to maximize fill probability.
-    The building leg stays sticky to preserve queue priority.
-    """
-    if net_inv == 0:
-        return False
-    return (net_inv > 0 and side == "no") or (net_inv < 0 and side == "yes")
-
-
-def should_requote_side(quote_price: int, existing_price: int,
-                        net_inv: int, side: str,
-                        inventory_changed: bool) -> bool:
-    """Full requote decision for one side of the book.
-
-    Rules:
-    - delta=0 → never requote (regardless of force flags)
-    - hedging leg (is_hedging_leg) → requote on delta >= 1
-    - inventory_changed (fill just detected) → requote on delta >= 1
-    - otherwise (building leg, flat) → requote on delta >= MIN_REQUOTE_DELTA
-    """
-    delta = abs(quote_price - existing_price)
-    if delta == 0:
-        return False
-    if inventory_changed:
-        return True
-    if is_hedging_leg(net_inv, side) and delta >= 1:
-        return True
-    return delta >= MIN_REQUOTE_DELTA
-
-
 def max_order_value_check(price_cents: int, count: int,
                           capital_cents: int) -> bool:
     """Check if order value is within 5% of capital limit."""
@@ -1376,10 +1343,9 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
         existing = slug_orders.get(side)
 
         if existing is not None:
-            if not should_requote_side(
+            if not should_requote_or_force(
                     quote_price, existing["price_cents"],
-                    net_inv=net_inventory, side=side,
-                    inventory_changed=inventory_changed):
+                    force_requote=inventory_changed):
                 delta = abs(quote_price - existing["price_cents"])
                 print(f"    SKIP_REQUOTE {slug} {side} "
                       f"old={existing['price_cents']}c new={quote_price}c "
