@@ -35,6 +35,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from scripts.poly_daily_scan import extract_game_start_from_market
 from src.poly_client import PolyClient, calculate_maker_fee
 import src.mm.state as _mm_state
 from src.mm.state import (
@@ -59,6 +60,7 @@ from src.mm.db import MMDatabase
 
 MIN_REQUOTE_DELTA = 2  # cents — only cancel+replace if |new - current| >= this
                        # Preserves queue priority in tight-spread markets
+PLACE_ATTEMPT_GUARD_S = 30  # suppress duplicate same-price placements briefly
 WORST_CASE_PER_CONTRACT = 50
 MAX_ACTIVE_MARKETS = 10
 ACTIVE_SLUGS_PATH = "data/poly_active_slugs.json"
@@ -99,6 +101,38 @@ def should_requote_or_force(target_price: int, current_price: int,
     if force_requote:
         return target_price != current_price
     return should_requote(target_price, current_price)
+
+
+def reducing_side_for_inventory(net_inventory: int) -> str | None:
+    """Return the side that reduces current inventory, if any."""
+    if net_inventory > 0:
+        return "no"
+    if net_inventory < 0:
+        return "yes"
+    return None
+
+
+def extract_game_start_from_response(raw: dict) -> str | None:
+    """Extract game start from a Polymarket get_market() payload."""
+    market = raw.get("market", raw) or {}
+    return extract_game_start_from_market(market)
+
+
+def resolve_game_start(slug: str, schedule: dict,
+                       api_lookup=None) -> str | None:
+    """Centralized game-start resolution: schedule first, then API.
+
+    Used by both startup and hot-add to ensure consistent lookup.
+    """
+    gst = schedule.get(slug)
+    if gst:
+        return gst
+    if api_lookup:
+        result = api_lookup(slug)
+        if result:
+            schedule[slug] = result  # cache for future lookups
+            return result
+    return None
 
 
 def max_order_value_check(price_cents: int, count: int,
@@ -290,6 +324,9 @@ class LiveOrderManager:
         # Local order tracking: {slug: {side: {order_id, price_cents, ...}}}
         # Prevents requote thrashing when poll_open_orders returns empty
         self._local_orders: dict = {}
+        # Recent quote submission attempts: suppress duplicate same-price
+        # placements when cancel→place acknowledgement races the poll loop.
+        self._recent_place_attempts: dict = {}
         # Fill detection via portfolio.activities() — track seen trade IDs
         self._seen_trade_ids: set = set()
         # Session start time — ignore trades from before this session
@@ -330,6 +367,11 @@ class LiveOrderManager:
         """
         # Strict price bounds
         price_cents = clamp_price(price_cents)
+        self._recent_place_attempts.setdefault(slug, {})[side] = {
+            "price_cents": price_cents,
+            "count": count,
+            "submitted_at": datetime.now(timezone.utc),
+        }
 
         # Safety: max order value check
         if not max_order_value_check(price_cents, count, self.capital_cents):
@@ -412,21 +454,35 @@ class LiveOrderManager:
                       file=sys.stderr, flush=True)
             return None
 
+    def has_recent_place_attempt(self, slug: str, side: str,
+                                 price_cents: int, count: int) -> bool:
+        """Check whether we very recently submitted the same quote."""
+        info = self._recent_place_attempts.get(slug, {}).get(side)
+        if not info:
+            return False
+        age = (datetime.now(timezone.utc) - info["submitted_at"]).total_seconds()
+        if age > PLACE_ATTEMPT_GUARD_S:
+            return False
+        return (info["price_cents"] == price_cents and
+                info["count"] == count)
+
     def cancel_order(self, slug: str, side: str, order_id: str):
         """Cancel a specific order."""
         if self.dry_run:
             print(f"    [DRY-RUN] Would cancel {side} order {order_id} "
                   f"on {slug}", flush=True)
-            if slug in self._local_orders:
-                self._local_orders[slug].pop(side, None)
+            if slug in self._local_orders and side in self._local_orders[slug]:
+                self._local_orders[slug][side]["cancel_pending"] = True
             return
 
         try:
             self.client.cancel_order(order_id, slug=slug)
             if slug in self._live_order_ids:
                 self._live_order_ids[slug].pop(side, None)
-            if slug in self._local_orders:
-                self._local_orders[slug].pop(side, None)
+            # Mark cancel_pending instead of deleting — prevents
+            # existing=None→place race during poll lag
+            if slug in self._local_orders and side in self._local_orders[slug]:
+                self._local_orders[slug][side]["cancel_pending"] = True
             self._api_backoff = 0
         except Exception as e:
             err_str = str(e)
@@ -587,24 +643,39 @@ class LiveOrderManager:
     def merged_orders(self, polled: dict) -> dict:
         """Merge poll results with local tracking.
 
-        Simple merge: exchange data wins, local data fills gaps.
-        Fill detection is handled by check_fills() via activities API,
-        so no disappearance inference needed here.
+        Exchange data wins. cancel_pending locals are kept until poll
+        confirms the order is gone (slug polled but side absent).
+        Fill detection is handled by check_fills() via activities API.
         """
         merged = {}
         # Start with polled data
         for slug, sides in polled.items():
             merged[slug] = dict(sides)
-        # Fill gaps from local tracking
+
+        # Reconcile local tracking
+        pending_to_clear: list[tuple[str, str]] = []
         for slug, sides in self._local_orders.items():
             if slug not in merged:
                 merged[slug] = {}
-            for side, info in sides.items():
-                if side not in merged[slug]:
-                    merged[slug][side] = dict(info)
-                else:
-                    # Exchange truth — update local tracking
+            for side, info in list(sides.items()):
+                if side in merged[slug]:
+                    # Exchange truth wins — replace local (clears pending)
                     self._local_orders[slug][side] = dict(merged[slug][side])
+                elif info.get("cancel_pending"):
+                    if slug in polled:
+                        # Poll saw this slug but not this side → cancel confirmed
+                        pending_to_clear.append((slug, side))
+                    else:
+                        # Slug not polled at all — keep pending (poll may have missed)
+                        merged[slug][side] = dict(info)
+                else:
+                    # Normal local entry fills gap
+                    merged[slug][side] = dict(info)
+
+        # Clear confirmed cancels
+        for slug, side in pending_to_clear:
+            self._local_orders[slug].pop(side, None)
+
         return merged
 
     def update_prev_orders(self, curr_orders: dict):
@@ -740,21 +811,18 @@ def main():
     except (FileNotFoundError, json.JSONDecodeError):
         pass
 
-    for slug in slugs:
-        if slug not in schedule:
-            try:
-                raw = client.get_market(slug)
-                market = raw.get("market", raw) or {}
-                gst = market.get("gameStartTime") or ""
-                if gst:
-                    schedule[slug] = gst
-            except Exception:
-                pass
+    def _api_game_start(s):
+        try:
+            raw = client.get_market(s)
+            return extract_game_start_from_response(raw) or ""
+        except Exception:
+            return ""
 
     # 5. Initialize markets
     for slug in slugs:
         game_start = None
-        gst_str = schedule.get(slug)
+        gst_str = resolve_game_start(slug, schedule,
+                                      api_lookup=_api_game_start)
         if gst_str:
             try:
                 game_start = datetime.fromisoformat(
@@ -828,12 +896,8 @@ def main():
     inv_changed_slugs: set = set()  # persists across cycles until quotes managed
 
     def _lookup_game_start(slug):
-        try:
-            raw = client.get_market(slug)
-            market = raw.get("market", raw) or {}
-            return market.get("gameStartTime") or ""
-        except Exception:
-            return ""
+        return resolve_game_start(slug, schedule,
+                                   api_lookup=_api_game_start) or ""
 
     try:
         while not shutdown and (time.time() - start) < args.duration:
@@ -1292,6 +1356,11 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
                 if existing:
                     live_mgr.cancel_order(slug, reduce_side,
                                           existing["order_id"])
+                elif live_mgr.has_recent_place_attempt(
+                        slug, reduce_side, price, size):
+                    print(f"    SKIP_PLACE_GUARD {slug} {reduce_side} "
+                          f"price={price}c size={size}", flush=True)
+                    return
                 live_mgr.place_order(slug, reduce_side, price, size)
                 print(f"    SOFT-EXIT {slug}: {reduce_side}@{price}c "
                       f"(inv={net_inventory})", flush=True)
@@ -1310,6 +1379,7 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
         quote_offset=vol_offset)
 
     slug_orders = curr_orders.get(slug, {})
+    reducing_side = reducing_side_for_inventory(net_inventory)
 
     for side, quote_price, best_bid, bids in [
             ("yes", yes_quote, best_yes_bid, yes_bids),
@@ -1342,10 +1412,16 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
 
         existing = slug_orders.get(side)
 
+        # Cancel still in-flight — wait for poll to confirm before placing
+        if existing is not None and existing.get("cancel_pending"):
+            continue
+
+        force_requote = inventory_changed or (side == reducing_side)
+
         if existing is not None:
             if not should_requote_or_force(
                     quote_price, existing["price_cents"],
-                    force_requote=inventory_changed):
+                    force_requote=force_requote):
                 delta = abs(quote_price - existing["price_cents"])
                 print(f"    SKIP_REQUOTE {slug} {side} "
                       f"old={existing['price_cents']}c new={quote_price}c "
@@ -1353,8 +1429,9 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
                 continue  # keep existing order — preserve queue priority
             # Cancel old order
             live_mgr.cancel_order(slug, side, existing["order_id"])
+            continue  # wait for poll to confirm cancel before placing
 
-        # Place new order
+        # Place new order (existing is truly None — no order on this side)
         live_mgr.place_order(slug, side, quote_price, size)
 
 

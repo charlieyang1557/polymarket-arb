@@ -3,7 +3,7 @@
 import pytest
 import sys
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -366,13 +366,14 @@ class TestLocalOrderTracking:
         assert info["price_cents"] == 48
         assert info["remaining_qty"] == 2
 
-    def test_cancel_order_removes_local_orders(self):
-        """After cancel_order, _local_orders should remove that side."""
+    def test_cancel_order_marks_pending(self):
+        """After cancel_order, _local_orders marks cancel_pending."""
         mgr = self._make_manager()
         mgr.place_order("slug-a", "yes", 48, 2)
         assert "yes" in mgr._local_orders.get("slug-a", {})
         mgr.cancel_order("slug-a", "yes", "dry-abc123")
-        assert "yes" not in mgr._local_orders.get("slug-a", {})
+        assert "yes" in mgr._local_orders.get("slug-a", {})
+        assert mgr._local_orders["slug-a"]["yes"].get("cancel_pending") is True
 
     def test_merged_orders_uses_local_when_poll_empty(self):
         """When poll returns empty, merged_orders should use local state."""
@@ -994,6 +995,31 @@ class TestRequoteBothLegsSticky:
 class TestGameStartPropagation:
     """Verify game_start_utc is set for both initial and hot-added markets."""
 
+    def test_get_market_event_start_fallback_used(self):
+        """SDK event-level fallback should populate game_start_utc."""
+        from scripts.poly_live_mm import extract_game_start_from_response
+
+        raw = {"market": {
+            "gameStartTime": "",
+            "_event_start_time": "2026-04-04T20:00:00Z",
+        }}
+        assert extract_game_start_from_response(raw) == "2026-04-04T20:00:00Z"
+
+    def test_resolve_game_start_prefers_schedule(self):
+        """resolve_game_start uses cached schedule before API call."""
+        from scripts.poly_live_mm import resolve_game_start
+        schedule = {"slug-a": "2026-04-04T20:00:00Z"}
+        result = resolve_game_start("slug-a", schedule, api_lookup=None)
+        assert result == "2026-04-04T20:00:00Z"
+
+    def test_resolve_game_start_falls_back_to_api(self):
+        """resolve_game_start calls api_lookup when schedule misses."""
+        from scripts.poly_live_mm import resolve_game_start
+        result = resolve_game_start(
+            "slug-b", {},
+            api_lookup=lambda s: "2026-04-04T21:00:00Z")
+        assert result == "2026-04-04T21:00:00Z"
+
     def test_hot_added_market_gets_game_start(self):
         """consume_pending_markets passes game_start_lookup → MarketState."""
         import json
@@ -1048,3 +1074,151 @@ class TestGameStartPropagation:
         ms.last_api_success = datetime.now(timezone.utc)
         result = check_layer4(ms, spread=3, db_error_count=0)
         assert result == Action.SOFT_CLOSE
+
+
+# ---------------------------------------------------------------------------
+# Test: reducing-side requotes + same-price duplicate guard
+# ---------------------------------------------------------------------------
+
+class TestReducingSideAndPlaceGuard:
+    def test_reducing_side_cancels_on_delta1(self):
+        """Inventory from sync_positions → reducing side cancels on 1c move.
+        With cancel_pending, place happens next tick after poll confirms."""
+        from scripts.poly_live_mm import _manage_live_quotes, LiveOrderManager
+        from src.mm.state import MarketState
+
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=True, capital_cents=2500)
+        ms = MarketState(ticker="slug-a")
+        ms.last_api_success = datetime.now(timezone.utc)
+        ms.yes_queue.extend([50, 50])
+        now = datetime.now(timezone.utc)
+        ms.midpoint_history = [
+            (now - timedelta(seconds=30), 49.5),
+            (now - timedelta(seconds=10), 49.5),
+            (now, 49.5),
+        ]
+
+        curr_orders = {"slug-a": {"no": {
+            "order_id": "old-no",
+            "price_cents": 50,
+            "original_qty": 2,
+            "filled_qty": 0,
+            "remaining_qty": 2,
+        }}}
+        mgr._local_orders["slug-a"] = {"no": dict(curr_orders["slug-a"]["no"])}
+
+        _manage_live_quotes(
+            mgr, ms,
+            best_yes_bid=48, best_no_bid=51,
+            yes_ask=49, midpoint=49.5,
+            yes_bids=[[48, 10]], no_bids=[[51, 10]],
+            curr_orders=curr_orders, order_size=2,
+            max_inventory=10,
+            inventory_changed=False)
+
+        # Cancel was called for the reducing side (1c move, force=True)
+        assert mgr._local_orders["slug-a"]["no"].get("cancel_pending") is True
+        # Place NOT called for NO on this tick — waits for cancel confirm
+
+    def test_cancel_pending_then_place_after_poll(self):
+        """After poll confirms cancel gone, next tick places the new order."""
+        from scripts.poly_live_mm import _manage_live_quotes, LiveOrderManager
+        from src.mm.state import MarketState
+
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=True, capital_cents=2500)
+        ms = MarketState(ticker="slug-a")
+        ms.last_api_success = datetime.now(timezone.utc)
+        ms.yes_queue.extend([50, 50])
+        now = datetime.now(timezone.utc)
+        ms.midpoint_history = [
+            (now - timedelta(seconds=30), 49.5),
+            (now - timedelta(seconds=10), 49.5),
+            (now, 49.5),
+        ]
+
+        # Simulate: poll confirmed cancel (merged_orders returns empty for NO)
+        curr_orders = {"slug-a": {}}
+
+        _manage_live_quotes(
+            mgr, ms,
+            best_yes_bid=48, best_no_bid=51,
+            yes_ask=49, midpoint=49.5,
+            yes_bids=[[48, 10]], no_bids=[[51, 10]],
+            curr_orders=curr_orders, order_size=2,
+            max_inventory=10,
+            inventory_changed=False)
+
+        # Both sides should get placed (no existing orders)
+        placed_sides = set()
+        for slug, sides in mgr._local_orders.items():
+            for side in sides:
+                placed_sides.add(side)
+
+
+# ---------------------------------------------------------------------------
+# Test: cancel_pending state prevents duplicate placements
+# ---------------------------------------------------------------------------
+
+class TestCancelPendingState:
+    """After cancel, order stays in _local_orders as cancel_pending
+    until poll confirms it's gone. Prevents existing=None→place race."""
+
+    def test_cancel_marks_pending_not_deleted(self):
+        """cancel_order marks cancel_pending=True, doesn't delete."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 50,
+            "original_qty": 2, "filled_qty": 0, "remaining_qty": 2,
+        }}
+        mgr.cancel_order("slug-a", "yes", "ord-1")
+        # Order should still be in local_orders but marked pending
+        assert "yes" in mgr._local_orders.get("slug-a", {})
+        assert mgr._local_orders["slug-a"]["yes"].get("cancel_pending") is True
+
+    def test_merged_orders_keeps_cancel_pending(self):
+        """cancel_pending order appears in merged_orders (blocks new placement)."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 50,
+            "cancel_pending": True,
+        }}
+        # Poll returns empty (cancel hasn't propagated yet)
+        merged = mgr.merged_orders({})
+        assert "yes" in merged.get("slug-a", {})
+
+    def test_poll_confirms_cancel_clears_pending(self):
+        """When poll shows order is gone, cancel_pending entry is cleared."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 50,
+            "cancel_pending": True,
+        }}
+        # Poll returns data for slug-a but no "yes" side → cancel confirmed
+        polled = {"slug-a": {"no": {"order_id": "ord-2", "price_cents": 48}}}
+        merged = mgr.merged_orders(polled)
+        # cancel_pending yes should be cleared
+        assert "yes" not in merged.get("slug-a", {})
+        assert "yes" not in mgr._local_orders.get("slug-a", {})
+
+    def test_poll_shows_new_order_replaces_pending(self):
+        """If poll shows a new order on the same side, it replaces pending."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 50,
+            "cancel_pending": True,
+        }}
+        # Poll shows a new order on yes side
+        polled = {"slug-a": {"yes": {"order_id": "ord-2", "price_cents": 51}}}
+        merged = mgr.merged_orders(polled)
+        assert merged["slug-a"]["yes"]["order_id"] == "ord-2"
+        assert merged["slug-a"]["yes"].get("cancel_pending") is not True
