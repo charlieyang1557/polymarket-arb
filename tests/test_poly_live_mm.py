@@ -966,18 +966,13 @@ class TestHedgingLegTracking:
 
     def test_inv_positive_no_side_is_hedging(self):
         """inv=2 → NO side (hedging) requotes on 1c move."""
-        from scripts.poly_live_mm import should_requote_or_force, is_hedging_leg
-        # net_inv=2, NO side reduces risk → hedging
+        from scripts.poly_live_mm import is_hedging_leg
         assert is_hedging_leg(net_inv=2, side="no") is True
-        # 1c delta with hedging force → requote
-        assert should_requote_or_force(46, 45, force_requote=True) is True
 
     def test_inv_positive_yes_side_is_building(self):
         """inv=2 → YES side (building) still respects MIN_REQUOTE_DELTA=2."""
-        from scripts.poly_live_mm import should_requote_or_force, is_hedging_leg
+        from scripts.poly_live_mm import is_hedging_leg
         assert is_hedging_leg(net_inv=2, side="yes") is False
-        # 1c delta without force → blocked
-        assert should_requote_or_force(51, 52, force_requote=False) is False
 
     def test_inv_zero_both_sticky(self):
         """inv=0 → both sides respect MIN_REQUOTE_DELTA=2."""
@@ -987,11 +982,134 @@ class TestHedgingLegTracking:
 
     def test_inv_negative_yes_side_is_hedging(self):
         """inv=-3 → YES side (hedging) requotes on 1c move."""
-        from scripts.poly_live_mm import should_requote_or_force, is_hedging_leg
+        from scripts.poly_live_mm import is_hedging_leg
         assert is_hedging_leg(net_inv=-3, side="yes") is True
-        assert should_requote_or_force(51, 52, force_requote=True) is True
 
     def test_inv_negative_no_side_is_building(self):
         """inv=-3 → NO side (building) stays sticky."""
         from scripts.poly_live_mm import is_hedging_leg
         assert is_hedging_leg(net_inv=-3, side="no") is False
+
+    def test_hedging_leg_delta0_no_requote(self):
+        """inv=2, hedging leg (NO), delta=0 → NO requote.
+        This is the P0 bug: hedging leg was requoting at same price."""
+        from scripts.poly_live_mm import should_requote_side
+        assert should_requote_side(
+            quote_price=50, existing_price=50,
+            net_inv=2, side="no",
+            inventory_changed=False) is False
+
+    def test_hedging_leg_delta1_requotes(self):
+        """inv=2, hedging leg (NO), delta=1 → requote."""
+        from scripts.poly_live_mm import should_requote_side
+        assert should_requote_side(
+            quote_price=51, existing_price=50,
+            net_inv=2, side="no",
+            inventory_changed=False) is True
+
+    def test_flat_delta1_no_requote(self):
+        """inv=0, both legs, delta=1 → NO requote (normal sticky)."""
+        from scripts.poly_live_mm import should_requote_side
+        assert should_requote_side(
+            quote_price=51, existing_price=50,
+            net_inv=0, side="yes",
+            inventory_changed=False) is False
+        assert should_requote_side(
+            quote_price=51, existing_price=50,
+            net_inv=0, side="no",
+            inventory_changed=False) is False
+
+    def test_building_leg_delta1_no_requote(self):
+        """inv=2, building leg (YES), delta=1 → NO requote (sticky)."""
+        from scripts.poly_live_mm import should_requote_side
+        assert should_requote_side(
+            quote_price=51, existing_price=52,
+            net_inv=2, side="yes",
+            inventory_changed=False) is False
+
+    def test_building_leg_delta2_requotes(self):
+        """inv=2, building leg (YES), delta=2 → requote (normal threshold)."""
+        from scripts.poly_live_mm import should_requote_side
+        assert should_requote_side(
+            quote_price=50, existing_price=52,
+            net_inv=2, side="yes",
+            inventory_changed=False) is True
+
+    def test_inventory_changed_forces_requote_delta1(self):
+        """Fill just happened → force requote on delta=1."""
+        from scripts.poly_live_mm import should_requote_side
+        assert should_requote_side(
+            quote_price=51, existing_price=50,
+            net_inv=2, side="yes",
+            inventory_changed=True) is True
+
+    def test_inventory_changed_no_requote_delta0(self):
+        """Fill happened but price unchanged → no requote."""
+        from scripts.poly_live_mm import should_requote_side
+        assert should_requote_side(
+            quote_price=50, existing_price=50,
+            net_inv=2, side="yes",
+            inventory_changed=True) is False
+
+
+# ---------------------------------------------------------------------------
+# Test: game_start_utc propagation for soft-close
+# ---------------------------------------------------------------------------
+
+class TestGameStartPropagation:
+    """Verify game_start_utc is set for both initial and hot-added markets."""
+
+    def test_hot_added_market_gets_game_start(self):
+        """consume_pending_markets passes game_start_lookup → MarketState."""
+        import json
+        import tempfile
+        from scripts.poly_live_mm import consume_pending_markets
+        from src.mm.state import GlobalState
+
+        gs = GlobalState()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                          delete=False) as f:
+            json.dump({"slugs": ["test-slug-abc"]}, f)
+            tmp_path = f.name
+
+        def mock_lookup(slug):
+            return "2026-04-04T20:00:00Z"
+
+        added = consume_pending_markets(
+            gs, pending_path=tmp_path,
+            game_start_lookup=mock_lookup)
+        assert added == ["test-slug-abc"]
+        ms = gs.markets["test-slug-abc"]
+        assert ms.game_start_utc is not None
+        assert ms.game_start_utc.year == 2026
+
+    def test_hot_added_market_no_game_start(self):
+        """Hot-add without game_start_lookup → game_start_utc is None."""
+        import json
+        import tempfile
+        from scripts.poly_live_mm import consume_pending_markets
+        from src.mm.state import GlobalState
+
+        gs = GlobalState()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                          delete=False) as f:
+            json.dump({"slugs": ["test-slug-xyz"]}, f)
+            tmp_path = f.name
+
+        added = consume_pending_markets(
+            gs, pending_path=tmp_path,
+            game_start_lookup=None)
+        assert added == ["test-slug-xyz"]
+        assert gs.markets["test-slug-xyz"].game_start_utc is None
+
+    def test_l4_soft_close_with_game_start(self):
+        """MarketState with game_start_utc within 15min → SOFT_CLOSE."""
+        from src.mm.state import MarketState
+        from src.mm.risk import check_layer4, Action
+        from datetime import datetime, timezone, timedelta
+
+        ms = MarketState(ticker="test")
+        ms.game_start_utc = datetime.now(timezone.utc) + timedelta(minutes=10)
+        ms.last_api_success = datetime.now(timezone.utc)
+        result = check_layer4(ms, spread=3, db_error_count=0)
+        assert result == Action.SOFT_CLOSE
