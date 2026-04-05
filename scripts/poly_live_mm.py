@@ -367,17 +367,19 @@ class LiveOrderManager:
         """
         # Strict price bounds
         price_cents = clamp_price(price_cents)
-        self._recent_place_attempts.setdefault(slug, {})[side] = {
-            "price_cents": price_cents,
-            "count": count,
-            "submitted_at": datetime.now(timezone.utc),
-        }
 
         # Safety: max order value check
         if not max_order_value_check(price_cents, count, self.capital_cents):
             print(f"    REJECT {slug} {side}@{price_cents}c x{count}: "
                   f"exceeds 5% capital limit", flush=True)
             return None
+
+        def _record_attempt():
+            self._recent_place_attempts.setdefault(slug, {})[side] = {
+                "price_cents": price_cents,
+                "count": count,
+                "submitted_at": datetime.now(timezone.utc),
+            }
 
         if self.dry_run:
             print(f"    [DRY-RUN] Would place {side}@{price_cents}c "
@@ -390,6 +392,7 @@ class LiveOrderManager:
                 "filled_qty": 0,
                 "remaining_qty": count,
             }
+            _record_attempt()
             return dry_id
 
         try:
@@ -411,6 +414,7 @@ class LiveOrderManager:
                     "remaining_qty": count,
                 }
             self._api_backoff = 0
+            _record_attempt()
             print(f"    PLACED {slug} {side}@{price_cents}c x{count} id={order_id}", flush=True)
             return order_id
         except Exception as e:
@@ -436,6 +440,7 @@ class LiveOrderManager:
                             "filled_qty": 0,
                             "remaining_qty": count,
                         }
+                        _record_attempt()
                         return oid
                     else:
                         print(f"    TIMEOUT: order did NOT reach exchange",
@@ -640,12 +645,12 @@ class LiveOrderManager:
         """Register a mapping from API marketSlug to our internal slug."""
         self._slug_remap[api_slug] = our_slug
 
-    def merged_orders(self, polled: dict) -> dict:
+    def merged_orders(self, polled: dict, poll_ok: bool = True) -> dict:
         """Merge poll results with local tracking.
 
-        Exchange data wins. cancel_pending locals are kept until poll
-        confirms the order is gone (slug polled but side absent).
-        Fill detection is handled by check_fills() via activities API.
+        Exchange data wins. cancel_pending locals are cleared when poll
+        succeeds and confirms the order is gone. If poll failed,
+        cancel_pending entries are kept (can't confirm anything).
         """
         merged = {}
         # Start with polled data
@@ -662,11 +667,11 @@ class LiveOrderManager:
                     # Exchange truth wins — replace local (clears pending)
                     self._local_orders[slug][side] = dict(merged[slug][side])
                 elif info.get("cancel_pending"):
-                    if slug in polled:
-                        # Poll saw this slug but not this side → cancel confirmed
+                    if poll_ok:
+                        # Poll succeeded and side is absent → cancel confirmed
                         pending_to_clear.append((slug, side))
                     else:
-                        # Slug not polled at all — keep pending (poll may have missed)
+                        # Poll failed — keep pending (can't confirm)
                         merged[slug][side] = dict(info)
                 else:
                     # Normal local entry fills gap
@@ -921,7 +926,7 @@ def main():
 
             # Poll open orders for all active slugs (one API call)
             raw_polled, poll_ok = live_mgr.poll_open_orders(active_slugs)
-            curr_orders = live_mgr.merged_orders(raw_polled)
+            curr_orders = live_mgr.merged_orders(raw_polled, poll_ok=poll_ok)
 
             # Detect fills via portfolio.activities() (exchange-confirmed)
             fills = live_mgr.check_fills(active_slugs)
@@ -1351,19 +1356,23 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
             size = min(order_size, abs(net_inventory))
 
             existing = slug_orders.get(reduce_side)
-            if existing is None or should_requote_or_force(
-                    price, existing["price_cents"], force_requote=True):
-                if existing:
+
+            # Cancel still in-flight — wait for poll to confirm
+            if existing is not None and existing.get("cancel_pending"):
+                return
+
+            if existing is not None:
+                if should_requote_or_force(
+                        price, existing["price_cents"], force_requote=True):
                     live_mgr.cancel_order(slug, reduce_side,
                                           existing["order_id"])
-                elif live_mgr.has_recent_place_attempt(
-                        slug, reduce_side, price, size):
-                    print(f"    SKIP_PLACE_GUARD {slug} {reduce_side} "
-                          f"price={price}c size={size}", flush=True)
-                    return
-                live_mgr.place_order(slug, reduce_side, price, size)
-                print(f"    SOFT-EXIT {slug}: {reduce_side}@{price}c "
-                      f"(inv={net_inventory})", flush=True)
+                # Either way, wait for poll to confirm before placing
+                return
+
+            # No existing order — place the exit order
+            live_mgr.place_order(slug, reduce_side, price, size)
+            print(f"    SOFT-EXIT {slug}: {reduce_side}@{price}c "
+                  f"(inv={net_inventory})", flush=True)
         return
 
     # Dynamic spread

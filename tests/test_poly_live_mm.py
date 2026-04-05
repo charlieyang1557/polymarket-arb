@@ -1179,8 +1179,8 @@ class TestCancelPendingState:
         assert "yes" in mgr._local_orders.get("slug-a", {})
         assert mgr._local_orders["slug-a"]["yes"].get("cancel_pending") is True
 
-    def test_merged_orders_keeps_cancel_pending(self):
-        """cancel_pending order appears in merged_orders (blocks new placement)."""
+    def test_merged_orders_keeps_cancel_pending_on_poll_failure(self):
+        """cancel_pending kept when poll failed (poll_ok=False)."""
         from scripts.poly_live_mm import LiveOrderManager
         client = MagicMock()
         mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
@@ -1188,8 +1188,8 @@ class TestCancelPendingState:
             "order_id": "ord-1", "price_cents": 50,
             "cancel_pending": True,
         }}
-        # Poll returns empty (cancel hasn't propagated yet)
-        merged = mgr.merged_orders({})
+        # Poll failed → empty dict, poll_ok=False
+        merged = mgr.merged_orders({}, poll_ok=False)
         assert "yes" in merged.get("slug-a", {})
 
     def test_poll_confirms_cancel_clears_pending(self):
@@ -1222,3 +1222,60 @@ class TestCancelPendingState:
         merged = mgr.merged_orders(polled)
         assert merged["slug-a"]["yes"]["order_id"] == "ord-2"
         assert merged["slug-a"]["yes"].get("cancel_pending") is not True
+
+    def test_cancel_pending_clears_when_slug_absent_from_successful_poll(self):
+        """When poll succeeds but slug has no orders, cancel_pending clears.
+        This is the stuck-state bug: last order on slug cancelled → poll
+        returns {} → cancel_pending was never cleared."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+        mgr._local_orders["slug-a"] = {"yes": {
+            "order_id": "ord-1", "price_cents": 50,
+            "cancel_pending": True,
+        }}
+        # Successful poll returns empty (no open orders anywhere)
+        merged = mgr.merged_orders({}, poll_ok=True)
+        # cancel_pending should be cleared — not stuck
+        assert "yes" not in mgr._local_orders.get("slug-a", {})
+        assert "yes" not in merged.get("slug-a", {})
+
+
+# ---------------------------------------------------------------------------
+# Test: place_order only records attempt after success
+# ---------------------------------------------------------------------------
+
+class TestPlaceAttemptGuardTiming:
+    """_recent_place_attempts should only be recorded after confirmed
+    success, not before validation."""
+
+    def test_rejected_order_does_not_poison_guard(self):
+        """Capital check rejection should not block future placements."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        # Tiny capital → order will be rejected by max_order_value_check
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=10)
+        result = mgr.place_order("slug-a", "yes", 50, 2)
+        assert result is None
+        # Guard should NOT be set
+        assert not mgr.has_recent_place_attempt("slug-a", "yes", 50, 2)
+
+    def test_successful_order_sets_guard(self):
+        """Successful placement should set the guard."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        client.place_order.return_value = {"id": "ord-123"}
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+        result = mgr.place_order("slug-a", "yes", 50, 2)
+        assert result == "ord-123"
+        assert mgr.has_recent_place_attempt("slug-a", "yes", 50, 2)
+
+    def test_api_error_does_not_poison_guard(self):
+        """API error should not block future placements."""
+        from scripts.poly_live_mm import LiveOrderManager
+        client = MagicMock()
+        client.place_order.side_effect = Exception("connection refused")
+        mgr = LiveOrderManager(client, dry_run=False, capital_cents=2500)
+        result = mgr.place_order("slug-a", "yes", 50, 2)
+        assert result is None
+        assert not mgr.has_recent_place_attempt("slug-a", "yes", 50, 2)
