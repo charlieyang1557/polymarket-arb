@@ -291,6 +291,7 @@ def consume_pending_markets(gs, pending_path: str = PENDING_MARKETS_PATH,
                     pass
         gs.markets[slug] = MarketState(
             ticker=slug, game_start_utc=game_start)
+        print(f"  Hot-add {slug}: game_start={game_start}", flush=True)
         added.append(slug)
         active_count += 1
     if added:
@@ -1099,6 +1100,10 @@ def main():
                     continue
 
                 time_soft_close = (l4 == Action.SOFT_CLOSE)
+                if time_soft_close:
+                    secs = int((ms.game_start_utc - now).total_seconds())
+                    print(f"    SOFT_CLOSE {slug} | {secs}s to game | "
+                          f"inv={ms.net_inventory}", flush=True)
 
                 # Layer 2-3 risk
                 actions = [Action.CONTINUE]
