@@ -4,49 +4,74 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Kalshi sports market making bot. Quotes both sides of pre-game sports markets (NCAA spreads/totals), captures the bid-ask spread, and exits all positions before game start.
+Automated sports market making bot for **Polymarket US** (live) and **Kalshi** (paper). Quotes both sides of pre-game sports markets (NBA, NHL, MLB, NCAA spreads/totals), captures the bid-ask spread, and exits all positions before game start.
 
-- **Platform**: Kalshi (CFTC-regulated, RSA-PSS auth)
+- **Primary platform**: Polymarket US (live trading via `polymarket_us` SDK)
+- **Secondary platform**: Kalshi (paper trading, RSA-PSS auth)
 - **Strategy**: Pre-game market making with OBI microprice, continuous inventory skew, dynamic volatility-based spread
-- **Pre-game only**: Exit all positions when live game detected (>50 trades/5min)
-- **Current phase**: Paper trading (preparing for $25 live bankroll)
+- **Pre-game only**: Exit all positions before live game starts (time-based + frequency-based detection)
+- **Current phase**: Live trading on Polymarket ($25 bankroll), paper on Kalshi
 
 ## Commands
 
 ```bash
-# Paper trading (main entry point)
+# Polymarket live trading (primary)
+python scripts/poly_live_mm.py --slugs SLUG1,SLUG2 --capital 2500 --size 2 --interval 10
+python scripts/poly_live_mm.py --dry-run --slugs SLUG1,SLUG2 --capital 2500
+
+# Polymarket scanner
+python scripts/poly_daily_scan.py              # scan + Discord summary
+python scripts/poly_daily_scan.py --run        # scan + auto-launch bot
+
+# Polymarket paper trading
+python scripts/poly_paper_mm.py --slugs SLUG1,SLUG2 --duration 86400
+
+# Kalshi paper trading
 python scripts/paper_mm.py --tickers TICKER1,TICKER2 --duration 86400
 
-# Scanner
-python scripts/kalshi_daily_scan.py --max-markets 15           # scan only, Discord summary
-python scripts/kalshi_daily_scan.py --run --max-markets 15     # scan + auto-launch bot
+# Kalshi scanner
+python scripts/kalshi_daily_scan.py --max-markets 15
 
-# Pre-flight (runs before cron launch)
-bash scripts/preflight.sh
-
-# Queue drain monitor
-python scripts/monitor_drain.py
-
-# Tests (full MM suite)
-python -m pytest tests/test_mm_*.py tests/test_*skew*.py tests/test_*spread*.py tests/test_*obi*.py tests/test_pregame*.py tests/test_silent*.py tests/test_monitor*.py tests/test_inventory*.py tests/test_daily_scan.py tests/test_session_summary.py -q
+# Tests
+python -m pytest tests/test_poly_live_mm.py -q                  # Polymarket live MM tests
+python -m pytest tests/test_poly_live_mm.py -k "test_name" -v   # single test
+python -m pytest tests/test_mm_*.py tests/test_*skew*.py tests/test_*spread*.py tests/test_*obi*.py tests/test_pregame*.py tests/test_silent*.py tests/test_monitor*.py tests/test_inventory*.py tests/test_daily_scan.py tests/test_session_summary.py -q  # Kalshi MM suite
 ```
 
 ## Architecture
 
 ```
-scripts/paper_mm.py              → Main entry point (paper trading)
-scripts/kalshi_daily_scan.py     → Market scanner with rank-based scoring
-scripts/preflight.sh             → Pre-flight checks (git clean, tests, API, Discord)
-scripts/monitor_drain.py         → Queue position monitor
+# Polymarket (primary — live trading)
+scripts/poly_live_mm.py          → Live market maker (real orders via SDK)
+scripts/poly_paper_mm.py         → Paper trading (simulated fills)
+scripts/poly_daily_scan.py       → Market scanner (events API, rank-based scoring)
+src/poly_client.py               → Polymarket API adapter (normalizes SDK responses)
 
+# Kalshi (secondary — paper trading)
+scripts/paper_mm.py              → Paper trading entry point
+scripts/kalshi_daily_scan.py     → Market scanner with rank-based scoring
 src/kalshi_client.py             → Kalshi API (RSA-PSS auth, raw HTTP)
+
+# Shared engine (used by both platforms)
 src/mm/engine.py                 → Market making engine (10s tick loop)
 src/mm/state.py                  → MarketState, OBI microprice, skewed_quotes, dynamic_spread
 src/mm/risk.py                   → 4-layer risk management (L1-L4)
 src/mm/db.py                     → SQLite persistence (fills, orders, snapshots)
 ```
 
-Data flow: Scanner selects markets → Engine quotes both sides → Fills tracked via queue drain → Inventory skew adjusts → Pre-game exit on live game detection.
+Data flow: Scanner selects markets → Engine quotes both sides → Fills detected via `portfolio.activities()` API → Inventory skew adjusts → Pre-game exit on game start detection.
+
+## Polymarket Live MM — Key Internals (poly_live_mm.py)
+
+**Order state machine**: `LiveOrderManager` tracks orders in `_local_orders`. On cancel, orders are marked `cancel_pending` (not deleted) to prevent the existing=None→duplicate-place race condition during poll lag. `merged_orders()` keeps cancel_pending entries visible until poll confirms the order is gone.
+
+**Cancel→place flow**: Always takes 2 ticks. Tick N: cancel old order (marks cancel_pending). Tick N+1: poll confirms absence, then places new order. Never cancel+place in the same tick.
+
+**Requote logic**: `MIN_REQUOTE_DELTA=2` — only cancel+replace if price moved ≥2c. `force_requote=True` bypasses to delta≥1 on: (a) fill detected (`inventory_changed`), (b) reducing side when holding inventory. `should_requote_or_force()` always returns False for delta=0.
+
+**Fill detection**: `check_fills()` via `portfolio.activities()` — exchange-confirmed, passive-only, session-watermarked, trade-ID deduped. `inv_changed_slugs` persists across cycles (not rebuilt each cycle) and is cleared per-slug only after quotes are managed.
+
+**Game-start resolution**: `resolve_game_start()` — checks `daily_targets.json` cache first, falls back to `client.get_market()`, caches result. Used by both startup and hot-add paths.
 
 ## Risk Management
 
@@ -143,7 +168,19 @@ Bugs discovered and fixed (do not repeat):
 9. Scanner selecting net_spread=0 markets → net spread filter with <=8c cap
 10. Scanner uses bare `python` in nohup launch → cron has no python in PATH → use `sys.executable` for subprocess launches
 
+11. Cancel→place in same tick → duplicate orders due to poll lag → cancel_pending state machine (cancel marks pending, place waits for poll confirmation)
+12. `is_hedging_leg` bypass of MIN_REQUOTE_DELTA → cancel+replace churn at same price → removed, use reducing_side_for_inventory with MIN_REQUOTE_DELTA instead
+
 Cross-tick negative round-trips (YES+NO > 100c) are STOP-LOSSES, not bugs. Do NOT try to prevent them with cost-basis tracking.
+
+## Polymarket API Notes
+
+- **SDK**: `polymarket_us` package, wrapped by `src/poly_client.py`
+- **Prices**: Dollar strings (`"0.55"`) — same as Kalshi, converted to cents internally
+- **Fees**: Makers get REBATE (negative fee = 25% of taker fee for sports). Taker fee: `0.02 × P × (1-P) × 100`
+- **Fill detection**: `portfolio.activities()` — not polling order state changes
+- **Orderbook**: SDK bids/offers normalized to `yes_dollars`/`no_dollars` arrays by `poly_client.py`
+- **Market IDs**: Slug-based (e.g., `aec-mlb-mil-kc-2026-04-03`), not numeric ticker
 
 ## Kalshi API Notes
 
@@ -182,9 +219,9 @@ NEVER write implementation before tests exist and fail.
 
 ## MANDATORY: Restart bot after code changes
 
-After ANY change to `src/mm/*.py`, `scripts/paper_mm.py`, or `scripts/monitor_drain.py`:
+After ANY change to `src/mm/*.py`, `src/poly_client.py`, `scripts/poly_live_mm.py`, `scripts/paper_mm.py`, or `scripts/monitor_drain.py`:
 1. Commit the changes
-2. Kill running bot (`pkill -9 -f paper_mm`)
+2. Kill running bot (`pkill -9 -f poly_live_mm` or `pkill -9 -f paper_mm`)
 3. Restart bot
 4. Verify new code is loaded in startup log
 
