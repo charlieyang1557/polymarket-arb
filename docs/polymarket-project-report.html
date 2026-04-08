@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket Automated Trading — Project Report</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface-2: #1a1a26;
+  --border: #2a2a3a;
+  --text: #e8e8f0;
+  --text-dim: #8888a0;
+  --text-muted: #555570;
+  --accent: #6366f1;
+  --accent-glow: rgba(99, 102, 241, 0.15);
+  --green: #22c55e;
+  --green-dim: rgba(34, 197, 94, 0.12);
+  --red: #ef4444;
+  --red-dim: rgba(239, 68, 68, 0.12);
+  --amber: #f59e0b;
+  --amber-dim: rgba(245, 158, 11, 0.12);
+  --cyan: #06b6d4;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+/* HERO */
+.hero {
+  padding: 100px 0 80px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -200px; right: -200px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 24px;
+}
+.hero h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 52px;
+  font-weight: 400;
+  line-height: 1.15;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #fff 0%, #a5a5c0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero-sub {
+  font-size: 18px;
+  color: var(--text-dim);
+  max-width: 600px;
+  line-height: 1.8;
+}
+.hero-meta {
+  display: flex;
+  gap: 32px;
+  margin-top: 40px;
+  padding-top: 32px;
+  border-top: 1px solid var(--border);
+}
+.hero-meta-item { }
+.hero-meta-label {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.hero-meta-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* SECTIONS */
+section {
+  padding: 64px 0;
+  border-top: 1px solid var(--border);
+}
+.section-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+section h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 34px;
+  font-weight: 400;
+  margin-bottom: 12px;
+  color: #fff;
+}
+section h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 40px;
+  margin-bottom: 12px;
+  color: #fff;
+}
+section h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 28px;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+.section-intro {
+  font-size: 16px;
+  color: var(--text-dim);
+  margin-bottom: 32px;
+  max-width: 700px;
+}
+p { margin-bottom: 16px; color: var(--text-dim); font-size: 15px; }
+
+/* STAT GRID */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin: 32px 0;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+.stat-value {
+  font-family: 'DM Serif Display', serif;
+  font-size: 32px;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.stat-label {
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.stat-value.green { color: var(--green); }
+.stat-value.red { color: var(--red); }
+.stat-value.amber { color: var(--amber); }
+
+/* STRATEGY CARDS */
+.strategy-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 32px;
+  margin: 20px 0;
+  position: relative;
+  overflow: hidden;
+}
+.strategy-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+.strategy-card.dead::before { background: var(--red); }
+.strategy-card.success::before { background: var(--green); }
+.strategy-card.pending::before { background: var(--amber); }
+.strategy-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.strategy-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #fff;
+}
+.strategy-badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 100px;
+}
+.badge-dead { background: var(--red-dim); color: var(--red); }
+.badge-success { background: var(--green-dim); color: var(--green); }
+.badge-pending { background: var(--amber-dim); color: var(--amber); }
+.strategy-body { color: var(--text-dim); font-size: 14px; }
+.strategy-evidence {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+/* TABLE */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 24px 0;
+  font-size: 14px;
+}
+th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(42,42,58,0.5);
+  color: var(--text-dim);
+}
+tr:hover td { background: rgba(99,102,241,0.03); }
+td.mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+}
+
+/* CODE BLOCK */
+.code-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+  overflow-x: auto;
+}
+.code-block-label {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.code-block pre {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.code-block pre .comment { color: var(--text-muted); }
+.code-block pre .keyword { color: var(--accent); }
+.code-block pre .string { color: var(--green); }
+.code-block pre .number { color: var(--amber); }
+
+/* TIMELINE */
+.timeline {
+  position: relative;
+  margin: 32px 0 32px 20px;
+  padding-left: 32px;
+  border-left: 2px solid var(--border);
+}
+.timeline-item {
+  position: relative;
+  margin-bottom: 32px;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -39px; top: 6px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--bg);
+}
+.timeline-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.timeline-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.timeline-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* DIAGRAM */
+.arch-diagram {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  margin: 24px 0;
+  text-align: center;
+}
+.arch-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.arch-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.arch-box.highlight {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+.arch-arrow {
+  color: var(--text-muted);
+  font-size: 18px;
+}
+
+/* CALLOUT */
+.callout {
+  background: var(--accent-glow);
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: 12px;
+  padding: 24px 28px;
+  margin: 24px 0;
+}
+.callout-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.callout p { color: var(--text-dim); margin: 0; }
+
+/* FOOTER */
+.footer {
+  padding: 48px 0;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.footer p {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .hero h1 { font-size: 36px; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .hero-meta { flex-wrap: wrap; gap: 20px; }
+  section h2 { font-size: 28px; }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-label">Project Retrospective</div>
+  <h1>Polymarket US<br>Automated Trading Bot</h1>
+  <div class="hero-sub">
+    A systematic exploration of market-making, directional, and cross-market strategies on CFTC-regulated prediction markets — from hypothesis to empirical verdict.
+  </div>
+  <div class="hero-meta">
+    <div class="hero-meta-item">
+      <div class="hero-meta-label">Duration</div>
+      <div class="hero-meta-value">Mar 26 — Apr 7, 2026</div>
+    </div>
+    <div class="hero-meta-item">
+      <div class="hero-meta-label">Capital Deployed</div>
+      <div class="hero-meta-value">$28.03</div>
+    </div>
+    <div class="hero-meta-item">
+      <div class="hero-meta-label">Final Balance</div>
+      <div class="hero-meta-value">$28.68</div>
+    </div>
+    <div class="hero-meta-item">
+      <div class="hero-meta-label">Repository</div>
+      <div class="hero-meta-value"><a href="https://github.com/charlieyang1557/polymarket-arb" style="color:var(--accent);text-decoration:none;">GitHub ↗</a></div>
+    </div>
+  </div>
+</header>
+
+<!-- EXECUTIVE SUMMARY -->
+<section>
+  <div class="section-num">01</div>
+  <h2>Executive Summary</h2>
+  <p class="section-intro">
+    We built a full-stack automated trading system for prediction markets, deployed it live with real capital, and systematically tested four distinct strategies. Each was validated or rejected through empirical data — not theory.
+  </p>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-value">129</div>
+      <div class="stat-label">Git Commits</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">112</div>
+      <div class="stat-label">Unit Tests</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">36</div>
+      <div class="stat-label">Live Fills</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">4</div>
+      <div class="stat-label">Strategies Tested</div>
+    </div>
+  </div>
+  <div class="callout">
+    <div class="callout-title">Key Finding</div>
+    <p>Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). No retail-accessible edge exists in passive market making, directional taker strategies, or cross-market correlation trading at our capital scale ($25-30).</p>
+  </div>
+</section>
+
+<!-- WHAT WE BUILT -->
+<section>
+  <div class="section-num">02</div>
+  <h2>What We Built</h2>
+  <p class="section-intro">
+    A production-grade trading infrastructure spanning market scanning, order execution, risk management, fill detection, and monitoring — all deployable on a Mac Mini with zero cloud costs.
+  </p>
+
+  <h3>System Architecture</h3>
+  <div class="arch-diagram">
+    <div class="arch-flow">
+      <div class="arch-box">Crontab Scanner</div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box highlight">MM Engine (10s tick)</div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">Polymarket US API</div>
+    </div>
+    <div class="arch-flow" style="margin-top:12px;">
+      <div class="arch-box">Activities API (fills)</div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box highlight">Risk Manager (L1-L4)</div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">Discord Alerts</div>
+    </div>
+  </div>
+
+  <h3>Core Components</h3>
+  <table>
+    <thead>
+      <tr><th>Component</th><th>File</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Live MM Engine</td><td class="mono">scripts/poly_live_mm.py</td><td>Real order placement, fill detection, position management</td></tr>
+      <tr><td>Paper MM Engine</td><td class="mono">scripts/poly_paper_mm.py</td><td>Simulated fill engine for strategy validation</td></tr>
+      <tr><td>Market Scanner</td><td class="mono">scripts/poly_daily_scan.py</td><td>Smart-run: auto-detect bot state, hot-add markets, or launch</td></tr>
+      <tr><td>MM State</td><td class="mono">src/mm/state.py</td><td>OBI microprice, skewed quotes, dynamic spread calculation</td></tr>
+      <tr><td>Risk Manager</td><td class="mono">src/mm/risk.py</td><td>4-layer risk: per-order → inventory → session PnL → system</td></tr>
+      <tr><td>Fill Detection</td><td class="mono">src/mm/engine.py</td><td>Activities API polling with session watermark and order matching</td></tr>
+      <tr><td>Cross-Market Logger</td><td class="mono">scripts/cross_market_logger.py</td><td>30s orderbook snapshots across 177 markets, SQLite storage</td></tr>
+      <tr><td>Cross-Market Analyzer</td><td class="mono">scripts/analyze_cross_market.py</td><td>Lag detection, direction accuracy, simulated PnL</td></tr>
+      <tr><td>Odds Calibration</td><td class="mono">src/strategy_a/devig.py</td><td>Pinnacle/FanDuel/DraftKings de-vigging + team matching</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Risk Management System</h3>
+  <table>
+    <thead>
+      <tr><th>Layer</th><th>Scope</th><th>Controls</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>L1</strong></td><td>Per-order</td><td>Fat-finger price check (±10% of mid), max contract size validation</td></tr>
+      <tr><td><strong>L2</strong></td><td>Inventory</td><td>Continuous skew (gamma=0.5c), single-side cap, time-based flatten threshold</td></tr>
+      <tr><td><strong>L3</strong></td><td>Session PnL</td><td>Daily loss limit $5, consecutive loss pause, per-market exit at -$10</td></tr>
+      <tr><td><strong>L4</strong></td><td>System</td><td>SOFT_CLOSE (15min pre-game), EXIT_MARKET at game start, API disconnect cancel-all</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- STRATEGIES -->
+<section>
+  <div class="section-num">03</div>
+  <h2>Strategies Tested</h2>
+  <p class="section-intro">
+    Each strategy was designed with a clear thesis, validated through empirical data, and either deployed live or killed based on results — never on speculation.
+  </p>
+
+  <div class="strategy-card dead">
+    <div class="strategy-header">
+      <div class="strategy-title">Strategy 1 — Pre-Game Passive Market Making</div>
+      <div class="strategy-badge badge-dead">Negative EV</div>
+    </div>
+    <div class="strategy-body">
+      <p><strong>Thesis:</strong> Quote both sides of pre-game sports markets, capture the bid-ask spread, earn maker rebates (25% of taker fee), and exit flat before game start.</p>
+      <p><strong>Result:</strong> 36 maker fills across 5 live sessions (Apr 3-7). Round-trip completion rate ~37%. Direction accuracy of fills showed consistent adverse selection — we only get filled when the market is about to move against us. SOFT_CLOSE works mechanically but can't force counterparty fills.</p>
+    </div>
+    <div class="strategy-evidence">Live Session Data (Apr 3-7):
+  Total fills: 36  |  Round-trips: 7
+  Profitable round-trips: 1  |  Breakeven: 2  |  Stop-loss: 4
+  Unhedged exits: ~18 (SOFT_CLOSE deadlock)
+  Starting balance: $28.03 → Peak: $30.08 → Final: $28.68
+  
+  Root cause: Adverse selection. In 1-3c spread markets,
+  institutional MMs have queue priority. We get filled only
+  when the market has already moved against our price.</div>
+  </div>
+
+  <div class="strategy-card dead">
+    <div class="strategy-header">
+      <div class="strategy-title">Strategy A — Directional Taker (Pinnacle Calibration)</div>
+      <div class="strategy-badge badge-dead">No Edge</div>
+    </div>
+    <div class="strategy-body">
+      <p><strong>Thesis:</strong> Polymarket US sports markets are mispriced vs. sharp sportsbook lines (Pinnacle). Build a probability model, find delta > taker fees, and execute as aggressive taker.</p>
+      <p><strong>Result:</strong> Integrated Pinnacle, FanDuel, DraftKings odds via The-Odds-API. Built de-vigging module (multiplicative method) and team matching for 100+ teams. Cross-platform delta averaged 0.8%, well below the ~2% taker fee threshold.</p>
+    </div>
+    <div class="strategy-evidence">Cross-Platform Calibration (Apr 2):
+  NBA: avg |delta| = 0.8% — BELOW 2% fee threshold
+  NHL: avg |delta| = 0.6% — BELOW 2% fee threshold
+  MLB: avg |delta| = 0.2% — BELOW 2% fee threshold
+  MMA: avg |delta| = 1.0% — BELOW 2% fee threshold
+  
+  Max delta observed: 2.8% (single MMA fight)
+  Markets with delta > 3%: 0
+  
+  Conclusion: Polymarket US tracks Pinnacle within ±0.8%.
+  No directional taker edge survives fees.</div>
+  </div>
+
+  <div class="strategy-card dead">
+    <div class="strategy-header">
+      <div class="strategy-title">Strategy 3 — Cross-Market Correlation</div>
+      <div class="strategy-badge badge-dead">50% Accuracy</div>
+    </div>
+    <div class="strategy-body">
+      <p><strong>Thesis:</strong> When a moneyline market moves, correlated spread/totals markets on the same game lag by seconds to minutes. Detect the leader move and taker-execute the follower before it reprices.</p>
+      <p><strong>Result:</strong> 24h of data (354K+ snapshots, 59 events, 177 markets). Timing lag is real — 30-50% of moneyline moves take 60s+ to propagate. But direction accuracy is ~50% (coin flip). The lag is uncorrelated noise, not information propagation.</p>
+    </div>
+    <div class="strategy-evidence">Direction Accuracy Analysis (Apr 6-7, 354K snapshots):
+  MLB moneyline→spread: 50.0% accuracy (coin flip)
+  MLB moneyline→totals: 51.3% accuracy
+  NBA moneyline→spread: 57.1% accuracy (best, but...)
+  
+  Simulated PnL (all pairs, all sports): NEGATIVE
+  MLB best case: -2.4c avg per trade
+  NHL worst case: -18.4c avg per trade
+  
+  Conclusion: Lag exists but direction is unpredictable.
+  Totals markets ≠ directional derivative of moneyline.</div>
+  </div>
+
+  <div class="strategy-card dead">
+    <div class="strategy-header">
+      <div class="strategy-title">Kalshi Market Making</div>
+      <div class="strategy-badge badge-dead">Hibernated</div>
+    </div>
+    <div class="strategy-body">
+      <p><strong>Thesis:</strong> Same MM strategy on Kalshi's CFTC-regulated event contracts.</p>
+      <p><strong>Result:</strong> Scanner found 0 markets passing filters. Net spread after maker fees: 0-2c vs Polymarket's 1.2-1.8c with maker rebates. Kalshi charges makers, Polymarket pays makers. Structurally inferior.</p>
+    </div>
+  </div>
+</section>
+
+<!-- TECHNICAL JOURNEY -->
+<section>
+  <div class="section-num">04</div>
+  <h2>Technical Journey</h2>
+  <p class="section-intro">
+    The project evolved rapidly from initial research through multiple pivots, each driven by empirical evidence.
+  </p>
+
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="timeline-date">Mar 26</div>
+      <div class="timeline-title">Project inception</div>
+      <div class="timeline-desc">Initial brainstorm: late-game arbitrage, cross-market arb, event-driven trading. Pivoted from Polymarket Global → Kalshi → Polymarket US based on fee structure analysis (maker rebates).</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">Mar 28-30</div>
+      <div class="timeline-title">Paper trading validation</div>
+      <div class="timeline-desc">4 paper sessions: +$8.35 simulated profit, 465 maker fills in best session. Go-live gate conditions met. Key learning: paper PnL inflated 30-50% vs live.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">Mar 31</div>
+      <div class="timeline-title">Live trading launch ($25)</div>
+      <div class="timeline-desc">First live session. Discovered requote thrashing bug (orders cancelled every 2s). Fixed with dual-layer approach: slug remapping + local order tracking.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">Apr 1-2</div>
+      <div class="timeline-title">Critical discovery: bot HAD fills all along</div>
+      <div class="timeline-desc">Activities API revealed 16+ real fills across "zero fill" sessions. Fill detection via order disappearance was broken. Complete rewrite to activities-based detection.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">Apr 2</div>
+      <div class="timeline-title">Strategy A killed</div>
+      <div class="timeline-desc">Cross-platform calibration: Polymarket tracks Pinnacle within ±0.8%. No directional edge survives taker fees. Strategy A (and B) eliminated for sports markets.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">Apr 3-5</div>
+      <div class="timeline-title">First round-trips + SOFT_CLOSE</div>
+      <div class="timeline-desc">18 fills, 3 completed round-trips (0 profitable). Multiple bugs fixed: inv_changed_slugs persistence, hedging leg churn, decimal qty parsing. SOFT_CLOSE logging added.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">Apr 6</div>
+      <div class="timeline-title">SOFT_CLOSE confirmed working</div>
+      <div class="timeline-desc">First observation of SOFT_CLOSE in live logs (4 markets). All deadlocked — hedging orders never filled during 15-min window. Passive MM strategy confirmed non-viable.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">Apr 6-7</div>
+      <div class="timeline-title">Cross-market correlation study</div>
+      <div class="timeline-desc">Built logger (354K snapshots) + analyzer with direction accuracy and simulated PnL. Result: 50% accuracy = coin flip. Strategy eliminated.</div>
+    </div>
+  </div>
+</section>
+
+<!-- KEY BUGS -->
+<section>
+  <div class="section-num">05</div>
+  <h2>Critical Bugs & Fixes</h2>
+  <p class="section-intro">
+    Production trading exposed bugs that no amount of paper testing would have found. Each was diagnosed from live logs and fixed with tests.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Bug</th><th>Impact</th><th>Root Cause</th><th>Fix</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Requote thrashing</strong></td>
+        <td>Orders cancelled/replaced every 2s, destroying queue priority</td>
+        <td>API returns different slug format than internal — orders always appeared "missing"</td>
+        <td>Slug remap via order ID + local order tracking fallback</td>
+      </tr>
+      <tr>
+        <td><strong>Phantom fills</strong></td>
+        <td>Bot reported fills on every tick, accumulating toxic inventory</td>
+        <td>Fill detection inferred from order disappearance — unreliable with slug mismatches</td>
+        <td>Complete rewrite to activities API with session watermark and order ID matching</td>
+      </tr>
+      <tr>
+        <td><strong>inv_changed_slugs reset</strong></td>
+        <td>Force-requote after fill never triggered, leaving unhedged inventory</td>
+        <td>Set recreated as empty each loop cycle; round-robin scheduling lost fill signals</td>
+        <td>Persist across cycles, clear per-slug only after _manage_live_quotes runs</td>
+      </tr>
+      <tr>
+        <td><strong>Hedging leg churn</strong></td>
+        <td>20+ PLACEDs at same price, destroying queue priority on hedge side</td>
+        <td>is_hedging_leg bypassed MIN_REQUOTE_DELTA → cancel/place race condition</td>
+        <td>Removed hedging leg special case entirely. Both legs use delta=2</td>
+      </tr>
+      <tr>
+        <td><strong>Decimal qty parse</strong></td>
+        <td>Crash on "2.000" from activities API</td>
+        <td>int("2.000") throws ValueError</td>
+        <td>int(float(x)) for all qty parsing</td>
+      </tr>
+      <tr>
+        <td><strong>Scanner API change</strong></td>
+        <td>markets.list returned 0 results</td>
+        <td>All markets returned closed=True regardless of state</td>
+        <td>Switched to events.list with rolling 12h startTimeMin window</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- KEY LEARNINGS -->
+<section>
+  <div class="section-num">06</div>
+  <h2>Key Learnings</h2>
+  <p class="section-intro">
+    Lessons applicable to any retail quantitative trading project, regardless of asset class.
+  </p>
+
+  <h3>Market Structure</h3>
+  <div class="strategy-card pending">
+    <div class="strategy-body">
+      <p><strong>Efficient markets are efficient.</strong> Polymarket US sports pricing tracks Pinnacle within ±0.8%. Spreads are 1-3c. The market is already being serviced by institutional MMs with superior capital, infrastructure, and queue priority. There is no free lunch in well-trafficked sports markets.</p>
+    </div>
+  </div>
+  <div class="strategy-card pending">
+    <div class="strategy-body">
+      <p><strong>Adverse selection is the #1 killer of retail MMs.</strong> When you get filled, it's because an informed participant knows your price is wrong. The hedging fill never comes because the market has already moved. This is a structural disadvantage that no algorithm can overcome without capital/speed advantages.</p>
+    </div>
+  </div>
+  <div class="strategy-card pending">
+    <div class="strategy-body">
+      <p><strong>Cross-market lag ≠ cross-market predictability.</strong> We proved that totals markets lag moneyline moves by 60-300s. But the direction of the lagging move is a coin flip. Lag without directional signal is noise, not alpha.</p>
+    </div>
+  </div>
+
+  <h3>Engineering</h3>
+  <div class="strategy-card success">
+    <div class="strategy-body">
+      <p><strong>Fill detection must use exchange-confirmed data.</strong> Inferring fills from order disappearance is fundamentally unreliable. The activities/trades API is the only source of truth.</p>
+    </div>
+  </div>
+  <div class="strategy-card success">
+    <div class="strategy-body">
+      <p><strong>Test in production, not just on paper.</strong> Paper trading showed +$8.35 in 4 sessions. Live trading found 5 critical bugs in the first 3 sessions. Paper success ≠ live success.</p>
+    </div>
+  </div>
+  <div class="strategy-card success">
+    <div class="strategy-body">
+      <p><strong>Data > theory, always.</strong> Every strategy pivot was driven by empirical results, not speculation. Strategy A was killed by calibration data. Cross-market correlation was killed by direction accuracy data. This discipline saved time and capital.</p>
+    </div>
+  </div>
+
+  <h3>Process</h3>
+  <div class="strategy-card success">
+    <div class="strategy-body">
+      <p><strong>Adversarial code review: 2 rounds max.</strong> Gemini (secondary reviewer) provided useful catches in rounds 1-2 but diminishing returns after. Cross-reference secondary opinions against empirical data rather than accepting them directly.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FINANCIAL SUMMARY -->
+<section>
+  <div class="section-num">07</div>
+  <h2>Financial Summary</h2>
+
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-value">$28.03</div>
+      <div class="stat-label">Starting Capital</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value green">$28.68</div>
+      <div class="stat-label">Final Balance</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value green">+$0.65</div>
+      <div class="stat-label">Net PnL</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value amber">+2.3%</div>
+      <div class="stat-label">Return</div>
+    </div>
+  </div>
+
+  <p>The positive return is misleading — it came from unhedged positions that happened to settle favorably (survivorship bias), not from systematic edge. On a risk-adjusted basis, the strategy has negative expected value due to adverse selection and fee drag.</p>
+
+  <h3>PnL Attribution</h3>
+  <table>
+    <thead>
+      <tr><th>Source</th><th>PnL</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Round-trip spread capture</td><td class="mono">~-5c</td><td>7 round-trips, mostly breakeven or stop-loss</td></tr>
+      <tr><td>Maker rebates</td><td class="mono">~+8c</td><td>36 fills × ~0.22c avg rebate</td></tr>
+      <tr><td>Unhedged settlement (lucky)</td><td class="mono">~+$1.60</td><td>Positions won at settlement by chance</td></tr>
+      <tr><td>Fees paid</td><td class="mono">~-$0.95</td><td>Taker fees on round-trip losses</td></tr>
+      <tr><td style="font-weight:600">Net</td><td class="mono" style="font-weight:600">+$0.65</td><td></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ASSETS DELIVERED -->
+<section>
+  <div class="section-num">08</div>
+  <h2>Assets Delivered</h2>
+  <p class="section-intro">
+    The engineering infrastructure is the primary deliverable. It is fully operational and platform-agnostic — ready to be re-deployed if a viable strategy is identified.
+  </p>
+
+  <h3>Codebase</h3>
+  <div class="code-block">
+    <div class="code-block-label">Repository Structure</div>
+    <pre>polymarket-arb/
+├── scripts/
+│   ├── poly_live_mm.py          <span class="comment"># Live trading engine</span>
+│   ├── poly_paper_mm.py         <span class="comment"># Paper trading simulator</span>
+│   ├── poly_daily_scan.py       <span class="comment"># Market scanner + smart-run</span>
+│   ├── cross_market_logger.py   <span class="comment"># Orderbook snapshot collector</span>
+│   ├── analyze_cross_market.py  <span class="comment"># Lag + direction + PnL analysis</span>
+│   └── strategy_a/              <span class="comment"># Odds collector, analyzer, EDA</span>
+├── src/
+│   ├── poly_client.py           <span class="comment"># Polymarket US SDK wrapper</span>
+│   ├── kalshi_client.py         <span class="comment"># Kalshi API (RSA-PSS auth)</span>
+│   ├── mm/engine.py             <span class="comment"># Core MM engine + fill detection</span>
+│   ├── mm/state.py              <span class="comment"># OBI microprice, skewed quotes</span>
+│   ├── mm/risk.py               <span class="comment"># 4-layer risk management</span>
+│   ├── mm/db.py                 <span class="comment"># SQLite persistence</span>
+│   └── strategy_a/              <span class="comment"># De-vig, team matching, odds DB</span>
+├── tests/                       <span class="comment"># 112 tests (live MM, scanner, cross-market)</span>
+├── config/                      <span class="comment"># Daily targets, game schedule</span>
+├── CLAUDE.md                    <span class="comment"># AI coding assistant instructions</span>
+└── requirements.txt</pre>
+  </div>
+
+  <h3>Data Assets</h3>
+  <table>
+    <thead>
+      <tr><th>Asset</th><th>Size</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Cross-market snapshots</td><td class="mono">53 MB</td><td>354K+ orderbook snapshots, 177 markets, 59 events</td></tr>
+      <tr><td>Live session logs</td><td class="mono">~15 MB</td><td>5 days of tick-by-tick trading logs with fills, exits, SOFT_CLOSE</td></tr>
+      <tr><td>Pinnacle calibration</td><td class="mono">SQLite</td><td>930 resolved markets + cross-platform odds snapshots</td></tr>
+      <tr><td>Paper trading DBs</td><td class="mono">SQLite</td><td>4 sessions, 465+ simulated fills</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Infrastructure</h3>
+  <table>
+    <thead>
+      <tr><th>Component</th><th>Status</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Mac Mini (production)</td><td>Operational</td><td>Crontab scanner, nohup bot launcher, PM2 for auxiliary services</td></tr>
+      <tr><td>Discord alerts</td><td>Operational</td><td>Fill notifications, exit alerts, session start/stop</td></tr>
+      <tr><td>Polymarket US SDK auth</td><td>Operational</td><td>Ed25519 keypair, tested order placement/cancellation</td></tr>
+      <tr><td>Kalshi API auth</td><td>Operational</td><td>RSA-PSS signatures, paper trading verified</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CONCLUSION -->
+<section>
+  <div class="section-num">09</div>
+  <h2>Conclusion & Recommendations</h2>
+  <p class="section-intro">
+    The project successfully validated that Polymarket US sports markets are too efficient for retail-scale automated trading. The infrastructure built is production-grade and transferable.
+  </p>
+
+  <h3>What Worked</h3>
+  <p>The engineering methodology — paper validate → live deploy → diagnose from logs → fix with tests → iterate — was highly effective. We went from zero to live trading in 5 days, and from "zero fills" to "fills were always happening but undetected" in one debugging session. The empirical rigor in killing strategies saved weeks of wasted effort.</p>
+
+  <h3>What Didn't Work</h3>
+  <p>The fundamental assumption that a retail trader with $25 can profitably market-make on institutional-grade sports prediction markets. The market microstructure (1-3c spreads, queue priority for large orders, Pinnacle-calibrated pricing) makes this structurally impossible without either significant capital ($10K+) for queue priority or ultra-low-latency infrastructure for in-play trading.</p>
+
+  <h3>Potential Future Directions</h3>
+  <table>
+    <thead><tr><th>Direction</th><th>Viability</th><th>Rationale</th></tr></thead>
+    <tbody>
+      <tr><td>Polymarket Global (non-sports)</td><td class="mono">Unknown — needs diagnostic</td><td>Politics/crypto may be less efficiently priced, but V2 upgrade incoming</td></tr>
+      <tr><td>In-play trading</td><td class="mono">Low for us</td><td>Polygon block times + public RPC = structural latency disadvantage</td></tr>
+      <tr><td>Scale to $10K+</td><td class="mono">Possible but risky</td><td>Queue priority improves, but adverse selection doesn't disappear</td></tr>
+      <tr><td>Repurpose infra for other domains</td><td class="mono">High</td><td>Execution engine, risk management, monitoring all transfer to other asset classes</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout" style="margin-top:32px;">
+    <div class="callout-title">Final Assessment</div>
+    <p>This project spent $0 learning that an edge doesn't exist — arguably the most valuable outcome. The alternative (deploying $10K without this validation) would have been far more expensive. The infrastructure, methodology, and empirical discipline built here are the real deliverables.</p>
+  </div>
+</section>
+
+</div>
+
+<footer class="footer">
+  <div class="container">
+    <p>Polymarket Automated Trading — Project Report</p>
+    <p style="margin-top:8px;">
+      <a href="https://github.com/charlieyang1557/polymarket-arb">github.com/charlieyang1557/polymarket-arb</a>
+      &nbsp;·&nbsp; April 2026
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
