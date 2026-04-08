@@ -1,22 +1,52 @@
 # polymarket-arb
 
-Automated sports market making bot for **Polymarket US** and **Kalshi**. Quotes both sides of pre-game sports markets (NBA, NHL, MLB, NCAA spreads/totals), captures the bid-ask spread, and exits all positions before game start.
+Automated trading system for **Polymarket US** and **Kalshi** prediction markets. Built, deployed live, and systematically tested four strategies over 12 days (Mar 26 – Apr 7, 2026). Concluded that no retail-accessible edge exists at our capital scale.
 
-## Strategy
+**[Full Project Report](docs/polymarket-project-report.html)**
 
-- **Pre-game market making**: OBI microprice, continuous inventory skew, dynamic volatility-based spread
-- **Pre-game only**: exit all positions before live game starts (time-based + frequency-based detection)
-- **Dual platform**: Polymarket US (live) + Kalshi (paper)
-- **4-layer risk management**: per-order validation, inventory limits, session P&L gates, system circuit breakers
+## Results
+
+| Metric | Value |
+|--------|-------|
+| Duration | 12 days (Mar 26 – Apr 7, 2026) |
+| Capital deployed | $28.03 |
+| Final balance | $28.68 (+$0.65) |
+| Live fills | 36 maker fills across 5 sessions |
+| Strategies tested | 4 (all concluded negative or neutral EV) |
+| Commits | 129 |
+| Unit tests | 112 |
+
+**Key finding**: Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). No retail-accessible edge exists in passive market making, directional taker strategies, or cross-market correlation trading at $25-30 capital.
+
+## Strategies Tested
+
+### 1. Pre-Game Passive Market Making — Negative EV
+Quote both sides of pre-game sports markets, capture bid-ask spread, earn maker rebates. **Result**: adverse selection from informed flow wiped out spread capture. Round-trips completed at a loss due to market moves between fills.
+
+### 2. Odds Calibration (Pinnacle De-Vig) — No Edge
+Compare Polymarket prices against de-vigged Pinnacle lines to find mispriced markets. **Result**: prices converge within ±0.8% — no systematic mispricing to exploit.
+
+### 3. Cross-Market Correlation — No Edge
+When a moneyline reprices, do correlated spread/totals markets lag? **Result**: direction accuracy ~50% (coin flip), negative simulated PnL across all sports and pair types.
+
+### 4. WebSocket Event Trading — Abandoned
+Monitor real-time market events for momentum signals. Abandoned after Strategy 1-3 results showed no exploitable inefficiency.
 
 ## Architecture
 
 ```
-scripts/poly_daily_scan.py       Market scanner (events API, rank-based scoring)
-scripts/poly_live_mm.py          Live market maker (real orders via Polymarket SDK)
+# Market Making (concluded — code preserved)
+scripts/poly_live_mm.py          Live MM engine (real orders via Polymarket SDK)
 scripts/poly_paper_mm.py         Paper trading (simulated fills)
+scripts/poly_daily_scan.py       Market scanner (events API, rank-based scoring)
 
-src/poly_client.py               Polymarket US API client
+# Research Tools
+scripts/cross_market_logger.py   30s orderbook snapshots across correlated markets
+scripts/analyze_cross_market.py  Lag detection, direction accuracy, simulated PnL
+scripts/poly_calibration.py      Pinnacle de-vig odds comparison
+
+# Core Engine (shared)
+src/poly_client.py               Polymarket US API adapter
 src/kalshi_client.py             Kalshi API client (RSA-PSS auth)
 src/mm/engine.py                 Market making engine (10s tick loop)
 src/mm/state.py                  OBI microprice, skewed quotes, dynamic spread
@@ -24,32 +54,20 @@ src/mm/risk.py                   4-layer risk management (L1-L4)
 src/mm/db.py                     SQLite persistence (fills, orders, snapshots)
 ```
 
-### Data Flow
-
-```
-Scanner selects markets
-  → Engine quotes both sides (YES + NO)
-  → Fills detected via portfolio.activities() API
-  → Inventory skew adjusts quotes
-  → Pre-game exit on game start detection
-```
-
-### Fill Detection
-
-Fill detection uses `portfolio.activities()` for exchange-confirmed trade data:
-- Session watermark (ignores pre-session trades)
-- Passive-only filter (maker fills, not taker)
-- Price-matched to tracked orders
-- Trade ID dedup (no double-counting)
-
 ## Risk Management
 
 | Layer | Scope | Controls |
 |-------|-------|----------|
-| L1 | Per-order | Fat-finger check (price within 10% of mid), max 5 contracts |
-| L2 | Inventory | Continuous skew (gamma=0.5c), single-side cap at 10, time-based flatten |
+| L1 | Per-order | Fat-finger check (±10% of mid), max contract size |
+| L2 | Inventory | Continuous skew (gamma=0.5c), single-side cap, time-based flatten |
 | L3 | Session P&L | Daily loss limit $5, consecutive loss pause, per-market exit at -$10 |
-| L4 | System | Price jump detection, crossed book skip, API disconnect cancel, pre-game exit |
+| L4 | System | SOFT_CLOSE at 15min pre-game, EXIT_MARKET at game start, API disconnect cancel-all |
+
+## Technical Highlights
+
+- **Cancel-pending state machine**: Prevents duplicate order placement during exchange poll lag. Cancel marks `cancel_pending` in local tracking; placement waits for poll confirmation.
+- **Activities-based fill detection**: Exchange-confirmed fills via `portfolio.activities()` with session watermark, passive-only filter, and trade ID dedup.
+- **Cross-market correlation analysis**: 350K+ orderbook snapshots across 59 events, with direction accuracy and simulated PnL including price-dependent taker fees and T+1 execution (no lookahead bias).
 
 ## Setup
 
@@ -57,42 +75,15 @@ Fill detection uses `portfolio.activities()` for exchange-confirmed trade data:
 git clone https://github.com/charlieyang1557/polymarket-arb.git
 cd polymarket-arb
 pip install -r requirements.txt
-cp .env.example .env  # add Polymarket API credentials
+cp .env.example .env  # add API credentials
 ```
 
-## Usage
+## Tests
 
 ```bash
-# Daily scanner — find tradeable markets
-python scripts/poly_daily_scan.py --max-markets 5 --max-check 50
-
-# Paper trading
-python scripts/poly_paper_mm.py --slugs SLUG1,SLUG2 --duration 86400
-
-# Live trading (real orders, $25 bankroll)
-python scripts/poly_live_mm.py --slugs SLUG1,SLUG2 --capital 2500 --size 2 --interval 10
-
-# Dry run (previews orders without submitting)
-python scripts/poly_live_mm.py --dry-run --slugs SLUG1,SLUG2 --capital 2500
-
-# Tests
-python -m pytest tests/test_poly_live_mm.py -q
+python -m pytest tests/ -q
 ```
-
-## Platforms
-
-| Platform | Auth | Status | Notes |
-|----------|------|--------|-------|
-| Polymarket US | SDK key/secret | Live | Sports markets, maker rebates |
-| Kalshi | RSA-PSS signatures | Paper | CFTC-regulated, event contracts |
-
-## Key Design Decisions
-
-- **Cross-tick losses are stop-losses, not bugs**: negative round-trips (YES+NO > 100c) are natural stop-losses when market moves between fills
-- **Pre-game only**: 10s polling can't compete with sub-second HFT during live events
-- **Spread P&L is the edge**: directional profits from inventory are luck, not repeatable
-- **Activities-based fill detection**: order-disappearance inference was abandoned after persistent phantom fill bugs from slug remap issues
 
 ---
 
-> **Disclaimer**: For educational and research purposes. Trading involves risk of loss.
+> **Disclaimer**: For educational and research purposes. Trading involves risk of loss. This project concluded that the tested strategies are not profitable at retail scale.
