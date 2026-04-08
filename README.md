@@ -8,13 +8,13 @@ Automated trading system for **Polymarket US** and **Kalshi** prediction markets
 
 | Metric | Value |
 |--------|-------|
-| Duration | 12 days (Mar 26 – Apr 7, 2026) |
+| Duration | 28 days (Mar 10 – Apr 7, 2026) |
 | Capital deployed | $28.03 |
 | Final balance | $28.68 (+$0.65) |
 | Live fills | 36 maker fills across 5 sessions |
 | Strategies tested | 4 (all concluded negative or neutral EV) |
-| Commits | 129 |
-| Unit tests | 112 |
+| Commits | 131 |
+| Unit tests | 596 across 36 test files |
 
 **Key finding**: Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). No retail-accessible edge exists in passive market making, directional taker strategies, or cross-market correlation trading at $25-30 capital.
 

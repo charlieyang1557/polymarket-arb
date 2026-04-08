@@ -405,7 +405,7 @@ td.mono {
   <div class="hero-meta">
     <div class="hero-meta-item">
       <div class="hero-meta-label">Duration</div>
-      <div class="hero-meta-value">Mar 26 — Apr 7, 2026</div>
+      <div class="hero-meta-value">Mar 10 — Apr 7, 2026</div>
     </div>
     <div class="hero-meta-item">
       <div class="hero-meta-label">Capital Deployed</div>
@@ -431,11 +431,11 @@ td.mono {
   </p>
   <div class="stat-grid">
     <div class="stat-card">
-      <div class="stat-value">129</div>
+      <div class="stat-value">131</div>
       <div class="stat-label">Git Commits</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">112</div>
+      <div class="stat-value">596</div>
       <div class="stat-label">Unit Tests</div>
     </div>
     <div class="stat-card">
@@ -490,7 +490,7 @@ td.mono {
       <tr><td>Market Scanner</td><td class="mono">scripts/poly_daily_scan.py</td><td>Smart-run: auto-detect bot state, hot-add markets, or launch</td></tr>
       <tr><td>MM State</td><td class="mono">src/mm/state.py</td><td>OBI microprice, skewed quotes, dynamic spread calculation</td></tr>
       <tr><td>Risk Manager</td><td class="mono">src/mm/risk.py</td><td>4-layer risk: per-order → inventory → session PnL → system</td></tr>
-      <tr><td>Fill Detection</td><td class="mono">src/mm/engine.py</td><td>Activities API polling with session watermark and order matching</td></tr>
+      <tr><td>Fill Detection</td><td class="mono">scripts/poly_live_mm.py</td><td>Activities API polling with session watermark and order matching (LiveOrderManager.check_fills)</td></tr>
       <tr><td>Cross-Market Logger</td><td class="mono">scripts/cross_market_logger.py</td><td>30s orderbook snapshots across 177 markets, SQLite storage</td></tr>
       <tr><td>Cross-Market Analyzer</td><td class="mono">scripts/analyze_cross_market.py</td><td>Lag detection, direction accuracy, simulated PnL</td></tr>
       <tr><td>Odds Calibration</td><td class="mono">src/strategy_a/devig.py</td><td>Pinnacle/FanDuel/DraftKings de-vigging + team matching</td></tr>
@@ -605,14 +605,14 @@ td.mono {
 
   <div class="timeline">
     <div class="timeline-item">
-      <div class="timeline-date">Mar 26</div>
+      <div class="timeline-date">Mar 10</div>
       <div class="timeline-title">Project inception</div>
-      <div class="timeline-desc">Initial brainstorm: late-game arbitrage, cross-market arb, event-driven trading. Pivoted from Polymarket Global → Kalshi → Polymarket US based on fee structure analysis (maker rebates).</div>
+      <div class="timeline-desc">Initial brainstorm and API diagnostics. Explored Polymarket Global arb scanning, then pivoted to Kalshi paper MM (Mar 10-25). Kalshi scanner found 0 tradeable markets — pivoted to Polymarket US based on fee structure (maker rebates).</div>
     </div>
     <div class="timeline-item">
-      <div class="timeline-date">Mar 28-30</div>
-      <div class="timeline-title">Paper trading validation</div>
-      <div class="timeline-desc">4 paper sessions: +$8.35 simulated profit, 465 maker fills in best session. Go-live gate conditions met. Key learning: paper PnL inflated 30-50% vs live.</div>
+      <div class="timeline-date">Mar 26-30</div>
+      <div class="timeline-title">Polymarket pivot + paper validation</div>
+      <div class="timeline-desc">Built PolyClient adapter, daily scanner, paper MM. 4 paper sessions: +$8.35 simulated profit, 465 maker fills in best session. Go-live gate conditions met. Key learning: paper PnL inflated 30-50% vs live.</div>
     </div>
     <div class="timeline-item">
       <div class="timeline-date">Mar 31</div>
@@ -813,12 +813,12 @@ td.mono {
 ├── src/
 │   ├── poly_client.py           <span class="comment"># Polymarket US SDK wrapper</span>
 │   ├── kalshi_client.py         <span class="comment"># Kalshi API (RSA-PSS auth)</span>
-│   ├── mm/engine.py             <span class="comment"># Core MM engine + fill detection</span>
+│   ├── mm/engine.py             <span class="comment"># Core MM engine (Kalshi paper)</span>
 │   ├── mm/state.py              <span class="comment"># OBI microprice, skewed quotes</span>
 │   ├── mm/risk.py               <span class="comment"># 4-layer risk management</span>
 │   ├── mm/db.py                 <span class="comment"># SQLite persistence</span>
 │   └── strategy_a/              <span class="comment"># De-vig, team matching, odds DB</span>
-├── tests/                       <span class="comment"># 112 tests (live MM, scanner, cross-market)</span>
+├── tests/                       <span class="comment"># 596 tests across 36 files</span>
 ├── config/                      <span class="comment"># Daily targets, game schedule</span>
 ├── CLAUDE.md                    <span class="comment"># AI coding assistant instructions</span>
 └── requirements.txt</pre>
