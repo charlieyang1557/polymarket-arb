@@ -6,6 +6,27 @@ import math
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
+from typing import NamedTuple
+
+
+class ExitLadderStep(NamedTuple):
+    """One step in the progressive exit pricing ladder.
+    seconds_threshold: trigger when seconds_to_game <= this
+    price_offset: cents to add to fair_value (negative = try to profit)
+    """
+    seconds_threshold: int
+    price_offset: int
+
+
+DEFAULT_EXIT_LADDER: tuple[ExitLadderStep, ...] = (
+    ExitLadderStep(seconds_threshold=1800, price_offset=-1),
+    ExitLadderStep(seconds_threshold=1500, price_offset=0),
+    ExitLadderStep(seconds_threshold=1200, price_offset=0),
+    ExitLadderStep(seconds_threshold=600, price_offset=2),
+    ExitLadderStep(seconds_threshold=300, price_offset=3),
+)
+
+TAKER_CROSS_SECONDS: int = 300
 
 
 def dynamic_spread(midpoint_history: list[tuple[datetime, float]],

@@ -84,3 +84,107 @@ class TestWidenedSoftClose:
         ms.last_api_success = now
         result = check_layer4(ms, spread=3, db_error_count=0)
         assert result == Action.EXIT_MARKET
+
+
+class TestProgressiveExitPrice:
+    """progressive_exit_price: time-decayed exit pricing for SOFT_CLOSE."""
+
+    def test_30min_out_tries_profit(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=49,
+            best_ask=51, seconds_to_game=1800)
+        assert price == 49
+
+    def test_20min_out_breakeven(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=49,
+            best_ask=51, seconds_to_game=1200)
+        assert price == 50
+
+    def test_10min_out_accept_loss(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=49,
+            best_ask=51, seconds_to_game=600)
+        assert price == 52
+
+    def test_5min_out_larger_loss(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=49,
+            best_ask=51, seconds_to_game=300)
+        assert price == 53
+
+    def test_2min_out_taker_cross(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=49,
+            best_ask=51, seconds_to_game=90)
+        assert price == 52
+
+    def test_no_side_fair_value(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="no", fair_value=50.0, best_bid=49,
+            best_ask=51, seconds_to_game=1200)
+        assert price == 50
+
+    def test_clamped_to_1_99(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=98.0, best_bid=97,
+            best_ask=99, seconds_to_game=600)
+        assert price is not None
+        assert price <= 99
+
+    def test_max_slippage_cap(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=49,
+            best_ask=60, seconds_to_game=600,
+            max_slippage=5)
+        assert price is not None
+        assert price <= 55
+
+    def test_wide_book_returns_none(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=35,
+            best_ask=65, seconds_to_game=90,
+            max_taker_loss=10)
+        assert price is None
+
+    def test_wide_book_exact_boundary_crosses(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=40,
+            best_ask=60, seconds_to_game=90,
+            max_taker_loss=10)
+        assert price is not None
+        assert price == 55  # best_ask(60)+1=61 but capped at fair(50)+max_slippage(5)=55
+
+    def test_empty_book_returns_none(self):
+        from src.mm.engine import progressive_exit_price
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=49,
+            best_ask=0, seconds_to_game=90,
+            max_taker_loss=10)
+        assert price is None
+
+    def test_custom_ladder(self):
+        from src.mm.engine import progressive_exit_price
+        from src.mm.state import ExitLadderStep
+        custom = (ExitLadderStep(seconds_threshold=9999, price_offset=10),)
+        price = progressive_exit_price(
+            side="yes", fair_value=50.0, best_bid=49,
+            best_ask=51, seconds_to_game=5000,
+            ladder=custom)
+        assert price == 55  # 50+10=60, capped at 50+5=55
+
+    def test_legacy_soft_close_exit_price_still_works(self):
+        from src.mm.engine import soft_close_exit_price
+        price = soft_close_exit_price(
+            side="yes", fair_value=50.0, best_bid=49, max_slippage=5)
+        assert 49 <= price <= 55

@@ -11,6 +11,7 @@ from src.mm.state import (
     SimOrder, MarketState, GlobalState,
     maker_fee_cents, taker_fee_cents, unrealized_pnl_cents,
     obi_microprice, skewed_quotes, dynamic_spread,
+    ExitLadderStep, DEFAULT_EXIT_LADDER, TAKER_CROSS_SECONDS,
 )
 from src.mm.risk import Action, check_layer1, check_layer2, check_layer3, check_layer4, highest_priority, apply_pause_30min
 from src.mm.db import MMDatabase
@@ -100,14 +101,44 @@ def clamp_order_size(side: str, net_inventory: int, order_size: int,
     return order_size
 
 
+def progressive_exit_price(side: str, fair_value: float, best_bid: int,
+                           best_ask: int, seconds_to_game: float,
+                           max_slippage: int = 5,
+                           max_taker_loss: int = 10,
+                           ladder: tuple[ExitLadderStep, ...] = DEFAULT_EXIT_LADDER,
+                           ) -> int | None:
+    """Time-decayed exit pricing for SOFT_CLOSE window.
+
+    Walks the ladder from longest to shortest time horizon.
+    Below TAKER_CROSS_SECONDS, attempts to cross the spread.
+
+    Returns:
+      int: price in cents to place the exit order
+      None: book is empty or spread too wide — accept settlement risk
+    """
+    fair_int = int(fair_value)
+    cap = fair_int + max_slippage
+
+    if seconds_to_game < TAKER_CROSS_SECONDS:
+        if best_ask <= 0:
+            return None
+        ask_cost = best_ask - fair_int
+        if ask_cost > max_taker_loss:
+            return None
+        price = best_ask + 1
+        return max(1, min(99, min(price, cap)))
+
+    price = fair_int
+    for step in ladder:
+        if seconds_to_game <= step.seconds_threshold:
+            price = fair_int + step.price_offset
+    price = min(price, cap)
+    return max(1, min(99, price))
+
+
 def soft_close_exit_price(side: str, fair_value: float, best_bid: int,
                           max_slippage: int = 5) -> int:
-    """Aggressive maker price for soft-close exit.
-
-    Crosses spread by 1c above best bid to jump the queue, but
-    never exceeds fair_value + max_slippage. Still a maker order
-    (earns rebate, doesn't pay taker fee).
-    """
+    """Legacy wrapper — used by AGGRESS_FLATTEN (no time component)."""
     aggressive = best_bid + 1
     cap = int(fair_value) + max_slippage
     return max(1, min(aggressive, cap))
