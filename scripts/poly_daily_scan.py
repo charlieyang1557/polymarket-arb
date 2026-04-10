@@ -830,6 +830,25 @@ def main():
         slug_str = ",".join(target_slugs)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
+        # Query live account balance for --capital
+        capital_cents = 2000  # fallback
+        if not args.paper:
+            try:
+                from polymarket_us import PolymarketUS
+                from dotenv import load_dotenv
+                load_dotenv()
+                pm = PolymarketUS(
+                    key_id=os.getenv('POLYMARKET_KEY_ID'),
+                    secret_key=os.getenv('POLYMARKET_SECRET_KEY'))
+                bal = pm.account.balances()
+                capital_cents = int(
+                    float(bal['balances'][0]['currentBalance']) * 100)
+                print(f"  Balance: ${capital_cents/100:.2f} "
+                      f"→ --capital {capital_cents}")
+            except Exception as e:
+                print(f"  WARNING: balance query failed: {e} "
+                      f"— using fallback --capital {capital_cents}")
+
         if args.paper:
             script = "scripts/poly_paper_mm.py"
             mode_label = "PAPER"
@@ -843,6 +862,7 @@ def main():
             logfile = f"data/poly_mm_live_{ts}.log"
             cmd = (f"{sys.executable} -u {script} "
                    f"--slugs {slug_str} "
+                   f"--capital {capital_cents} "
                    f"--duration 86400 --size 2 --interval 10 "
                    f"--no-confirm")
 
