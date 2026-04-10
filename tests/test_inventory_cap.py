@@ -124,12 +124,12 @@ def test_clamp_negative_inv_yes_uncapped():
     assert clamp_order_size("yes", net_inventory=-5, order_size=2, max_inventory=10) == 2
 
 def test_clamp_negative_inv_no_capped():
-    """inv=-1, max=3, NO increases magnitude → clamp to min(2, 3-1)=2."""
-    assert clamp_order_size("no", net_inventory=-1, order_size=2, max_inventory=3) == 2
+    """inv=-1, max=3, NO increases magnitude → soft-reduced: max(1, 2-1)=1."""
+    assert clamp_order_size("no", net_inventory=-1, order_size=2, max_inventory=3) == 1
 
 def test_clamp_inv_neg1_max3_no_size2():
-    """inv=-1, max=3, order_size=2 → NO clamp to 2 (|-1|+2=3 ≤ 3)."""
-    assert clamp_order_size("no", net_inventory=-1, order_size=2, max_inventory=3) == 2
+    """inv=-1, max=3, order_size=2 → soft-reduced to max(1, 2-1)=1."""
+    assert clamp_order_size("no", net_inventory=-1, order_size=2, max_inventory=3) == 1
 
 def test_clamp_inv_neg2_max3_no_size2():
     """inv=-2, max=3, order_size=2 → NO clamp to 1 (|-2|+1=3 ≤ 3)."""

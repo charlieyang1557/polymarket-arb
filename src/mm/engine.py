@@ -86,18 +86,24 @@ def load_pending_markets(gs: GlobalState, path: str = PENDING_MARKETS_PATH,
 
 def clamp_order_size(side: str, net_inventory: int, order_size: int,
                      max_inventory: int = MAX_INVENTORY) -> int:
-    """Clamp order size so a fill cannot overshoot max_inventory.
+    """Clamp order size based on inventory position.
 
-    The side that INCREASES inventory magnitude gets clamped.
-    The side that DECREASES it keeps full size.
+    Making side (increases |inv|): reduced proportionally.
+      making_size = max(1, order_size - |inv|)
+      Returns 0 at max_inventory (should_skip_side handles this).
+
+    Reducing side (decreases |inv|): keeps full size.
     """
+    abs_inv = abs(net_inventory)
     if side == "yes" and net_inventory >= 0:
-        # YES increases positive inv
-        return max(0, min(order_size, max_inventory - net_inventory))
+        hard_cap = max(0, max_inventory - net_inventory)
+        soft_cap = max(1, order_size - abs_inv) if hard_cap > 0 else 0
+        return min(soft_cap, hard_cap)
     if side == "no" and net_inventory <= 0:
-        # NO increases negative inv magnitude
-        return max(0, min(order_size, max_inventory - abs(net_inventory)))
-    # Decreasing side — no clamp needed
+        hard_cap = max(0, max_inventory + net_inventory)
+        soft_cap = max(1, order_size - abs_inv) if hard_cap > 0 else 0
+        return min(soft_cap, hard_cap)
+    # Reducing side — no clamp needed
     return order_size
 
 

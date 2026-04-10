@@ -188,3 +188,84 @@ class TestProgressiveExitPrice:
         price = soft_close_exit_price(
             side="yes", fair_value=50.0, best_bid=49, max_slippage=5)
         assert 49 <= price <= 55
+
+
+class TestReducedMakingSideSize:
+    """clamp_order_size reduces making side proportionally to |inv|."""
+
+    def test_making_side_reduced_at_inv_1(self):
+        from src.mm.engine import clamp_order_size
+        size = clamp_order_size("yes", net_inventory=1, order_size=2,
+                                max_inventory=10)
+        assert size == 1
+
+    def test_making_side_reduced_at_inv_2(self):
+        from src.mm.engine import clamp_order_size
+        size = clamp_order_size("yes", net_inventory=2, order_size=2,
+                                max_inventory=10)
+        assert size == 1
+
+    def test_reducing_side_keeps_full_size(self):
+        from src.mm.engine import clamp_order_size
+        size = clamp_order_size("no", net_inventory=2, order_size=2,
+                                max_inventory=10)
+        assert size == 2
+
+    def test_flat_inventory_full_size(self):
+        from src.mm.engine import clamp_order_size
+        size = clamp_order_size("yes", net_inventory=0, order_size=2,
+                                max_inventory=10)
+        assert size == 2
+
+    def test_making_side_never_below_1(self):
+        from src.mm.engine import clamp_order_size
+        size = clamp_order_size("yes", net_inventory=5, order_size=2,
+                                max_inventory=10)
+        assert size == 1
+
+    def test_still_zero_at_max_inventory(self):
+        from src.mm.engine import clamp_order_size
+        size = clamp_order_size("yes", net_inventory=10, order_size=2,
+                                max_inventory=10)
+        assert size == 0
+
+    def test_no_side_making_when_short(self):
+        from src.mm.engine import clamp_order_size
+        size = clamp_order_size("no", net_inventory=-2, order_size=2,
+                                max_inventory=10)
+        assert size == 1
+
+
+class TestNearMidDepthFilter:
+    """Scanner requires >=3 contracts within 3c of mid on both sides."""
+
+    def test_passes_with_sufficient_depth(self):
+        from scripts.poly_daily_scan import apply_prefilters
+        c = {"spread": 3, "midpoint": 50, "net_spread": 2.5,
+             "best_yes_depth": 10, "best_no_depth": 10,
+             "symmetry": 1.0,
+             "near_mid_yes_depth": 5, "near_mid_no_depth": 5}
+        assert apply_prefilters(c) is True
+
+    def test_fails_with_thin_yes_depth(self):
+        from scripts.poly_daily_scan import apply_prefilters
+        c = {"spread": 3, "midpoint": 50, "net_spread": 2.5,
+             "best_yes_depth": 10, "best_no_depth": 10,
+             "symmetry": 1.0,
+             "near_mid_yes_depth": 2, "near_mid_no_depth": 5}
+        assert apply_prefilters(c) is False
+
+    def test_fails_with_thin_no_depth(self):
+        from scripts.poly_daily_scan import apply_prefilters
+        c = {"spread": 3, "midpoint": 50, "net_spread": 2.5,
+             "best_yes_depth": 10, "best_no_depth": 10,
+             "symmetry": 1.0,
+             "near_mid_yes_depth": 5, "near_mid_no_depth": 1}
+        assert apply_prefilters(c) is False
+
+    def test_backward_compat_missing_field(self):
+        from scripts.poly_daily_scan import apply_prefilters
+        c = {"spread": 3, "midpoint": 50, "net_spread": 2.5,
+             "best_yes_depth": 10, "best_no_depth": 10,
+             "symmetry": 1.0}
+        assert apply_prefilters(c) is True
