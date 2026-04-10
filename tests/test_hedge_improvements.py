@@ -50,3 +50,37 @@ class TestHedgeUrgencyOffset:
         from src.mm.state import hedge_urgency_offset
         now = datetime.now(timezone.utc)
         assert hedge_urgency_offset(now, now=now) == 0
+
+
+class TestWidenedSoftClose:
+    """SOFT_CLOSE should trigger at 30 min (1800s) instead of 15 min (900s)."""
+
+    def test_soft_close_at_25min(self):
+        from src.mm.risk import check_layer4, Action
+        from src.mm.state import MarketState
+        ms = MarketState(ticker="test")
+        now = datetime.now(timezone.utc)
+        ms.game_start_utc = now + timedelta(minutes=25)
+        ms.last_api_success = now
+        result = check_layer4(ms, spread=3, db_error_count=0)
+        assert result == Action.SOFT_CLOSE
+
+    def test_no_soft_close_at_35min(self):
+        from src.mm.risk import check_layer4, Action
+        from src.mm.state import MarketState
+        ms = MarketState(ticker="test")
+        now = datetime.now(timezone.utc)
+        ms.game_start_utc = now + timedelta(minutes=35)
+        ms.last_api_success = now
+        result = check_layer4(ms, spread=3, db_error_count=0)
+        assert result == Action.CONTINUE
+
+    def test_exit_market_at_game_start(self):
+        from src.mm.risk import check_layer4, Action
+        from src.mm.state import MarketState
+        ms = MarketState(ticker="test")
+        now = datetime.now(timezone.utc)
+        ms.game_start_utc = now - timedelta(minutes=1)
+        ms.last_api_success = now
+        result = check_layer4(ms, spread=3, db_error_count=0)
+        assert result == Action.EXIT_MARKET
