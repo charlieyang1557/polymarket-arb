@@ -99,8 +99,13 @@ Layer 4: System checks
   - API disconnect >30s → CANCEL_ALL
   - DB errors ≥10 → FULL_STOP
   - Pre-game exit on live game detection (>50 trades/5min)
-  - Time-based exit from game schedule: SOFT_CLOSE at 15min, EXIT_MARKET at game time
+  - Time-based exit from game schedule: SOFT_CLOSE at 30min (progressive pricing), EXIT_MARKET at game time
+  - Progressive SOFT_CLOSE: fair-1c at 30min → fair at 20min → fair+2c at 10min → fair+3c at 5min → taker cross at <5min (tunable ladder)
+  - Wide-book guard: if spread > max_taker_loss (10c) at taker phase, accept settlement instead of crossing
   - Soft-close at trade freq 30-50 (reduce-only mode)
+  - Time-decayed hedge: after fill, improve reducing side by 0/1/2/5c at 0/5/10/15 min
+  - Making-side size reduction: max(1, order_size - |inv|) to limit adverse accumulation
+  - Quote disabled at <20% round-trip fill rate (after ≥3 fills, 2h+ session) — SOFT_CLOSE exits still work
   - Session drift >10c from initial midpoint → EXIT_MARKET (pricing model invalid)
   - Auto-deactivate after 30 consecutive empty orderbook ticks
 ```

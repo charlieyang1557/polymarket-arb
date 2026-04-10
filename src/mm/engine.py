@@ -125,12 +125,14 @@ def progressive_exit_price(side: str, fair_value: float, best_bid: int,
     fair_int = int(fair_value)
     cap = fair_int + max_slippage
 
+    # Taker cross: limit order at ask+1 executes as taker on Polymarket.
+    # Taker fee (~0.5c at mid=50) is on top of max_taker_loss budget.
     if seconds_to_game < TAKER_CROSS_SECONDS:
         if best_ask <= 0:
-            return None
+            return None  # empty book
         ask_cost = best_ask - fair_int
         if ask_cost > max_taker_loss:
-            return None
+            return None  # book too wide — accept settlement
         price = best_ask + 1
         return max(1, min(99, min(price, cap)))
 

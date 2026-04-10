@@ -67,6 +67,8 @@ MAX_ACTIVE_MARKETS = 10
 ACTIVE_SLUGS_PATH = "data/poly_active_slugs.json"
 PENDING_MARKETS_PATH = "data/pending_poly_markets.json"
 MM_VERSION = "v1: Polymarket US LIVE — OBI + skew + capital-aware risk"
+HEDGE_ALERT_THRESHOLD_MIN = 15  # Discord alert if unhedged for this many minutes
+_settle_accept_alerted: set = set()  # one-shot Discord alert per slug for settlement accept
 
 
 # ---------------------------------------------------------------------------
@@ -1001,7 +1003,6 @@ def main():
                     ms.skew_activated_at = None
 
             # Hedge timer alert: notify Discord if unhedged > 15 min
-            HEDGE_ALERT_THRESHOLD_MIN = 15
             now = datetime.now(timezone.utc)
             for slug in active_slugs:
                 ms = gs.markets[slug]
@@ -1209,7 +1210,6 @@ def main():
                         curr_orders, args.size,
                         risk["max_inventory"],
                         time_soft_close=time_soft_close,
-                        max_unhedged_exit=risk["max_unhedged_exit"],
                         inventory_changed=slug in inv_changed_slugs)
                     inv_changed_slugs.discard(slug)
 
@@ -1379,7 +1379,6 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
                         curr_orders: dict, order_size: int,
                         max_inventory: int,
                         time_soft_close: bool = False,
-                        max_unhedged_exit: int = 5,
                         inventory_changed: bool = False):
     """Manage live quote placement with requote tolerance."""
     now = datetime.now(timezone.utc)
@@ -1424,6 +1423,12 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
             print(f"    SETTLE-ACCEPT {slug}: book too wide/empty, "
                   f"inv={net_inventory} secs={secs_to_game:.0f}",
                   flush=True)
+            if slug not in _settle_accept_alerted:
+                _settle_accept_alerted.add(slug)
+                discord_notify(
+                    f"**Settle Accept** {slug} | "
+                    f"inv={net_inventory} | book too wide/empty "
+                    f"at {secs_to_game:.0f}s to game")
             return
 
         size = min(order_size, abs(net_inventory))
