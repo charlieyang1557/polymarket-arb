@@ -170,6 +170,28 @@ def should_skip_side(side: str, net_inventory: int,
     return False
 
 
+def should_disable_quoting(total_fills: int, paired_fills: int,
+                           session_age_s: float,
+                           min_fills: int = 3,
+                           min_session_age_s: float = 7200,
+                           min_paired_rate: float = 0.20) -> bool:
+    """Check if quoting should be disabled due to low round-trip fill rate.
+
+    Conditions (all must be true):
+      - total_fills >= min_fills (avoid small sample bias)
+      - session_age >= min_session_age_s (give market time to develop)
+      - paired_rate < min_paired_rate (paired_fills*2 / total_fills)
+
+    paired_fills counts round-trips (each = 2 individual fills paired off).
+    """
+    if total_fills < min_fills:
+        return False
+    if session_age_s < min_session_age_s:
+        return False
+    paired_rate = (paired_fills * 2) / total_fills
+    return paired_rate < min_paired_rate
+
+
 # -- Fill simulation helpers -----------------------------------------------
 
 def drain_queue(order: SimOrder, trades: list[dict]) -> int:

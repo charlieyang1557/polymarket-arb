@@ -269,3 +269,52 @@ class TestNearMidDepthFilter:
              "best_yes_depth": 10, "best_no_depth": 10,
              "symmetry": 1.0}
         assert apply_prefilters(c) is True
+
+
+class TestFillRateDeactivation:
+    """should_disable_quoting: deactivate quoting when round-trip rate <20%."""
+
+    def test_no_disable_before_min_fills(self):
+        from src.mm.engine import should_disable_quoting
+        assert should_disable_quoting(
+            total_fills=2, paired_fills=0,
+            session_age_s=10800, min_fills=3) is False
+
+    def test_no_disable_before_2h(self):
+        from src.mm.engine import should_disable_quoting
+        assert should_disable_quoting(
+            total_fills=5, paired_fills=0,
+            session_age_s=3600, min_fills=3) is False
+
+    def test_disable_at_low_rate(self):
+        from src.mm.engine import should_disable_quoting
+        assert should_disable_quoting(
+            total_fills=5, paired_fills=0,
+            session_age_s=10800, min_fills=3) is True
+
+    def test_no_disable_at_good_rate(self):
+        from src.mm.engine import should_disable_quoting
+        assert should_disable_quoting(
+            total_fills=5, paired_fills=2,
+            session_age_s=10800, min_fills=3) is False
+
+    def test_exact_boundary_does_not_disable(self):
+        from src.mm.engine import should_disable_quoting
+        # 5 fills, 1 pair = 2 fills paired → rate = 2/5 = 0.40 > 0.20
+        assert should_disable_quoting(
+            total_fills=5, paired_fills=1,
+            session_age_s=10800, min_fills=3) is False
+
+    def test_disable_at_exactly_20pct(self):
+        from src.mm.engine import should_disable_quoting
+        # 10 fills, 1 pair = 2 fills paired → rate = 2/10 = 0.20
+        # at boundary → does NOT disable (strictly below)
+        assert should_disable_quoting(
+            total_fills=10, paired_fills=1,
+            session_age_s=10800, min_fills=3) is False
+
+    def test_zero_fills_no_disable(self):
+        from src.mm.engine import should_disable_quoting
+        assert should_disable_quoting(
+            total_fills=0, paired_fills=0,
+            session_age_s=10800, min_fills=3) is False

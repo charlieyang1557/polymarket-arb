@@ -45,7 +45,7 @@ from src.mm.state import (
 )
 from src.mm.engine import (
     MMEngine, discord_notify, clamp_order_size, soft_close_exit_price,
-    progressive_exit_price,
+    progressive_exit_price, should_disable_quoting,
     is_side_cooled_down, should_skip_side, pair_off_inventory,
 )
 from src.mm.risk import (
@@ -952,6 +952,7 @@ def main():
                 ms.realized_pnl -= fee
 
                 inv_changed_slugs.add(slug)
+                ms.total_fills += filled
 
                 if side == "yes":
                     ms.yes_queue.extend([price] * filled)
@@ -994,6 +995,7 @@ def main():
                         ms.consecutive_losses += 1
                     else:
                         ms.consecutive_losses = 0
+                ms.paired_fills += len(pairs)
                 if not ms.yes_queue and not ms.no_queue:
                     ms.oldest_fill_time = None
                     ms.skew_activated_at = None
@@ -1171,6 +1173,36 @@ def main():
 
                 # Manage quotes
                 if action <= Action.AGGRESS_FLATTEN:
+                    # Fill rate gate: disable quoting if round-trip rate too low
+                    if ms.quote_disabled_reason is None:
+                        session_age = (now - gs.start_time).total_seconds()
+                        if should_disable_quoting(
+                                ms.total_fills, ms.paired_fills, session_age):
+                            ms.quote_disabled_reason = "low_roundtrip_rate"
+                            _cancel_market_orders(live_mgr, slug, curr_orders)
+                            discord_notify(
+                                f"**Quote Disabled** {slug} | "
+                                f"fills={ms.total_fills} pairs={ms.paired_fills} "
+                                f"rate={ms.paired_fills*2/ms.total_fills:.0%} | "
+                                f"inv={ms.net_inventory}")
+                            print(f"    QUOTE_DISABLED {slug}: "
+                                  f"fills={ms.total_fills} "
+                                  f"pairs={ms.paired_fills}", flush=True)
+                            continue
+
+                    if ms.quote_disabled_reason is not None:
+                        # Still allow SOFT_CLOSE exits for existing inventory
+                        if (time_soft_close or ms.is_soft_close) and ms.net_inventory != 0:
+                            _manage_live_quotes(
+                                live_mgr, ms, best_yes_bid, best_no_bid,
+                                yes_ask, midpoint, yes_bids, no_bids,
+                                curr_orders, args.size,
+                                risk["max_inventory"],
+                                time_soft_close=True,
+                                inventory_changed=slug in inv_changed_slugs)
+                            inv_changed_slugs.discard(slug)
+                        continue
+
                     _manage_live_quotes(
                         live_mgr, ms, best_yes_bid, best_no_bid,
                         yes_ask, midpoint, yes_bids, no_bids,

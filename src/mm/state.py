@@ -187,6 +187,9 @@ class MarketState:
     game_start_utc: datetime | None = None  # from schedule, for time-based exit
     aggress_cooldown_yes: datetime | None = None  # post-AGGRESS_FLATTEN cooldown per side
     aggress_cooldown_no: datetime | None = None
+    total_fills: int = 0
+    paired_fills: int = 0
+    quote_disabled_reason: str | None = None
 
     @property
     def is_live_game(self) -> bool:
