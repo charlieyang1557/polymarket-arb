@@ -17,11 +17,13 @@ Automated sports market making bot for **Polymarket US** (live) and **Kalshi** (
 ```bash
 # Polymarket live trading (primary)
 python scripts/poly_live_mm.py --slugs SLUG1,SLUG2 --capital 2500 --size 2 --interval 10
+python scripts/poly_live_mm.py --slugs SLUG1,SLUG2 --duration 86400 --no-confirm  # headless
 python scripts/poly_live_mm.py --dry-run --slugs SLUG1,SLUG2 --capital 2500
 
 # Polymarket scanner
-python scripts/poly_daily_scan.py              # scan + Discord summary
-python scripts/poly_daily_scan.py --run        # scan + auto-launch bot
+python scripts/poly_daily_scan.py                    # scan + Discord summary
+python scripts/poly_daily_scan.py --smart-run        # scan + auto-launch (live) or hot-add
+python scripts/poly_daily_scan.py --smart-run --paper # scan + auto-launch (paper)
 
 # Polymarket paper trading
 python scripts/poly_paper_mm.py --slugs SLUG1,SLUG2 --duration 86400
@@ -33,7 +35,9 @@ python scripts/paper_mm.py --tickers TICKER1,TICKER2 --duration 86400
 python scripts/kalshi_daily_scan.py --max-markets 15
 
 # Tests
-python -m pytest tests/test_poly_live_mm.py -q                  # Polymarket live MM tests
+python -m pytest tests/ -q                                       # full suite (639 tests)
+python -m pytest tests/test_poly_live_mm.py -q                   # Polymarket live MM (101 tests)
+python -m pytest tests/test_hedge_improvements.py -q             # hedging/exit logic (41 tests)
 python -m pytest tests/test_poly_live_mm.py -k "test_name" -v   # single test
 python -m pytest tests/test_mm_*.py tests/test_*skew*.py tests/test_*spread*.py tests/test_*obi*.py tests/test_pregame*.py tests/test_silent*.py tests/test_monitor*.py tests/test_inventory*.py tests/test_daily_scan.py tests/test_session_summary.py -q  # Kalshi MM suite
 ```
@@ -45,16 +49,21 @@ python -m pytest tests/test_mm_*.py tests/test_*skew*.py tests/test_*spread*.py 
 scripts/poly_live_mm.py          → Live market maker (real orders via SDK)
 scripts/poly_paper_mm.py         → Paper trading (simulated fills)
 scripts/poly_daily_scan.py       → Market scanner (events API, rank-based scoring)
-src/poly_client.py               → Polymarket API adapter (normalizes SDK responses)
+src/poly_client.py               → Polymarket API adapter (wraps polymarket_us SDK)
+                                   normalize_orderbook(), calculate_maker_fee()
+                                   PolyClient: place/cancel orders, get_bbo, get_orderbook,
+                                   get_balance, get_positions, get_activities
 
-# Kalshi (secondary — paper trading)
+# Kalshi (secondary — paper/analytical only)
 scripts/paper_mm.py              → Paper trading entry point
 scripts/kalshi_daily_scan.py     → Market scanner with rank-based scoring
 src/kalshi_client.py             → Kalshi API (RSA-PSS auth, raw HTTP)
 
 # Shared engine (used by both platforms)
-src/mm/engine.py                 → Market making engine (10s tick loop)
-src/mm/state.py                  → MarketState, OBI microprice, skewed_quotes, dynamic_spread
+src/mm/engine.py                 → Market making engine (10s tick loop), progressive_exit_price,
+                                   clamp_order_size, should_disable_quoting, pair_off_inventory
+src/mm/state.py                  → MarketState, OBI microprice, skewed_quotes, dynamic_spread,
+                                   hedge_urgency_offset, ExitLadderStep, DEFAULT_EXIT_LADDER
 src/mm/risk.py                   → 4-layer risk management (L1-L4)
 src/mm/db.py                     → SQLite persistence (fills, orders, snapshots)
 ```
@@ -72,6 +81,8 @@ Data flow: Scanner selects markets → Engine quotes both sides → Fills detect
 **Fill detection**: `check_fills()` via `portfolio.activities()` — exchange-confirmed, passive-only, session-watermarked, trade-ID deduped. `inv_changed_slugs` persists across cycles (not rebuilt each cycle) and is cleared per-slug only after quotes are managed.
 
 **Game-start resolution**: `resolve_game_start()` — checks `daily_targets.json` cache first, falls back to `client.get_market()`, caches result. Used by both startup and hot-add paths.
+
+**Scanner auto-launch**: `--smart-run` in `poly_daily_scan.py` queries live account balance via `PolymarketUS.account.balances()` and passes it as `--capital`. Falls back to 2000c on failure. If a bot is already running, hot-adds new slugs via `pending_poly_markets.json` instead of launching.
 
 ## Risk Management
 
@@ -177,6 +188,13 @@ Bugs discovered and fixed (do not repeat):
 12. `is_hedging_leg` bypass of MIN_REQUOTE_DELTA → cancel+replace churn at same price → removed, use reducing_side_for_inventory with MIN_REQUOTE_DELTA instead
 
 Cross-tick negative round-trips (YES+NO > 100c) are STOP-LOSSES, not bugs. Do NOT try to prevent them with cost-basis tracking.
+
+## Environment Variables
+
+Required in `.env` (loaded via `python-dotenv`):
+- `POLYMARKET_KEY_ID`, `POLYMARKET_SECRET_KEY` — Polymarket US auth (live trading + balance query)
+- `DISCORD_WEBHOOK_URL` — Discord notifications (fills, alerts, session summaries)
+- `KALSHI_API_KEY`, `KALSHI_PRIVATE_KEY_PATH` — Kalshi auth (paper only)
 
 ## Polymarket API Notes
 
