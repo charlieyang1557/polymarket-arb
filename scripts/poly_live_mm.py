@@ -902,6 +902,7 @@ def main():
     SUMMARY_INTERVAL = 43200  # 12h
     tick_count = 0
     inv_changed_slugs: set = set()  # persists across cycles until quotes managed
+    hedge_alert_sent: set = set()  # slugs already alerted for unhedged >15min
 
     def _lookup_game_start(slug):
         return resolve_game_start(slug, schedule,
@@ -995,6 +996,25 @@ def main():
                 if not ms.yes_queue and not ms.no_queue:
                     ms.oldest_fill_time = None
                     ms.skew_activated_at = None
+
+            # Hedge timer alert: notify Discord if unhedged > 15 min
+            HEDGE_ALERT_THRESHOLD_MIN = 15
+            now = datetime.now(timezone.utc)
+            for slug in active_slugs:
+                ms = gs.markets[slug]
+                if (ms.net_inventory != 0
+                        and ms.oldest_fill_time is not None
+                        and slug not in hedge_alert_sent):
+                    elapsed = (now - ms.oldest_fill_time).total_seconds() / 60
+                    if elapsed >= HEDGE_ALERT_THRESHOLD_MIN:
+                        hedge_alert_sent.add(slug)
+                        discord_notify(
+                            f"**Hedge Alert** {slug} | "
+                            f"inv={ms.net_inventory} unhedged for "
+                            f"{elapsed:.0f}min | "
+                            f"pnl={ms.realized_pnl:.1f}c")
+                elif ms.net_inventory == 0 and slug in hedge_alert_sent:
+                    hedge_alert_sent.discard(slug)
 
             live_mgr.update_prev_orders(curr_orders)
 
