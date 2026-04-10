@@ -71,11 +71,12 @@ def test_clamp_risk_side_near_limit():
 
 
 def test_clamp_safe_side_no_limit():
-    """max_inv=10, inv=-3, size=2 → both sides = 2."""
+    """max_inv=10, inv=-3, size=2 → YES (reducing) keeps full size,
+    NO (making) reduced to max(1, 2-3)=1."""
     yes_size = clamp_order_size("yes", net_inventory=-3, order_size=2)
     no_size = clamp_order_size("no", net_inventory=-3, order_size=2)
-    assert yes_size == 2  # YES reduces |inv|
-    assert no_size == 2   # NO at |-3| < 10, room for 7 more
+    assert yes_size == 2  # YES reduces |inv| → full size
+    assert no_size == 1   # NO increases |inv| → soft-capped
 
 
 def test_clamp_prevents_aggress_trigger():

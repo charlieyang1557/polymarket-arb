@@ -132,7 +132,7 @@ def check_layer4(ms: MarketState, spread: int,
         seconds_to_start = (ms.game_start_utc - now).total_seconds()
         if seconds_to_start <= 0:
             return Action.EXIT_MARKET
-        if seconds_to_start < 900:
+        if seconds_to_start < 1800:
             return Action.SOFT_CLOSE
 
     # Session drift: 10c+ from initial midpoint → EXIT_MARKET

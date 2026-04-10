@@ -1279,3 +1279,68 @@ class TestPlaceAttemptGuardTiming:
         result = mgr.place_order("slug-a", "yes", 50, 2)
         assert result is None
         assert not mgr.has_recent_place_attempt("slug-a", "yes", 50, 2)
+
+
+class TestHedgeUrgencyIntegration:
+    """_manage_live_quotes applies hedge urgency offset to reducing side."""
+
+    def test_reducing_side_gets_urgency_offset(self):
+        from scripts.poly_live_mm import _manage_live_quotes
+        from src.mm.state import MarketState
+        from unittest.mock import MagicMock
+
+        ms = MarketState(ticker="test-slug")
+        ms.yes_queue = [48]  # long 1 YES → net_inventory=+1
+        ms.oldest_fill_time = datetime.now(timezone.utc) - timedelta(minutes=10)
+        ms.midpoint_history = [(datetime.now(timezone.utc), 50.0)]
+        ms.last_api_success = datetime.now(timezone.utc)
+
+        live_mgr = MagicMock()
+        live_mgr.has_recent_place_attempt.return_value = False
+        curr_orders = {}
+
+        _manage_live_quotes(
+            live_mgr, ms,
+            best_yes_bid=49, best_no_bid=49,
+            yes_ask=51, midpoint=50.0,
+            yes_bids=[], no_bids=[],
+            curr_orders=curr_orders, order_size=2,
+            max_inventory=10,
+            inventory_changed=False)
+
+        calls = live_mgr.place_order.call_args_list
+        no_calls = [c for c in calls if c[0][1] == "no"]
+        assert len(no_calls) >= 1
+        no_price = no_calls[0][0][2]
+        assert no_price >= 50  # 49 + skew + urgency(2c at 10min)
+
+
+class TestProgressiveSoftCloseIntegration:
+    """_manage_live_quotes uses progressive pricing during SOFT_CLOSE."""
+
+    def test_soft_close_returns_none_on_wide_book(self):
+        from scripts.poly_live_mm import _manage_live_quotes
+        from src.mm.state import MarketState
+        from unittest.mock import MagicMock
+
+        ms = MarketState(ticker="test-slug")
+        ms.yes_queue = [48]  # long YES → reduce via NO
+        ms.game_start_utc = datetime.now(timezone.utc) + timedelta(minutes=1)
+        ms.midpoint_history = [(datetime.now(timezone.utc), 50.0)]
+        ms.last_api_success = datetime.now(timezone.utc)
+
+        live_mgr = MagicMock()
+        live_mgr.has_recent_place_attempt.return_value = False
+        curr_orders = {}
+
+        _manage_live_quotes(
+            live_mgr, ms,
+            best_yes_bid=35, best_no_bid=35,
+            yes_ask=65, midpoint=50.0,
+            yes_bids=[], no_bids=[],
+            curr_orders=curr_orders, order_size=2,
+            max_inventory=10,
+            time_soft_close=True,
+            inventory_changed=False)
+
+        assert live_mgr.place_order.call_count == 0

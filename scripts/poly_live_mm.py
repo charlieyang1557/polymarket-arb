@@ -41,10 +41,11 @@ import src.mm.state as _mm_state
 from src.mm.state import (
     MarketState, GlobalState, SimOrder,
     obi_microprice, skewed_quotes, dynamic_spread,
-    maker_fee_cents, unrealized_pnl_cents,
+    maker_fee_cents, unrealized_pnl_cents, hedge_urgency_offset,
 )
 from src.mm.engine import (
     MMEngine, discord_notify, clamp_order_size, soft_close_exit_price,
+    progressive_exit_price, should_disable_quoting,
     is_side_cooled_down, should_skip_side, pair_off_inventory,
 )
 from src.mm.risk import (
@@ -66,6 +67,8 @@ MAX_ACTIVE_MARKETS = 10
 ACTIVE_SLUGS_PATH = "data/poly_active_slugs.json"
 PENDING_MARKETS_PATH = "data/pending_poly_markets.json"
 MM_VERSION = "v1: Polymarket US LIVE — OBI + skew + capital-aware risk"
+HEDGE_ALERT_THRESHOLD_MIN = 15  # Discord alert if unhedged for this many minutes
+_settle_accept_alerted: set = set()  # one-shot Discord alert per slug for settlement accept
 
 
 # ---------------------------------------------------------------------------
@@ -902,6 +905,7 @@ def main():
     SUMMARY_INTERVAL = 43200  # 12h
     tick_count = 0
     inv_changed_slugs: set = set()  # persists across cycles until quotes managed
+    hedge_alert_sent: set = set()  # slugs already alerted for unhedged >15min
 
     def _lookup_game_start(slug):
         return resolve_game_start(slug, schedule,
@@ -950,6 +954,7 @@ def main():
                 ms.realized_pnl -= fee
 
                 inv_changed_slugs.add(slug)
+                ms.total_fills += filled
 
                 if side == "yes":
                     ms.yes_queue.extend([price] * filled)
@@ -992,9 +997,28 @@ def main():
                         ms.consecutive_losses += 1
                     else:
                         ms.consecutive_losses = 0
+                ms.paired_fills += len(pairs)
                 if not ms.yes_queue and not ms.no_queue:
                     ms.oldest_fill_time = None
                     ms.skew_activated_at = None
+
+            # Hedge timer alert: notify Discord if unhedged > 15 min
+            now = datetime.now(timezone.utc)
+            for slug in active_slugs:
+                ms = gs.markets[slug]
+                if (ms.net_inventory != 0
+                        and ms.oldest_fill_time is not None
+                        and slug not in hedge_alert_sent):
+                    elapsed = (now - ms.oldest_fill_time).total_seconds() / 60
+                    if elapsed >= HEDGE_ALERT_THRESHOLD_MIN:
+                        hedge_alert_sent.add(slug)
+                        discord_notify(
+                            f"**Hedge Alert** {slug} | "
+                            f"inv={ms.net_inventory} unhedged for "
+                            f"{elapsed:.0f}min | "
+                            f"pnl={ms.realized_pnl:.1f}c")
+                elif ms.net_inventory == 0 and slug in hedge_alert_sent:
+                    hedge_alert_sent.discard(slug)
 
             live_mgr.update_prev_orders(curr_orders)
 
@@ -1150,13 +1174,42 @@ def main():
 
                 # Manage quotes
                 if action <= Action.AGGRESS_FLATTEN:
+                    # Fill rate gate: disable quoting if round-trip rate too low
+                    if ms.quote_disabled_reason is None:
+                        session_age = (now - gs.start_time).total_seconds()
+                        if should_disable_quoting(
+                                ms.total_fills, ms.paired_fills, session_age):
+                            ms.quote_disabled_reason = "low_roundtrip_rate"
+                            _cancel_market_orders(live_mgr, slug, curr_orders)
+                            discord_notify(
+                                f"**Quote Disabled** {slug} | "
+                                f"fills={ms.total_fills} pairs={ms.paired_fills} "
+                                f"rate={ms.paired_fills*2/ms.total_fills:.0%} | "
+                                f"inv={ms.net_inventory}")
+                            print(f"    QUOTE_DISABLED {slug}: "
+                                  f"fills={ms.total_fills} "
+                                  f"pairs={ms.paired_fills}", flush=True)
+                            continue
+
+                    if ms.quote_disabled_reason is not None:
+                        # Still allow SOFT_CLOSE exits for existing inventory
+                        if (time_soft_close or ms.is_soft_close) and ms.net_inventory != 0:
+                            _manage_live_quotes(
+                                live_mgr, ms, best_yes_bid, best_no_bid,
+                                yes_ask, midpoint, yes_bids, no_bids,
+                                curr_orders, args.size,
+                                risk["max_inventory"],
+                                time_soft_close=True,
+                                inventory_changed=slug in inv_changed_slugs)
+                            inv_changed_slugs.discard(slug)
+                        continue
+
                     _manage_live_quotes(
                         live_mgr, ms, best_yes_bid, best_no_bid,
                         yes_ask, midpoint, yes_bids, no_bids,
                         curr_orders, args.size,
                         risk["max_inventory"],
                         time_soft_close=time_soft_close,
-                        max_unhedged_exit=risk["max_unhedged_exit"],
                         inventory_changed=slug in inv_changed_slugs)
                     inv_changed_slugs.discard(slug)
 
@@ -1326,7 +1379,6 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
                         curr_orders: dict, order_size: int,
                         max_inventory: int,
                         time_soft_close: bool = False,
-                        max_unhedged_exit: int = 5,
                         inventory_changed: bool = False):
     """Manage live quote placement with requote tolerance."""
     now = datetime.now(timezone.utc)
@@ -1339,7 +1391,6 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
             _cancel_market_orders(live_mgr, slug, curr_orders)
             return
 
-        # Cancel side that increases inventory
         slug_orders = curr_orders.get(slug, {})
         if net_inventory > 0:
             if "yes" in slug_orders:
@@ -1347,42 +1398,57 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
                                       slug_orders["yes"]["order_id"])
             reduce_side = "no"
             reduce_bid = best_no_bid
+            fair_for_side = 100 - midpoint
+            reduce_ask = 100 - best_yes_bid
         else:
             if "no" in slug_orders:
                 live_mgr.cancel_order(slug, "no",
                                       slug_orders["no"]["order_id"])
             reduce_side = "yes"
             reduce_bid = best_yes_bid
+            fair_for_side = midpoint
+            reduce_ask = yes_ask
 
-        # Aggressive exit if inventory exceeds threshold
-        if time_soft_close and abs(net_inventory) > max_unhedged_exit:
-            price = soft_close_exit_price(
-                side=reduce_side,
-                fair_value=(midpoint if reduce_side == "yes"
-                            else 100 - midpoint),
-                best_bid=reduce_bid, max_slippage=5)
-            size = min(order_size, abs(net_inventory))
+        secs_to_game = 1800  # fallback
+        if ms.game_start_utc:
+            secs_to_game = max(0, (ms.game_start_utc - now).total_seconds())
 
-            existing = slug_orders.get(reduce_side)
+        price = progressive_exit_price(
+            side=reduce_side, fair_value=fair_for_side,
+            best_bid=reduce_bid, best_ask=reduce_ask,
+            seconds_to_game=secs_to_game, max_slippage=5,
+            max_taker_loss=10)
 
-            # Cancel still in-flight — wait for poll to confirm
-            if existing is not None and existing.get("cancel_pending"):
-                return
+        if price is None:
+            print(f"    SETTLE-ACCEPT {slug}: book too wide/empty, "
+                  f"inv={net_inventory} secs={secs_to_game:.0f}",
+                  flush=True)
+            if slug not in _settle_accept_alerted:
+                _settle_accept_alerted.add(slug)
+                discord_notify(
+                    f"**Settle Accept** {slug} | "
+                    f"inv={net_inventory} | book too wide/empty "
+                    f"at {secs_to_game:.0f}s to game")
+            return
 
-            if existing is not None:
-                if should_requote_or_force(
-                        price, existing["price_cents"], force_requote=True):
-                    live_mgr.cancel_order(slug, reduce_side,
-                                          existing["order_id"])
-                # Either way, wait for poll to confirm before placing
-                return
+        size = min(order_size, abs(net_inventory))
+        existing = slug_orders.get(reduce_side)
 
-            # No existing order — place the exit order
-            if live_mgr.has_recent_place_attempt(slug, reduce_side, price, size):
-                return
-            live_mgr.place_order(slug, reduce_side, price, size)
-            print(f"    SOFT-EXIT {slug}: {reduce_side}@{price}c "
-                  f"(inv={net_inventory})", flush=True)
+        if existing is not None and existing.get("cancel_pending"):
+            return
+        if existing is not None:
+            if should_requote_or_force(
+                    price, existing["price_cents"], force_requote=True):
+                live_mgr.cancel_order(slug, reduce_side,
+                                      existing["order_id"])
+            return
+
+        if live_mgr.has_recent_place_attempt(slug, reduce_side, price, size):
+            return
+        live_mgr.place_order(slug, reduce_side, price, size)
+        print(f"    SOFT-EXIT {slug}: {reduce_side}@{price}c "
+              f"(inv={net_inventory} secs={secs_to_game:.0f})",
+              flush=True)
         return
 
     # Dynamic spread
@@ -1399,6 +1465,14 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
 
     slug_orders = curr_orders.get(slug, {})
     reducing_side = reducing_side_for_inventory(net_inventory)
+
+    # Time-decayed hedge: improve reducing side price when unhedged too long
+    urgency = hedge_urgency_offset(ms.oldest_fill_time, now)
+    if urgency > 0 and reducing_side is not None:
+        if reducing_side == "yes":
+            yes_quote = min(99, yes_quote + urgency)
+        else:
+            no_quote = min(99, no_quote + urgency)
 
     for side, quote_price, best_bid, bids in [
             ("yes", yes_quote, best_yes_bid, yes_bids),

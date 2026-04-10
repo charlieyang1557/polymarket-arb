@@ -235,7 +235,9 @@ def apply_prefilters(c: dict) -> bool:
             and c.get("net_spread", 0) > 0
             and c.get("best_yes_depth", 0) > 0
             and c.get("best_no_depth", 0) > 0
-            and 0.2 <= c.get("symmetry", 0) <= 5.0)
+            and 0.2 <= c.get("symmetry", 0) <= 5.0
+            and c.get("near_mid_yes_depth", 3) >= 3
+            and c.get("near_mid_no_depth", 3) >= 3)
 
 
 def filter_by_hours_to_game(candidates: list[dict], max_hours: int = 18,
@@ -504,6 +506,16 @@ def deep_check(client: PolyClient, candidates: list[dict],
             c["best_yes_depth"] = best_yes
             c["best_no_depth"] = best_no
             c["symmetry"] = round(sym, 3)
+
+            # Near-mid depth: contracts within 3c of midpoint
+            mid_cents = c["midpoint"]
+            near_yes = sum(q for p, q in yes_bids
+                          if abs(p - mid_cents) <= 3)
+            near_no = sum(q for p, q in no_bids
+                         if abs(p - (100 - mid_cents)) <= 3)
+            c["near_mid_yes_depth"] = near_yes
+            c["near_mid_no_depth"] = near_no
+
             c["binding_queue"] = max(yes_depth, no_depth)
 
             # Net spread with rebate

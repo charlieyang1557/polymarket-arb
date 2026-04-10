@@ -6,6 +6,27 @@ import math
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
+from typing import NamedTuple
+
+
+class ExitLadderStep(NamedTuple):
+    """One step in the progressive exit pricing ladder.
+    seconds_threshold: trigger when seconds_to_game <= this
+    price_offset: cents to add to fair_value (negative = try to profit)
+    """
+    seconds_threshold: int
+    price_offset: int
+
+
+DEFAULT_EXIT_LADDER: tuple[ExitLadderStep, ...] = (
+    ExitLadderStep(seconds_threshold=1800, price_offset=-1),
+    ExitLadderStep(seconds_threshold=1500, price_offset=0),
+    ExitLadderStep(seconds_threshold=1200, price_offset=0),
+    ExitLadderStep(seconds_threshold=600, price_offset=2),
+    ExitLadderStep(seconds_threshold=300, price_offset=3),
+)
+
+TAKER_CROSS_SECONDS: int = 300
 
 
 def dynamic_spread(midpoint_history: list[tuple[datetime, float]],
@@ -98,6 +119,32 @@ def unrealized_pnl_cents(yes_queue: list[int], no_queue: list[int],
     return 0.0
 
 
+def hedge_urgency_offset(oldest_fill_time: datetime | None,
+                         now: datetime | None = None) -> int:
+    """Price improvement (cents) for hedging side based on time since fill.
+
+    Graduated escalation:
+      0-5 min:   0c (passive maker, preserve queue priority)
+      5-10 min:  1c (improve price, still maker)
+      10-15 min: 2c (accept breakeven)
+      15+ min:   5c (aggressive — accept loss to avoid settlement risk)
+
+    Returns offset to ADD to the reducing side's quote price.
+    """
+    if oldest_fill_time is None:
+        return 0
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elapsed_min = (now - oldest_fill_time).total_seconds() / 60
+    if elapsed_min < 5:
+        return 0
+    if elapsed_min < 10:
+        return 1
+    if elapsed_min < 15:
+        return 2
+    return 5
+
+
 @dataclass
 class SimOrder:
     """A simulated resting order."""
@@ -140,6 +187,9 @@ class MarketState:
     game_start_utc: datetime | None = None  # from schedule, for time-based exit
     aggress_cooldown_yes: datetime | None = None  # post-AGGRESS_FLATTEN cooldown per side
     aggress_cooldown_no: datetime | None = None
+    total_fills: int = 0
+    paired_fills: int = 0
+    quote_disabled_reason: str | None = None
 
     @property
     def is_live_game(self) -> bool:

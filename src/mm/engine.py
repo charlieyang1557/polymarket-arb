@@ -11,6 +11,7 @@ from src.mm.state import (
     SimOrder, MarketState, GlobalState,
     maker_fee_cents, taker_fee_cents, unrealized_pnl_cents,
     obi_microprice, skewed_quotes, dynamic_spread,
+    ExitLadderStep, DEFAULT_EXIT_LADDER, TAKER_CROSS_SECONDS,
 )
 from src.mm.risk import Action, check_layer1, check_layer2, check_layer3, check_layer4, highest_priority, apply_pause_30min
 from src.mm.db import MMDatabase
@@ -85,29 +86,67 @@ def load_pending_markets(gs: GlobalState, path: str = PENDING_MARKETS_PATH,
 
 def clamp_order_size(side: str, net_inventory: int, order_size: int,
                      max_inventory: int = MAX_INVENTORY) -> int:
-    """Clamp order size so a fill cannot overshoot max_inventory.
+    """Clamp order size based on inventory position.
 
-    The side that INCREASES inventory magnitude gets clamped.
-    The side that DECREASES it keeps full size.
+    Making side (increases |inv|): reduced proportionally.
+      making_size = max(1, order_size - |inv|)
+      Returns 0 at max_inventory (should_skip_side handles this).
+
+    Reducing side (decreases |inv|): keeps full size.
     """
+    abs_inv = abs(net_inventory)
     if side == "yes" and net_inventory >= 0:
-        # YES increases positive inv
-        return max(0, min(order_size, max_inventory - net_inventory))
+        hard_cap = max(0, max_inventory - net_inventory)
+        soft_cap = max(1, order_size - abs_inv) if hard_cap > 0 else 0
+        return min(soft_cap, hard_cap)
     if side == "no" and net_inventory <= 0:
-        # NO increases negative inv magnitude
-        return max(0, min(order_size, max_inventory - abs(net_inventory)))
-    # Decreasing side — no clamp needed
+        hard_cap = max(0, max_inventory + net_inventory)
+        soft_cap = max(1, order_size - abs_inv) if hard_cap > 0 else 0
+        return min(soft_cap, hard_cap)
+    # Reducing side — no clamp needed
     return order_size
+
+
+def progressive_exit_price(side: str, fair_value: float, best_bid: int,
+                           best_ask: int, seconds_to_game: float,
+                           max_slippage: int = 5,
+                           max_taker_loss: int = 10,
+                           ladder: tuple[ExitLadderStep, ...] = DEFAULT_EXIT_LADDER,
+                           ) -> int | None:
+    """Time-decayed exit pricing for SOFT_CLOSE window.
+
+    Walks the ladder from longest to shortest time horizon.
+    Below TAKER_CROSS_SECONDS, attempts to cross the spread.
+
+    Returns:
+      int: price in cents to place the exit order
+      None: book is empty or spread too wide — accept settlement risk
+    """
+    fair_int = int(fair_value)
+    cap = fair_int + max_slippage
+
+    # Taker cross: limit order at ask+1 executes as taker on Polymarket.
+    # Taker fee (~0.5c at mid=50) is on top of max_taker_loss budget.
+    if seconds_to_game < TAKER_CROSS_SECONDS:
+        if best_ask <= 0:
+            return None  # empty book
+        ask_cost = best_ask - fair_int
+        if ask_cost > max_taker_loss:
+            return None  # book too wide — accept settlement
+        price = best_ask + 1
+        return max(1, min(99, min(price, cap)))
+
+    price = fair_int
+    for step in ladder:
+        if seconds_to_game <= step.seconds_threshold:
+            price = fair_int + step.price_offset
+    price = min(price, cap)
+    return max(1, min(99, price))
 
 
 def soft_close_exit_price(side: str, fair_value: float, best_bid: int,
                           max_slippage: int = 5) -> int:
-    """Aggressive maker price for soft-close exit.
-
-    Crosses spread by 1c above best bid to jump the queue, but
-    never exceeds fair_value + max_slippage. Still a maker order
-    (earns rebate, doesn't pay taker fee).
-    """
+    """Legacy wrapper — used by AGGRESS_FLATTEN (no time component)."""
     aggressive = best_bid + 1
     cap = int(fair_value) + max_slippage
     return max(1, min(aggressive, cap))
@@ -131,6 +170,28 @@ def should_skip_side(side: str, net_inventory: int,
     if side == "no" and net_inventory <= -max_inventory:
         return True
     return False
+
+
+def should_disable_quoting(total_fills: int, paired_fills: int,
+                           session_age_s: float,
+                           min_fills: int = 3,
+                           min_session_age_s: float = 7200,
+                           min_paired_rate: float = 0.20) -> bool:
+    """Check if quoting should be disabled due to low round-trip fill rate.
+
+    Conditions (all must be true):
+      - total_fills >= min_fills (avoid small sample bias)
+      - session_age >= min_session_age_s (give market time to develop)
+      - paired_rate < min_paired_rate (paired_fills*2 / total_fills)
+
+    paired_fills counts round-trips (each = 2 individual fills paired off).
+    """
+    if total_fills < min_fills:
+        return False
+    if session_age_s < min_session_age_s:
+        return False
+    paired_rate = (paired_fills * 2) / total_fills
+    return paired_rate < min_paired_rate
 
 
 # -- Fill simulation helpers -----------------------------------------------
