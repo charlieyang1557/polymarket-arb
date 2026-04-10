@@ -98,6 +98,32 @@ def unrealized_pnl_cents(yes_queue: list[int], no_queue: list[int],
     return 0.0
 
 
+def hedge_urgency_offset(oldest_fill_time: datetime | None,
+                         now: datetime | None = None) -> int:
+    """Price improvement (cents) for hedging side based on time since fill.
+
+    Graduated escalation:
+      0-5 min:   0c (passive maker, preserve queue priority)
+      5-10 min:  1c (improve price, still maker)
+      10-15 min: 2c (accept breakeven)
+      15+ min:   5c (aggressive — accept loss to avoid settlement risk)
+
+    Returns offset to ADD to the reducing side's quote price.
+    """
+    if oldest_fill_time is None:
+        return 0
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elapsed_min = (now - oldest_fill_time).total_seconds() / 60
+    if elapsed_min < 5:
+        return 0
+    if elapsed_min < 10:
+        return 1
+    if elapsed_min < 15:
+        return 2
+    return 5
+
+
 @dataclass
 class SimOrder:
     """A simulated resting order."""
