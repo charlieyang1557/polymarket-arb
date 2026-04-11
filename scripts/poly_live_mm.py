@@ -1285,6 +1285,7 @@ def main():
     elapsed = time.time() - start
     total_rebates = sum(rebates_earned.values())
     net_pnl = gs.total_pnl  # realized_pnl already includes rebates
+    gross_pnl = net_pnl - total_rebates  # spread capture only (excludes rebates)
 
     print(f"\n{'='*70}")
     print(f"SESSION SUMMARY — POLYMARKET US {'DRY-RUN' if args.dry_run else 'LIVE'}")
