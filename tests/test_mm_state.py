@@ -122,3 +122,36 @@ def test_skewed_quotes_floor_clamps_extreme_skew():
     assert 100 - yes_p - no_p >= 1
     assert yes_p >= 1
     assert no_p >= 1
+
+
+# -- Adaptive gamma tests (Task 2) --
+from src.mm.state import compute_gamma
+
+
+def test_compute_gamma_no_inventory():
+    """No open inventory → baseline gamma."""
+    assert compute_gamma(oldest_fill_time=None) == 0.5
+
+
+def test_compute_gamma_fresh_fill():
+    """Fill 1 min ago → slight boost."""
+    now = datetime.now(timezone.utc)
+    fill_time = now - timedelta(minutes=1)
+    g = compute_gamma(oldest_fill_time=fill_time, now=now)
+    assert abs(g - 0.55) < 0.01  # 0.5 + 1 * 0.05
+
+
+def test_compute_gamma_10min_unhedged():
+    """10 min unhedged → gamma = 1.0."""
+    now = datetime.now(timezone.utc)
+    fill_time = now - timedelta(minutes=10)
+    g = compute_gamma(oldest_fill_time=fill_time, now=now)
+    assert abs(g - 1.0) < 0.01
+
+
+def test_compute_gamma_cap():
+    """100 min unhedged → capped at 2.0."""
+    now = datetime.now(timezone.utc)
+    fill_time = now - timedelta(minutes=100)
+    g = compute_gamma(oldest_fill_time=fill_time, now=now)
+    assert g == 2.0

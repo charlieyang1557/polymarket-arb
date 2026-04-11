@@ -148,6 +148,30 @@ def hedge_urgency_offset(oldest_fill_time: datetime | None,
     return 5
 
 
+def compute_gamma(oldest_fill_time: datetime | None,
+                  now: datetime | None = None,
+                  base: float = 0.5,
+                  ramp: float = 0.05,
+                  cap: float = 2.0) -> float:
+    """Adaptive inventory-skew gamma based on fill age.
+
+    Ramps up from base when holding unhedged inventory:
+      0 min: 0.5c/contract (baseline)
+      10 min: 1.0c/contract
+      20 min: 1.5c/contract
+      30+ min: capped at 2.0c/contract
+
+    Supplements hedge_urgency_offset (which adds an absolute price improvement).
+    This widens the passive skew so the reducing side naturally attracts fills.
+    """
+    if oldest_fill_time is None:
+        return base
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elapsed_min = (now - oldest_fill_time).total_seconds() / 60
+    return min(base + elapsed_min * ramp, cap)
+
+
 @dataclass
 class SimOrder:
     """A simulated resting order."""

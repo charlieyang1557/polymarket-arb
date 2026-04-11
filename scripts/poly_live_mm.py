@@ -42,6 +42,7 @@ from src.mm.state import (
     MarketState, GlobalState, SimOrder,
     obi_microprice, skewed_quotes, dynamic_spread,
     maker_fee_cents, unrealized_pnl_cents, hedge_urgency_offset,
+    compute_gamma,
 )
 from src.mm.engine import (
     MMEngine, discord_notify, clamp_order_size, soft_close_exit_price,
@@ -1456,11 +1457,12 @@ def _manage_live_quotes(live_mgr: LiveOrderManager, ms: MarketState,
     vol_offset = dynamic_spread(ms.midpoint_history, now) - market_spread
     vol_offset = max(0, vol_offset)
 
-    # Skewed quotes
+    # Skewed quotes — adaptive gamma scales with fill age
+    gamma = compute_gamma(ms.oldest_fill_time, now)
     yes_quote, no_quote = skewed_quotes(
         fair=midpoint, best_yes_bid=best_yes_bid,
         best_no_bid=best_no_bid,
-        net_inventory=net_inventory, gamma=0.5,
+        net_inventory=net_inventory, gamma=gamma,
         quote_offset=vol_offset)
 
     slug_orders = curr_orders.get(slug, {})
