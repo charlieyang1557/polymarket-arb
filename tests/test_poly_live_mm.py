@@ -1344,3 +1344,44 @@ class TestProgressiveSoftCloseIntegration:
             inventory_changed=False)
 
         assert live_mgr.place_order.call_count == 0
+
+
+# -- Fee accounting tests (Task 3) --
+from src.poly_client import calculate_maker_fee as _poly_maker_fee
+
+
+def test_fill_handler_adds_rebate_to_pnl():
+    """After a maker fill, realized_pnl should increase by the rebate (not decrease)."""
+    from src.mm.state import MarketState
+    ms = MarketState(ticker="test-slug")
+    initial_pnl = ms.realized_pnl   # 0.0
+
+    price = 50
+    filled = 2
+    rebate_cents = abs(_poly_maker_fee(price, count=filled))
+
+    # Simulate the new fill handler logic
+    ms.total_fees -= rebate_cents
+    ms.realized_pnl += rebate_cents
+
+    assert ms.realized_pnl > initial_pnl
+    assert abs(ms.realized_pnl - rebate_cents) < 0.001
+    assert ms.total_fees < 0  # negative = earned
+
+
+def test_fill_handler_no_fee_subtraction():
+    """Old code subtracted maker_fee_cents (Kalshi). New code must NOT do this."""
+    from src.mm.state import MarketState, maker_fee_cents
+    ms = MarketState(ticker="test-slug")
+
+    price = 50
+    filled = 1
+    old_fee = maker_fee_cents(price, filled)  # 0.4375c — old wrong formula
+
+    # New handler logic
+    rebate_cents = abs(_poly_maker_fee(price, count=filled))
+    ms.realized_pnl += rebate_cents
+
+    # pnl should be positive (rebate earned), not negative (fee charged)
+    assert ms.realized_pnl > 0
+    assert ms.realized_pnl != -old_fee

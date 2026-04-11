@@ -41,7 +41,7 @@ import src.mm.state as _mm_state
 from src.mm.state import (
     MarketState, GlobalState, SimOrder,
     obi_microprice, skewed_quotes, dynamic_spread,
-    maker_fee_cents, unrealized_pnl_cents, hedge_urgency_offset,
+    unrealized_pnl_cents, hedge_urgency_offset,
     compute_gamma,
 )
 from src.mm.engine import (
@@ -949,10 +949,10 @@ def main():
                 filled = f["filled"]
                 price = f["price_cents"]
 
-                # Record fill in local state
-                fee = maker_fee_cents(price, filled)
-                ms.total_fees += fee
-                ms.realized_pnl -= fee
+                # Record fill — Polymarket makers earn REBATE (not pay fee)
+                rebate_cents = abs(calculate_maker_fee(price, count=filled))
+                ms.total_fees -= rebate_cents   # negative = net earned
+                ms.realized_pnl += rebate_cents  # rebate adds to realized P&L
 
                 inv_changed_slugs.add(slug)
                 ms.total_fills += filled
@@ -966,11 +966,10 @@ def main():
                     ms.oldest_fill_time = datetime.now(timezone.utc)
 
                 inv = ms.net_inventory
-                rebate = abs(calculate_maker_fee(price, count=filled))
-                rebates_earned[slug] = rebates_earned.get(slug, 0) + rebate
+                rebates_earned[slug] = rebates_earned.get(slug, 0) + rebate_cents
 
                 print(f"  >>> FILL [MAKER] {slug} {side}_bid "
-                      f"{filled}@{price}c fee={fee:.2f}c inv={inv} "
+                      f"{filled}@{price}c rebate=+{rebate_cents:.2f}c inv={inv} "
                       f"pnl={ms.realized_pnl:.1f}c", flush=True)
                 discord_notify(
                     f"**{'DRY' if args.dry_run else 'LIVE'} MM Fill** "
@@ -981,7 +980,7 @@ def main():
                 try:
                     db.insert_fill(
                         order_id=None, ticker=slug, side=f"{side}_bid",
-                        price=price, size=filled, fee=fee, is_taker=0,
+                        price=price, size=filled, fee=-rebate_cents, is_taker=0,
                         inventory_after=inv,
                         filled_at=datetime.now(timezone.utc).isoformat())
                     gs.db_error_count = 0
@@ -1285,8 +1284,7 @@ def main():
     # Session summary
     elapsed = time.time() - start
     total_rebates = sum(rebates_earned.values())
-    gross_pnl = gs.total_pnl
-    net_pnl = gross_pnl + total_rebates
+    net_pnl = gs.total_pnl  # realized_pnl already includes rebates
 
     print(f"\n{'='*70}")
     print(f"SESSION SUMMARY — POLYMARKET US {'DRY-RUN' if args.dry_run else 'LIVE'}")
