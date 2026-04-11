@@ -5,112 +5,139 @@ from src.mm.state import skewed_quotes, maker_fee_cents
 
 GAMMA = 0.5  # cents per contract
 
-# All tests use best_yes_bid=45, best_no_bid=50 (5c gross spread)
-# to ensure profitability floor doesn't interfere with pure skew tests.
+# All tests use best_yes_bid=45, best_no_bid=50, fair=48.0:
+#   market_spread = 100 - 50 - 45 = 5, half_spread = max(1, 5//2) = 2
+#   yes_base = floor(48 - 2) = 46, no_base = floor(52 - 2) = 50
+# (fair-anchored, not BBO-anchored)
 
 
 # -- Basic skew behavior --
 
 def test_skew_zero_at_zero_inventory():
-    """No inventory → no skew, quotes symmetric around fair price."""
+    """No inventory → no skew, quotes at fair ± half_spread.
+
+    fair=48, half_spread=2: YES=floor(48-2)=46, NO=floor(52-2)=50.
+    """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=0, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 45
+    assert yes_price == 46
     assert no_price == 50
 
 
 def test_skew_positive_inventory():
     """Long YES (inv=4) → lower YES bid, raise NO bid to attract NO fills.
 
-    skew = 4 * 0.5 = 2c
-    YES bid: 45 - 2 = 43
-    NO bid:  50 + 2 = 52
+    skew_raw = 4 * 0.5 = 2c
+    YES bid: floor(48 - 2 - 2) = 44
+    NO bid:  floor(52 - 2 + 2) = 52
     """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=4, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 43
+    assert yes_price == 44
     assert no_price == 52
 
 
 def test_skew_negative_inventory():
     """Long NO (inv=-4) → raise YES bid, lower NO bid to attract YES fills.
 
-    skew = -4 * 0.5 = -2c
-    YES bid: 45 - (-2) = 47
-    NO bid:  50 + (-2) = 48
+    skew_raw = -4 * 0.5 = -2c
+    YES bid: floor(48 - 2 - (-2)) = 48
+    NO bid:  floor(52 - 2 + (-2)) = 48
     """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=-4, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 47
+    assert yes_price == 48
     assert no_price == 48
 
 
 def test_skew_at_inv_10():
     """At inv=10, skew=5c — significant but not extreme.
-    yes=40, no=55, gross=5 → still profitable, floor doesn't trigger."""
+
+    YES: floor(48-2-5)=41, NO: floor(52-2+5)=55, gross=4 → profitable, floor doesn't trigger.
+    """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=10, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 40  # 45 - 5
-    assert no_price == 55   # 50 + 5
+    assert yes_price == 41  # floor(48 - 2 - 5)
+    assert no_price == 55   # floor(52 - 2 + 5)
 
 
 def test_skew_floor_at_1c():
-    """Skew can't push price below 1c."""
+    """Wide spread (47c) with large skew — price computed from fair, not BBO.
+
+    best_yes_bid=3, best_no_bid=50, fair=48:
+      market_spread = 100-50-3 = 47, half_spread = max(1, 23) = 23
+      skew_raw = 20*0.5 = 10
+      YES: max(1, floor(48-23-10)) = max(1, 15) = 15
+    The max(1,...) floor is still enforced but fair-anchoring means we're
+    at 15c, not 1c.
+    """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=3, best_no_bid=50,
         net_inventory=20, gamma=GAMMA, quote_offset=0)
-    # skew = 10c, 3 - 10 = -7 → clamp to 1
-    assert yes_price == 1
+    assert yes_price == 15
 
 
 def test_skew_with_quote_offset():
-    """Live-game offset stacks with skew."""
+    """Live-game offset stacks with skew.
+
+    skew_raw=2, quote_offset=2:
+      YES: floor(48 - 2 - 2 - 2) = 42
+      NO:  floor(52 - 2 - 2 + 2) = 50
+    """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=4, gamma=GAMMA, quote_offset=2)
-    # offset=2, skew=2: yes = 45 - 2 - 2 = 41, no = 50 - 2 + 2 = 50
-    assert yes_price == 41
+    assert yes_price == 42
     assert no_price == 50
 
 
 def test_skew_small_inventory():
-    """At inv=1, skew=0.5c → floor makes YES visible, NO unchanged."""
+    """At inv=1, skew_raw=0.5c → fractional floor applies.
+
+    YES: floor(48 - 2 - 0.5) = floor(45.5) = 45
+    NO:  floor(52 - 2 + 0.5) = floor(50.5) = 50
+    """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=1, gamma=GAMMA, quote_offset=0)
-    # skew=0.5: floor(44.5)=44, floor(50.5)=50
-    assert yes_price == 44
+    assert yes_price == 45
     assert no_price == 50
 
 
 def test_skew_inv_2_visible():
-    """At inv=2, skew=1c — first visible adjustment."""
+    """At inv=2, skew_raw=1c — first integer adjustment.
+
+    YES: floor(48 - 2 - 1) = 45
+    NO:  floor(52 - 2 + 1) = 51
+    """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=2, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 44  # 45 - 1
-    assert no_price == 51   # 50 + 1
+    assert yes_price == 45  # floor(48 - 2 - 1)
+    assert no_price == 51   # floor(52 - 2 + 1)
 
 
 # -- Profitability floor --
 
 def test_profitability_floor_reduces_extreme_skew():
-    """Tight spread (2c gross) + high inv should trigger floor.
-    best_yes_bid=48, best_no_bid=50, sum=98, gross=2.
-    inv=8, skew=4: yes=44, no=54, sum=98, gross=2.
-    min_fees at mid~49 = 2*ceil(0.0175*49*51/100) = 2*1 = 2c.
-    Need gross >= 3. Floor should reduce skew."""
+    """Tight spread + high inv: profitability floor enforces gross >= 1c.
+
+    fair=49, best_yes_bid=48, best_no_bid=50:
+      market_spread = 100-50-48 = 2, half_spread = max(1, 1) = 1
+      inv=8, skew_raw=4: YES=floor(49-1-4)=44, NO=floor(51-1+4)=54
+      gross = 100-44-54 = 2 >= 1 → floor is a no-op here.
+    Polymarket makers earn rebates — no positive fee cost to cover.
+    Floor only requires gross >= 1c (not fees+1c).
+    """
     yes_price, no_price = skewed_quotes(
         fair=49.0, best_yes_bid=48, best_no_bid=50,
         net_inventory=8, gamma=GAMMA, quote_offset=0)
     gross = 100 - yes_price - no_price
-    mid = (yes_price + no_price) / 2
-    min_fees = 2 * math.ceil(0.0175 * mid / 100 * (1 - mid / 100) * 100)
-    assert gross >= min_fees + 1, f"gross={gross}, min_fees={min_fees}"
+    assert gross >= 1, f"gross={gross} < 1"
 
 
 def test_profitability_floor_preserves_skew_direction():
@@ -125,13 +152,18 @@ def test_profitability_floor_preserves_skew_direction():
 
 
 def test_profitability_floor_does_not_affect_small_skew():
-    """Wide spread + small skew = already profitable, floor is no-op."""
+    """Wide spread + small skew = already profitable, floor is no-op.
+
+    fair=48, market_spread=5, half_spread=2, inv=2, skew_raw=1:
+      YES: floor(48-2-1) = 45
+      NO:  floor(52-2+1) = 51
+      gross = 100-45-51 = 4 >= 1 → floor is a no-op.
+    """
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=2, gamma=GAMMA, quote_offset=0)
-    # 5c gross spread, skew=1c doesn't threaten profitability
-    assert yes_price == 44  # 45 - 1
-    assert no_price == 51   # 50 + 1
+    assert yes_price == 45  # floor(48 - 2 - 1)
+    assert no_price == 51   # floor(52 - 2 + 1)
 
 
 def test_profitability_floor_narrow_spread_high_inv():
