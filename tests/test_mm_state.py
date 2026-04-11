@@ -76,3 +76,49 @@ def test_is_soft_close_false_when_live():
 def test_is_soft_close_empty():
     ms = MarketState(ticker="X")
     assert ms.is_soft_close is False
+
+
+# -- Fair-value anchoring tests (Task 1) --
+from src.mm.state import skewed_quotes
+
+def test_skewed_quotes_flat_anchors_to_fair():
+    """With no skew, quotes are centered on fair value."""
+    # fair=52, spread=4 (best_yes_bid=48, best_no_bid=48 → yes_ask=52)
+    # half_spread=4//2=2, yes_price=52-2=50, no_price=(100-52)-2=46
+    yes_p, no_p = skewed_quotes(fair=52.0, best_yes_bid=48, best_no_bid=48,
+                                 net_inventory=0, gamma=0.5)
+    assert yes_p == 50
+    assert no_p == 46
+
+def test_skewed_quotes_fair_above_mid_raises_yes_bid():
+    """OBI fair above midpoint → YES bid is above midpoint."""
+    # fair=53, spread=4 → half=2 → yes_price=51, no_price=45
+    yes_p, no_p = skewed_quotes(fair=53.0, best_yes_bid=48, best_no_bid=48,
+                                 net_inventory=0)
+    assert yes_p == 51
+    assert no_p == 45
+
+def test_skewed_quotes_skew_symmetric():
+    """Positive inventory skews YES down, NO up by equal amount."""
+    yes_p_flat, no_p_flat = skewed_quotes(fair=50.0, best_yes_bid=48,
+                                           best_no_bid=48, net_inventory=0)
+    yes_p_long, no_p_long = skewed_quotes(fair=50.0, best_yes_bid=48,
+                                           best_no_bid=48, net_inventory=2,
+                                           gamma=1.0)
+    # skew_raw = 2*1.0 = 2. YES down by 2, NO up by 2.
+    assert yes_p_long == yes_p_flat - 2
+    assert no_p_long == no_p_flat + 2
+
+def test_skewed_quotes_polymarket_floor_gross_1c():
+    """Quotes always produce >= 1c gross (Polymarket floor, not Kalshi fee)."""
+    yes_p, no_p = skewed_quotes(fair=50.0, best_yes_bid=49, best_no_bid=49,
+                                 net_inventory=0, gamma=0.5)
+    assert 100 - yes_p - no_p >= 1
+
+def test_skewed_quotes_floor_clamps_extreme_skew():
+    """Very large inventory skew gets clamped by profitability floor."""
+    yes_p, no_p = skewed_quotes(fair=50.0, best_yes_bid=48, best_no_bid=48,
+                                 net_inventory=100, gamma=1.0)
+    assert 100 - yes_p - no_p >= 1
+    assert yes_p >= 1
+    assert no_p >= 1

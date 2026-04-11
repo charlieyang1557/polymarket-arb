@@ -63,30 +63,33 @@ def skewed_quotes(fair: float, best_yes_bid: int, best_no_bid: int,
                   quote_offset: int = 0) -> tuple[int, int]:
     """Compute skewed bid prices for YES and NO sides.
 
-    Continuous skew proportional to inventory:
-      skew = net_inventory * gamma  (positive = long YES)
-      YES bid = best_yes_bid - offset - skew  (less aggressive when long)
-      NO bid  = best_no_bid  - offset + skew  (more aggressive when long)
+    Anchors to OBI fair value (not BBO). Quotes are placed at:
+      YES bid = fair - half_spread - quote_offset - skew
+      NO bid  = (100-fair) - half_spread - quote_offset + skew
 
-    Returns (yes_bid_price, no_bid_price) as integers, clamped to >= 1.
+    Where half_spread = max(1, market_spread // 2).
+
+    Positive net_inventory = long YES:
+      skew > 0 → YES bid lower (less aggressive) + NO bid higher (more aggressive)
+
+    Profitability floor (Polymarket): gross = 100 - yes - no >= 1c.
+    Polymarket makers receive rebates, so no fee-based floor needed.
     """
     skew_raw = net_inventory * gamma
-    # Both sides are bids. Floor both to be conservative:
-    # - Lower YES bid = cheaper entry on YES
-    # - Lower NO bid = higher effective YES ask (100 - no_bid)
-    # This guarantees >= 1c gross per round-trip with fractional skew.
-    yes_price = max(1, math.floor(best_yes_bid - quote_offset - skew_raw))
-    no_price = max(1, math.floor(best_no_bid - quote_offset + skew_raw))
 
-    # Profitability floor: reduce skew until round-trip covers fees + 1c
-    mid = (yes_price + no_price) / 2
-    min_fees = 2 * math.ceil(0.0175 * mid / 100 * (1 - mid / 100) * 100)
-    while (100 - yes_price - no_price) < min_fees + 1 and abs(skew_raw) > 0.1:
+    # Derive half-spread from current book (= yes_ask - best_yes_bid) // 2
+    market_spread = 100 - best_no_bid - best_yes_bid  # = yes_ask - best_yes_bid
+    half_spread = max(1, market_spread // 2)
+
+    yes_price = max(1, math.floor(fair - half_spread - quote_offset - skew_raw))
+    no_price = max(1, math.floor((100 - fair) - half_spread - quote_offset + skew_raw))
+
+    # Profitability floor: gross round-trip must be >= 1c
+    # (Polymarket makers earn rebates — no positive fee cost to cover)
+    while (100 - yes_price - no_price) < 1 and abs(skew_raw) > 0.1:
         skew_raw *= 0.8
-        yes_price = max(1, math.floor(best_yes_bid - quote_offset - skew_raw))
-        no_price = max(1, math.floor(best_no_bid - quote_offset + skew_raw))
-        mid = (yes_price + no_price) / 2
-        min_fees = 2 * math.ceil(0.0175 * mid / 100 * (1 - mid / 100) * 100)
+        yes_price = max(1, math.floor(fair - half_spread - quote_offset - skew_raw))
+        no_price = max(1, math.floor((100 - fair) - half_spread - quote_offset + skew_raw))
 
     return yes_price, no_price
 
