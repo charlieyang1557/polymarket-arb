@@ -1020,6 +1020,46 @@ def main():
                 elif ms.net_inventory == 0 and slug in hedge_alert_sent:
                     hedge_alert_sent.discard(slug)
 
+            # Priority: immediately manage quotes for fill-affected slugs
+            # that are NOT the round-robin slug for this tick.
+            # Reduces reducing-side quote latency from ~N*10s to ~0s.
+            if inv_changed_slugs:
+                rr_slug = active_slugs[cycle % len(active_slugs)] if active_slugs else None
+                priority_slugs = [s for s in list(inv_changed_slugs)
+                                  if s != rr_slug and gs.markets[s].active]
+                for p_slug in priority_slugs:
+                    p_ms = gs.markets[p_slug]
+                    if p_ms.paused_until and datetime.now(timezone.utc) < p_ms.paused_until:
+                        continue
+                    try:
+                        p_book = client.get_orderbook(p_slug, depth=20)
+                    except Exception:
+                        continue
+                    p_fp = p_book.get("orderbook_fp", {})
+                    p_yes_raw = p_fp.get("yes_dollars", [])
+                    p_no_raw = p_fp.get("no_dollars", [])
+                    if not p_yes_raw or not p_no_raw:
+                        continue
+                    p_yes_bids = [[round(float(pr) * 100), int(float(q))]
+                                  for pr, q in p_yes_raw]
+                    p_no_bids = [[round(float(pr) * 100), int(float(q))]
+                                 for pr, q in p_no_raw]
+                    p_best_yes = p_yes_bids[-1][0]
+                    p_best_no = p_no_bids[-1][0]
+                    p_yes_ask = 100 - p_best_no
+                    p_yes_depth = sum(q for pp, q in p_yes_bids if pp >= p_best_yes - 3)
+                    p_no_depth = sum(q for pp, q in p_no_bids if pp >= p_best_no - 3)
+                    p_mid = obi_microprice(p_best_yes, p_yes_ask, p_yes_depth, p_no_depth)
+                    _manage_live_quotes(
+                        live_mgr, p_ms, p_best_yes, p_best_no,
+                        p_yes_ask, p_mid, p_yes_bids, p_no_bids,
+                        curr_orders, args.size, risk["max_inventory"],
+                        time_soft_close=False,
+                        inventory_changed=True)
+                    inv_changed_slugs.discard(p_slug)
+                    print(f"  PRIORITY_QUOTE {p_slug} inv={p_ms.net_inventory}",
+                          flush=True)
+
             live_mgr.update_prev_orders(curr_orders)
 
             # Process each market
