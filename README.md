@@ -1,22 +1,22 @@
 # polymarket-arb
 
-Automated trading system for **Polymarket US** and **Kalshi** prediction markets. Built, deployed live, and systematically tested four strategies over 12 days (Mar 26 – Apr 7, 2026). Concluded that no retail-accessible edge exists at our capital scale.
+Automated trading system for **Polymarket US** and **Kalshi** prediction markets. Built, deployed live, and systematically tested four strategies (Mar 10 – Apr 7, 2026). Approach A+B adverse-selection mitigations deployed Apr 10 — kill condition pending 5-session validation.
 
-**[Full Project Report](docs/polymarket-project-report.html)**
+**[Full Project Report](https://htmlpreview.github.io/?https://github.com/charlieyang1557/polymarket-arb/blob/main/docs/polymarket-project-report.html)**
 
 ## Results
 
 | Metric | Value |
 |--------|-------|
-| Duration | 28 days (Mar 10 – Apr 7, 2026) |
+| Duration | Mar 10, 2026 – Present |
 | Capital deployed | $28.03 |
-| Final balance | $28.68 (+$0.65) |
+| Balance (Apr 7) | $28.68 (+$0.65) |
 | Live fills | 36 maker fills across 5 sessions |
-| Strategies tested | 4 (all concluded negative or neutral EV) |
-| Commits | 131 |
-| Unit tests | 596 across 36 test files |
+| Strategies tested | 4 (negative or neutral EV; A+B mitigations live Apr 10) |
+| Commits | ~140 |
+| Unit tests | 639 across 36+ test files |
 
-**Key finding**: Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). No retail-accessible edge exists in passive market making, directional taker strategies, or cross-market correlation trading at $25-30 capital.
+**Key finding (Apr 7)**: Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). Adverse selection drove a ~26% round-trip fill rate. **Apr 10**: Six targeted fixes deployed (fair-value anchoring, adaptive gamma, near-touch OBI, fee model fix, priority quoting, kill condition tracker). Kill condition: strategy is sunset if round-trip rate stays below 35% over 5 sessions.
 
 ## Strategies Tested
 
@@ -35,7 +35,7 @@ Monitor real-time market events for momentum signals. Abandoned after Strategy 1
 ## Architecture
 
 ```
-# Market Making (concluded — code preserved)
+# Market Making (A+B improvements live Apr 10)
 scripts/poly_live_mm.py          Live MM engine (real orders via Polymarket SDK)
 scripts/poly_paper_mm.py         Paper trading (simulated fills)
 scripts/poly_daily_scan.py       Market scanner (events API, rank-based scoring)

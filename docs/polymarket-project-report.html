@@ -397,15 +397,15 @@ td.mono {
 
 <!-- HERO -->
 <header class="hero">
-  <div class="hero-label">Project Retrospective</div>
+  <div class="hero-label">Live Project Report</div>
   <h1>Polymarket US<br>Automated Trading Bot</h1>
   <div class="hero-sub">
-    A systematic exploration of market-making, directional, and cross-market strategies on CFTC-regulated prediction markets — from hypothesis to empirical verdict.
+    A systematic exploration of market-making, directional, and cross-market strategies on CFTC-regulated prediction markets — with ongoing adversarial-selection mitigations as of April 2026.
   </div>
   <div class="hero-meta">
     <div class="hero-meta-item">
       <div class="hero-meta-label">Duration</div>
-      <div class="hero-meta-value">Mar 10 — Apr 7, 2026</div>
+      <div class="hero-meta-value">Mar 10 — Present</div>
     </div>
     <div class="hero-meta-item">
       <div class="hero-meta-label">Capital Deployed</div>
@@ -431,11 +431,11 @@ td.mono {
   </p>
   <div class="stat-grid">
     <div class="stat-card">
-      <div class="stat-value">131</div>
+      <div class="stat-value">140</div>
       <div class="stat-label">Git Commits</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">596</div>
+      <div class="stat-value">639</div>
       <div class="stat-label">Unit Tests</div>
     </div>
     <div class="stat-card">
@@ -448,8 +448,12 @@ td.mono {
     </div>
   </div>
   <div class="callout">
-    <div class="callout-title">Key Finding</div>
+    <div class="callout-title">Key Finding — As of Apr 7</div>
     <p>Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). No retail-accessible edge exists in passive market making, directional taker strategies, or cross-market correlation trading at our capital scale ($25-30).</p>
+  </div>
+  <div class="callout" style="margin-top:16px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.07);">
+    <div class="callout-title" style="color:var(--amber);">Ongoing — Apr 10: Approach A+B Improvements</div>
+    <p>Six targeted fixes to the market-making engine were deployed on Apr 10: fair-value anchoring (de-couple quotes from BBO adverse selection), adaptive gamma, near-touch OBI depth, Polymarket fee model correction, priority quote management on fill, and a kill condition tracker. Round-trip fill rate target: &gt;35% over 5 sessions. Kill condition fires if not met.</p>
   </div>
 </section>
 
@@ -504,9 +508,9 @@ td.mono {
     </thead>
     <tbody>
       <tr><td><strong>L1</strong></td><td>Per-order</td><td>Fat-finger price check (±10% of mid), max contract size validation</td></tr>
-      <tr><td><strong>L2</strong></td><td>Inventory</td><td>Continuous skew (gamma=0.5c), single-side cap, time-based flatten threshold</td></tr>
+      <tr><td><strong>L2</strong></td><td>Inventory</td><td>Adaptive gamma (0.5→2.0c ramp), single-side cap, time-based flatten threshold</td></tr>
       <tr><td><strong>L3</strong></td><td>Session PnL</td><td>Daily loss limit $5, consecutive loss pause, per-market exit at -$10</td></tr>
-      <tr><td><strong>L4</strong></td><td>System</td><td>SOFT_CLOSE (15min pre-game), EXIT_MARKET at game start, API disconnect cancel-all</td></tr>
+      <tr><td><strong>L4</strong></td><td>System</td><td>SOFT_CLOSE (15min pre-game), EXIT_MARKET at game start, API disconnect cancel-all, kill condition (5-session rolling)</td></tr>
     </tbody>
   </table>
 </section>
@@ -526,7 +530,8 @@ td.mono {
     </div>
     <div class="strategy-body">
       <p><strong>Thesis:</strong> Quote both sides of pre-game sports markets, capture the bid-ask spread, earn maker rebates (25% of taker fee), and exit flat before game start.</p>
-      <p><strong>Result:</strong> 36 maker fills across 5 live sessions (Apr 3-7). Round-trip completion rate ~37%. Direction accuracy of fills showed consistent adverse selection — we only get filled when the market is about to move against us. SOFT_CLOSE works mechanically but can't force counterparty fills.</p>
+      <p><strong>Result:</strong> 36 maker fills across 5 live sessions (Apr 3-7). Round-trip completion rate ~26%. Direction accuracy of fills showed consistent adverse selection — we only get filled when the market is about to move against us. SOFT_CLOSE works mechanically but can't force counterparty fills.</p>
+      <p><strong>Ongoing (Apr 10):</strong> Six improvements deployed targeting the two root causes — stale Kalshi-inherited parameters and BBO-anchored quotes. See <em>§05 Approach A+B Improvements</em> below. Kill condition: &gt;35% round-trip fill rate over 5 sessions.</p>
     </div>
     <div class="strategy-evidence">Live Session Data (Apr 3-7):
   Total fills: 36  |  Round-trips: 7
@@ -644,12 +649,112 @@ td.mono {
       <div class="timeline-title">Cross-market correlation study</div>
       <div class="timeline-desc">Built logger (354K snapshots) + analyzer with direction accuracy and simulated PnL. Result: 50% accuracy = coin flip. Strategy eliminated.</div>
     </div>
+    <div class="timeline-item">
+      <div class="timeline-date">Apr 10</div>
+      <div class="timeline-title">Approach A+B: logic, speed &amp; adverse-selection fixes</div>
+      <div class="timeline-desc">Six targeted improvements deployed: fair-value anchoring (OBI microprice instead of BBO), adaptive gamma (0.5→2.0c ramp), near-touch OBI depth (3c filter), Polymarket fee model fix (rebate instead of Kalshi cost), priority quote management on fill (immediate reduce-side quote), and kill condition tracker (session stats JSON + Discord alert). Kill condition: &gt;35% round-trip rate after 5 sessions.</div>
+    </div>
+  </div>
+</section>
+
+<!-- APPROACH A+B IMPROVEMENTS -->
+<section>
+  <div class="section-num">05</div>
+  <h2>Approach A+B — Apr 10 Improvements</h2>
+  <p class="section-intro">
+    Two root causes drove the ~26% round-trip fill rate: bugs inherited from the Kalshi codebase silently degrading quote quality, and quotes anchored to the BBO rather than fair value. Six fixes address both.
+  </p>
+
+  <h3>Approach A — Bug Fixes &amp; Quick Wins</h3>
+
+  <table>
+    <thead>
+      <tr><th>Fix</th><th>Problem</th><th>Resolution</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>A1: Fee floor</strong></td>
+        <td>Profitability floor used Kalshi maker rate (0.0175). Polymarket makers receive a rebate — any gross spread &gt;0 is profitable.</td>
+        <td>Replaced Kalshi formula with <code>100 - yes_price - no_price ≥ 1</code>. Removed the 0.0175 constant.</td>
+      </tr>
+      <tr>
+        <td><strong>A2: Fee accounting</strong></td>
+        <td>Fill handler subtracted a Kalshi fee that isn't charged, then tracked rebate separately — never crediting it to realized PnL.</td>
+        <td>Removed <code>maker_fee_cents()</code> call. <code>calculate_maker_fee()</code> (returns negative = rebate) now adds magnitude to <code>ms.realized_pnl</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>A3: Midpoint history cap</strong></td>
+        <td>Cap was 7 entries. Dynamic spread looks back 5 min at 10s ticks — needs 30 entries minimum.</td>
+        <td>Changed cap from 7 → 30.</td>
+      </tr>
+      <tr>
+        <td><strong>A4: Near-touch OBI depth</strong></td>
+        <td>OBI summed entire order book. Whale orders 10-20c from touch dominated the microprice calculation.</td>
+        <td>Filter each book side to levels within 3c of the best bid before summing. Matches scanner filter logic.</td>
+      </tr>
+      <tr>
+        <td><strong>A5: Priority quote on fill</strong></td>
+        <td>Round-robin scheduling delayed reducing-side quote by up to 30s after a fill (N markets × 10s tick).</td>
+        <td>After fill detection, immediately call <code>_manage_live_quotes()</code> for any slug with a fill this tick, bypassing round-robin for that slug.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Approach B — Fair-Value Anchoring &amp; Adaptive Gamma</h3>
+
+  <table>
+    <thead>
+      <tr><th>Fix</th><th>Problem</th><th>Resolution</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>B1: Fair-value anchoring</strong></td>
+        <td><code>skewed_quotes()</code> anchored YES bid to <code>best_yes_bid</code> and NO bid to <code>best_no_bid</code>. BBO shifts caused quotes to follow adverse selection deeper.</td>
+        <td>Anchor to OBI microprice (<code>fair</code>): <code>half_spread = max(1, market_spread // 2)</code>, <code>yes_bid = fair - half_spread - skew</code>. If BBO crosses our fair, we sit away rather than following.</td>
+      </tr>
+      <tr>
+        <td><strong>B2: Adaptive gamma</strong></td>
+        <td><code>gamma=0.5</code> hardcoded. Stale unhedged inventory needed more aggressive skew to attract hedge fills sooner.</td>
+        <td>New <code>compute_gamma(oldest_fill_time)</code>: ramps from 0.5c to 2.0c/contract over 30 minutes (0.05c/min), capped at 2.0.</td>
+      </tr>
+      <tr>
+        <td><strong>B3: Kill condition tracker</strong></td>
+        <td>No systematic exit criterion — strategy could persist indefinitely with no measurement.</td>
+        <td>Session-end writes to <code>data/session_stats.json</code>. On startup, reads last 5 sessions: if avg round-trip rate &lt;35% → Discord alert to consider sunsetting.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="code-block">
+    <div class="code-block-label">Fair-Value Anchoring — skewed_quotes() (src/mm/state.py)</div>
+    <pre><span class="keyword">def</span> <span class="string">skewed_quotes</span>(fair, best_yes_bid, best_no_bid, net_inventory, gamma=0.5):
+    skew_raw = net_inventory * gamma
+    market_spread = <span class="number">100</span> - best_no_bid - best_yes_bid
+    half_spread = max(<span class="number">1</span>, market_spread // <span class="number">2</span>)
+    yes_price = max(<span class="number">1</span>, math.floor(fair - half_spread - skew_raw))
+    no_price  = max(<span class="number">1</span>, math.floor((<span class="number">100</span> - fair) - half_spread + skew_raw))
+    <span class="comment"># Profitability floor: reduce skew until gross spread ≥ 1c</span>
+    <span class="keyword">while</span> (<span class="number">100</span> - yes_price - no_price) &lt; <span class="number">1</span> <span class="keyword">and</span> abs(skew_raw) &gt; <span class="number">0.1</span>:
+        skew_raw *= <span class="number">0.8</span>
+        yes_price = max(<span class="number">1</span>, math.floor(fair - half_spread - skew_raw))
+        no_price  = max(<span class="number">1</span>, math.floor((<span class="number">100</span> - fair) - half_spread + skew_raw))
+    <span class="keyword">return</span> yes_price, no_price</pre>
+  </div>
+
+  <div class="code-block">
+    <div class="code-block-label">Adaptive Gamma — compute_gamma() (src/mm/state.py)</div>
+    <pre><span class="keyword">def</span> <span class="string">compute_gamma</span>(oldest_fill_time, now=None, base=<span class="number">0.5</span>, ramp=<span class="number">0.05</span>, cap=<span class="number">2.0</span>):
+    <span class="keyword">if</span> oldest_fill_time <span class="keyword">is</span> None:
+        <span class="keyword">return</span> base
+    elapsed_min = (now - oldest_fill_time).total_seconds() / <span class="number">60</span>
+    <span class="keyword">return</span> min(base + elapsed_min * ramp, cap)
+    <span class="comment"># 0 min → 0.5c | 10 min → 1.0c | 20 min → 1.5c | 30 min → 2.0c (cap)</span></pre>
   </div>
 </section>
 
 <!-- KEY BUGS -->
 <section>
-  <div class="section-num">05</div>
+  <div class="section-num">06</div>
   <h2>Critical Bugs & Fixes</h2>
   <p class="section-intro">
     Production trading exposed bugs that no amount of paper testing would have found. Each was diagnosed from live logs and fixed with tests.
@@ -702,7 +807,7 @@ td.mono {
 
 <!-- KEY LEARNINGS -->
 <section>
-  <div class="section-num">06</div>
+  <div class="section-num">07</div>
   <h2>Key Learnings</h2>
   <p class="section-intro">
     Lessons applicable to any retail quantitative trading project, regardless of asset class.
@@ -752,7 +857,7 @@ td.mono {
 
 <!-- FINANCIAL SUMMARY -->
 <section>
-  <div class="section-num">07</div>
+  <div class="section-num">08</div>
   <h2>Financial Summary</h2>
 
   <div class="stat-grid">
@@ -793,7 +898,7 @@ td.mono {
 
 <!-- ASSETS DELIVERED -->
 <section>
-  <div class="section-num">08</div>
+  <div class="section-num">09</div>
   <h2>Assets Delivered</h2>
   <p class="section-intro">
     The engineering infrastructure is the primary deliverable. It is fully operational and platform-agnostic — ready to be re-deployed if a viable strategy is identified.
@@ -818,7 +923,7 @@ td.mono {
 │   ├── mm/risk.py               <span class="comment"># 4-layer risk management</span>
 │   ├── mm/db.py                 <span class="comment"># SQLite persistence</span>
 │   └── strategy_a/              <span class="comment"># De-vig, team matching, odds DB</span>
-├── tests/                       <span class="comment"># 596 tests across 36 files</span>
+├── tests/                       <span class="comment"># 639 tests across 36+ files</span>
 ├── config/                      <span class="comment"># Daily targets, game schedule</span>
 ├── CLAUDE.md                    <span class="comment"># AI coding assistant instructions</span>
 └── requirements.txt</pre>
@@ -853,17 +958,17 @@ td.mono {
 
 <!-- CONCLUSION -->
 <section>
-  <div class="section-num">09</div>
+  <div class="section-num">10</div>
   <h2>Conclusion & Recommendations</h2>
   <p class="section-intro">
-    The project successfully validated that Polymarket US sports markets are too efficient for retail-scale automated trading. The infrastructure built is production-grade and transferable.
+    The project empirically validated that Polymarket US sports markets are too efficient for retail-scale automated trading at current settings. Approach A+B improvements (Apr 10) are the final active attempt to raise the round-trip fill rate above the 35% kill condition threshold.
   </p>
 
   <h3>What Worked</h3>
   <p>The engineering methodology — paper validate → live deploy → diagnose from logs → fix with tests → iterate — was highly effective. We went from zero to live trading in 5 days, and from "zero fills" to "fills were always happening but undetected" in one debugging session. The empirical rigor in killing strategies saved weeks of wasted effort.</p>
 
-  <h3>What Didn't Work</h3>
-  <p>The fundamental assumption that a retail trader with $25 can profitably market-make on institutional-grade sports prediction markets. The market microstructure (1-3c spreads, queue priority for large orders, Pinnacle-calibrated pricing) makes this structurally impossible without either significant capital ($10K+) for queue priority or ultra-low-latency infrastructure for in-play trading.</p>
+  <h3>What Didn't Work (Yet)</h3>
+  <p>The fundamental assumption that a retail trader with $25 can profitably market-make on institutional-grade sports prediction markets. The market microstructure (1-3c spreads, queue priority for large orders, Pinnacle-calibrated pricing) makes this structurally difficult without either significant capital ($10K+) for queue priority or ultra-low-latency infrastructure for in-play trading. The Apr 10 Approach A+B fixes target two correctable root causes — if the kill condition fires, this assessment becomes final.</p>
 
   <h3>Potential Future Directions</h3>
   <table>
@@ -876,9 +981,9 @@ td.mono {
     </tbody>
   </table>
 
-  <div class="callout" style="margin-top:32px;">
-    <div class="callout-title">Final Assessment</div>
-    <p>This project spent $0 learning that an edge doesn't exist — arguably the most valuable outcome. The alternative (deploying $10K without this validation) would have been far more expensive. The infrastructure, methodology, and empirical discipline built here are the real deliverables.</p>
+  <div class="callout" style="margin-top:32px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.07);">
+    <div class="callout-title" style="color:var(--amber);">Current Status — Pending Kill Condition</div>
+    <p>Approach A+B is live. Kill condition: if avg round-trip fill rate does not exceed 35% over the next 5 sessions, the strategy is sunset. If it does, further iteration is warranted. Either way, this project spent under $1 generating an empirical verdict that would have cost far more through trial-and-error with larger capital. The infrastructure, methodology, and empirical discipline built here are the real deliverables.</p>
   </div>
 </section>
 
