@@ -1385,3 +1385,107 @@ def test_fill_handler_no_fee_subtraction():
     # pnl should be positive (rebate earned), not negative (fee charged)
     assert ms.realized_pnl > 0
     assert ms.realized_pnl != -old_fee
+
+
+# -- Kill condition tests (Task 6) --
+import json
+import os
+import tempfile
+
+
+def test_record_session_stats_creates_file():
+    """record_session_stats writes to the stats file."""
+    from scripts.poly_live_mm import record_session_stats
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
+        path = tf.name
+    os.unlink(path)
+    try:
+        record_session_stats("session-1", total_fills=10, paired_fills=4,
+                              stats_path=path)
+        with open(path) as f:
+            data = json.load(f)
+        assert len(data) == 1
+        assert data[0]["session_id"] == "session-1"
+        assert data[0]["total_fills"] == 10
+        assert data[0]["paired_fills"] == 4
+        assert abs(data[0]["round_trip_rate"] - 0.8) < 0.001
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_record_session_stats_appends():
+    """Second call appends without overwriting."""
+    from scripts.poly_live_mm import record_session_stats
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
+        path = tf.name
+    os.unlink(path)
+    try:
+        record_session_stats("s1", total_fills=10, paired_fills=4, stats_path=path)
+        record_session_stats("s2", total_fills=8, paired_fills=2, stats_path=path)
+        with open(path) as f:
+            data = json.load(f)
+        assert len(data) == 2
+        assert data[1]["session_id"] == "s2"
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_check_kill_condition_not_triggered():
+    """5 sessions above 35% → no kill condition."""
+    from scripts.poly_live_mm import check_kill_condition
+    sessions = [{"round_trip_rate": 0.40}] * 5
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tf:
+        json.dump(sessions, tf)
+        path = tf.name
+    try:
+        result = check_kill_condition(stats_path=path)
+        assert result is None
+    finally:
+        os.unlink(path)
+
+
+def test_check_kill_condition_triggered():
+    """5 sessions all below 35% avg → kill condition fires."""
+    from scripts.poly_live_mm import check_kill_condition
+    sessions = [{"round_trip_rate": 0.20}] * 5
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tf:
+        json.dump(sessions, tf)
+        path = tf.name
+    try:
+        result = check_kill_condition(stats_path=path)
+        assert result is not None
+        assert "35%" in result
+    finally:
+        os.unlink(path)
+
+
+def test_check_kill_condition_needs_5_sessions():
+    """Fewer than 5 sessions → no kill condition check."""
+    from scripts.poly_live_mm import check_kill_condition
+    sessions = [{"round_trip_rate": 0.10}] * 4
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tf:
+        json.dump(sessions, tf)
+        path = tf.name
+    try:
+        result = check_kill_condition(stats_path=path)
+        assert result is None
+    finally:
+        os.unlink(path)
+
+
+def test_record_session_stats_zero_fills():
+    """Zero fills → round_trip_rate = 0.0, no divide-by-zero."""
+    from scripts.poly_live_mm import record_session_stats
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
+        path = tf.name
+    os.unlink(path)
+    try:
+        record_session_stats("s0", total_fills=0, paired_fills=0, stats_path=path)
+        with open(path) as f:
+            data = json.load(f)
+        assert data[0]["round_trip_rate"] == 0.0
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)

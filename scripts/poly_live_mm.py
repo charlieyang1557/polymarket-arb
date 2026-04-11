@@ -71,6 +71,70 @@ MM_VERSION = "v1: Polymarket US LIVE — OBI + skew + capital-aware risk"
 HEDGE_ALERT_THRESHOLD_MIN = 15  # Discord alert if unhedged for this many minutes
 _settle_accept_alerted: set = set()  # one-shot Discord alert per slug for settlement accept
 
+SESSION_STATS_PATH = "data/session_stats.json"
+KILL_CONDITION_THRESHOLD = 0.35
+KILL_CONDITION_MIN_SESSIONS = 5
+
+
+def record_session_stats(session_id: str, total_fills: int, paired_fills: int,
+                          stats_path: str = SESSION_STATS_PATH) -> None:
+    """Append this session's round-trip stats to session_stats.json.
+
+    Called at session end. Accumulates across runs to track strategy health.
+    round_trip_rate = paired_fills * 2 / total_fills
+      (paired_fills = complete round-trips, total_fills = single-side fills)
+    """
+    rate = (paired_fills * 2 / total_fills) if total_fills > 0 else 0.0
+    entry = {
+        "session_id": session_id,
+        "date": datetime.now(timezone.utc).date().isoformat(),
+        "total_fills": total_fills,
+        "paired_fills": paired_fills,
+        "round_trip_rate": round(rate, 4),
+    }
+    existing = []
+    if os.path.exists(stats_path):
+        try:
+            with open(stats_path) as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    existing.append(entry)
+    dir_name = os.path.dirname(stats_path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+    with open(stats_path, "w") as f:
+        json.dump(existing, f, indent=2)
+
+
+def check_kill_condition(stats_path: str = SESSION_STATS_PATH,
+                          min_sessions: int = KILL_CONDITION_MIN_SESSIONS,
+                          threshold: float = KILL_CONDITION_THRESHOLD) -> str | None:
+    """Check if strategy kill condition is triggered.
+
+    Returns warning string if avg round_trip_rate over last `min_sessions`
+    sessions is below `threshold`. Returns None if not triggered or
+    fewer than `min_sessions` sessions recorded.
+    """
+    if not os.path.exists(stats_path):
+        return None
+    try:
+        with open(stats_path) as f:
+            sessions = json.load(f)
+    except Exception:
+        return None
+    if len(sessions) < min_sessions:
+        return None
+    recent = sessions[-min_sessions:]
+    rates = [s.get("round_trip_rate", 0.0) for s in recent]
+    avg_rate = sum(rates) / len(rates)
+    if avg_rate < threshold:
+        return (
+            f"Kill condition: avg round-trip rate {avg_rate:.0%} over "
+            f"last {min_sessions} sessions is below {threshold:.0%} threshold"
+        )
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Pure helper functions (tested)
@@ -1359,6 +1423,23 @@ def main():
         f"session={session_id}")
 
     db.close()
+
+    # Record session stats + check kill condition
+    total_fills_all = sum(ms.total_fills for ms in gs.markets.values())
+    paired_fills_all = sum(ms.paired_fills for ms in gs.markets.values())
+    record_session_stats(session_id, total_fills=total_fills_all,
+                          paired_fills=paired_fills_all)
+    kill_msg = check_kill_condition()
+    if kill_msg:
+        print(f"\n{'!'*70}")
+        print(f"  KILL CONDITION: {kill_msg}")
+        print(f"{'!'*70}")
+        discord_notify(f"**Strategy Kill Condition** | {kill_msg}")
+    else:
+        last_rate = (paired_fills_all * 2 / total_fills_all
+                     if total_fills_all > 0 else 0.0)
+        print(f"\n  Session round-trip rate: {last_rate:.0%} "
+              f"(kill threshold: {KILL_CONDITION_THRESHOLD:.0%})")
 
     # Auto-generate session summary
     try:
