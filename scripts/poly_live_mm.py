@@ -1069,8 +1069,10 @@ def main():
                 best_no_bid = no_bids[-1][0]
                 yes_ask = 100 - best_no_bid
                 spread = yes_ask - best_yes_bid
-                yes_depth = sum(q for _, q in yes_bids)
-                no_depth = sum(q for _, q in no_bids)
+                # Near-touch depth only (within 3c of best bid):
+                # prevents whale orders deep in book from skewing OBI microprice
+                yes_depth = sum(q for p, q in yes_bids if p >= best_yes_bid - 3)
+                no_depth = sum(q for p, q in no_bids if p >= best_no_bid - 3)
                 midpoint = obi_microprice(best_yes_bid, yes_ask,
                                           yes_depth, no_depth)
 
@@ -1078,7 +1080,7 @@ def main():
                     ms.session_initial_midpoint = midpoint
 
                 ms.midpoint_history.append((now, midpoint))
-                if len(ms.midpoint_history) > 7:
+                if len(ms.midpoint_history) > 30:
                     ms.midpoint_history.pop(0)
 
                 # Update unrealized
