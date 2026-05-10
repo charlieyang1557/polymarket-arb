@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-05-10T10:07:36.161860+00:00",
+  "db_path": "/Users/openclaw/polymarket-arb/data/poly_mm_live.db",
+  "n_fills": 326,
+  "n_with_full_snapshot_coverage": 24,
+  "thresholds": {
+    "30s": 1.0,
+    "2min": 2.0,
+    "5min": 3.0
+  },
+  "overall": {
+    "n_fills": 326,
+    "mean_half_spread_cents": 0.27197582900953593,
+    "mean_loss_distance_cents": 3.2222897257659366,
+    "alpha_tolerance": 0.08440452353951115,
+    "alpha_observed": 0.02147239263803681,
+    "alpha_observed_x_margin": 0.032208588957055216,
+    "verdict": "viable"
+  },
+  "by_midpoint_band": {
+    "35-45": {
+      "n_fills": 5,
+      "mean_half_spread_cents": 1.3939999772722786,
+      "mean_loss_distance_cents": 4.037803369085438,
+      "alpha_tolerance": 0.3452372118823655,
+      "alpha_observed": 0.2,
+      "alpha_observed_x_margin": 0.30000000000000004,
+      "verdict": "viable"
+    },
+    "45-55": {
+      "n_fills": 85,
+      "mean_half_spread_cents": 0.9124880042367134,
+      "mean_loss_distance_cents": 2.8820066454039535,
+      "alpha_tolerance": 0.31661551013141936,
+      "alpha_observed": 0.058823529411764705,
+      "alpha_observed_x_margin": 0.08823529411764705,
+      "verdict": "viable"
+    },
+    "55-65": {
+      "n_fills": 2,
+      "mean_half_spread_cents": 2.06632000531334,
+      "mean_loss_distance_cents": 4.108191484256352,
+      "alpha_tolerance": 0.502975582621212,
+      "alpha_observed": 0.5,
+      "alpha_observed_x_margin": 0.75,
+      "verdict": "marginal"
+    }
+  },
+  "by_side": {
+    "yes_bid": {
+      "n_fills": 209,
+      "mean_half_spread_cents": 0.3019725419187153,
+      "mean_loss_distance_cents": 3.568080797164903,
+      "alpha_tolerance": 0.08463164347585801,
+      "alpha_observed": 0.028708133971291867,
+      "alpha_observed_x_margin": 0.0430622009569378,
+      "verdict": "viable"
+    },
+    "no_bid": {
+      "n_fills": 117,
+      "mean_half_spread_cents": 0.21839195723160015,
+      "mean_loss_distance_cents": 1.1475432973721382,
+      "alpha_tolerance": 0.19031260757804552,
+      "alpha_observed": 0.008547008547008548,
+      "alpha_observed_x_margin": 0.012820512820512822,
+      "verdict": "viable"
+    }
+  },
+  "informed_breakdown": {
+    "any_window": 7,
+    "only_30s": 1,
+    "only_2min": 2,
+    "only_5min": 1,
+    "multi_window": 3
+  }
+}
