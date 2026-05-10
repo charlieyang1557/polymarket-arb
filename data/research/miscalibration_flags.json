@@ -1,0 +1,221 @@
+{
+  "summary": {
+    "n_total": 307,
+    "n_in_band": 39,
+    "band": [
+      0.3,
+      0.7
+    ],
+    "bucket_size": 0.05,
+    "buckets": [
+      {
+        "bucket_low": 0.3,
+        "bucket_high": 0.35,
+        "bucket_mid": 0.32,
+        "n": 8,
+        "wins": 2,
+        "settle_yes_rate": 0.25,
+        "mean_price": 0.3382,
+        "ci_lo": 0.0,
+        "ci_hi": 0.625,
+        "gap_pp": -8.82,
+        "ci_excludes_implied": false
+      },
+      {
+        "bucket_low": 0.35,
+        "bucket_high": 0.4,
+        "bucket_mid": 0.38,
+        "n": 3,
+        "wins": 0,
+        "settle_yes_rate": 0.0,
+        "mean_price": 0.3833,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "gap_pp": -38.33,
+        "ci_excludes_implied": true
+      },
+      {
+        "bucket_low": 0.4,
+        "bucket_high": 0.45,
+        "bucket_mid": 0.43,
+        "n": 6,
+        "wins": 1,
+        "settle_yes_rate": 0.1667,
+        "mean_price": 0.4273,
+        "ci_lo": 0.0,
+        "ci_hi": 0.5,
+        "gap_pp": -26.07,
+        "ci_excludes_implied": false
+      },
+      {
+        "bucket_low": 0.45,
+        "bucket_high": 0.5,
+        "bucket_mid": 0.47,
+        "n": 13,
+        "wins": 2,
+        "settle_yes_rate": 0.1538,
+        "mean_price": 0.4812,
+        "ci_lo": 0.0,
+        "ci_hi": 0.3846,
+        "gap_pp": -32.73,
+        "ci_excludes_implied": true
+      },
+      {
+        "bucket_low": 0.5,
+        "bucket_high": 0.55,
+        "bucket_mid": 0.53,
+        "n": 7,
+        "wins": 1,
+        "settle_yes_rate": 0.1429,
+        "mean_price": 0.5193,
+        "ci_lo": 0.0,
+        "ci_hi": 0.4286,
+        "gap_pp": -37.64,
+        "ci_excludes_implied": true
+      },
+      {
+        "bucket_low": 0.6,
+        "bucket_high": 0.65,
+        "bucket_mid": 0.63,
+        "n": 2,
+        "wins": 1,
+        "settle_yes_rate": 0.5,
+        "mean_price": 0.615,
+        "ci_lo": 0.0,
+        "ci_hi": 1.0,
+        "gap_pp": -11.5,
+        "ci_excludes_implied": false
+      }
+    ],
+    "max_miscalibration_pp": 38.33,
+    "max_miscalibration_signed_pp": -38.33,
+    "aggregate": {
+      "n": 39,
+      "settle_yes_rate": 0.1795,
+      "mean_price": 0.4497,
+      "ci_lo": 0.0513,
+      "ci_hi": 0.3077,
+      "aggregate_gap_pp": -27.03
+    },
+    "precheck": {
+      "ok": false,
+      "n_main": 39,
+      "n_wider": 52,
+      "fallback": "aggregate_only",
+      "band": [
+        0.3,
+        0.7
+      ]
+    },
+    "data_path": "data/historical/price_history.json",
+    "generated_at": "2026-05-10T09:56:27.880040+00:00",
+    "sports_total_resolved": 307,
+    "raw_markets_in_file": 2522
+  },
+  "buckets": [
+    {
+      "bucket_low": 0.3,
+      "bucket_high": 0.35,
+      "bucket_mid": 0.32,
+      "n": 8,
+      "wins": 2,
+      "settle_yes_rate": 0.25,
+      "mean_price": 0.3382,
+      "ci_lo": 0.0,
+      "ci_hi": 0.625,
+      "gap_pp": -8.82,
+      "ci_excludes_implied": false
+    },
+    {
+      "bucket_low": 0.35,
+      "bucket_high": 0.4,
+      "bucket_mid": 0.38,
+      "n": 3,
+      "wins": 0,
+      "settle_yes_rate": 0.0,
+      "mean_price": 0.3833,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "gap_pp": -38.33,
+      "ci_excludes_implied": true
+    },
+    {
+      "bucket_low": 0.4,
+      "bucket_high": 0.45,
+      "bucket_mid": 0.43,
+      "n": 6,
+      "wins": 1,
+      "settle_yes_rate": 0.1667,
+      "mean_price": 0.4273,
+      "ci_lo": 0.0,
+      "ci_hi": 0.5,
+      "gap_pp": -26.07,
+      "ci_excludes_implied": false
+    },
+    {
+      "bucket_low": 0.45,
+      "bucket_high": 0.5,
+      "bucket_mid": 0.47,
+      "n": 13,
+      "wins": 2,
+      "settle_yes_rate": 0.1538,
+      "mean_price": 0.4812,
+      "ci_lo": 0.0,
+      "ci_hi": 0.3846,
+      "gap_pp": -32.73,
+      "ci_excludes_implied": true
+    },
+    {
+      "bucket_low": 0.5,
+      "bucket_high": 0.55,
+      "bucket_mid": 0.53,
+      "n": 7,
+      "wins": 1,
+      "settle_yes_rate": 0.1429,
+      "mean_price": 0.5193,
+      "ci_lo": 0.0,
+      "ci_hi": 0.4286,
+      "gap_pp": -37.64,
+      "ci_excludes_implied": true
+    },
+    {
+      "bucket_low": 0.6,
+      "bucket_high": 0.65,
+      "bucket_mid": 0.63,
+      "n": 2,
+      "wins": 1,
+      "settle_yes_rate": 0.5,
+      "mean_price": 0.615,
+      "ci_lo": 0.0,
+      "ci_hi": 1.0,
+      "gap_pp": -11.5,
+      "ci_excludes_implied": false
+    }
+  ],
+  "aggregate": {
+    "n": 39,
+    "settle_yes_rate": 0.1795,
+    "mean_price": 0.4497,
+    "ci_lo": 0.0513,
+    "ci_hi": 0.3077,
+    "aggregate_gap_pp": -27.03
+  },
+  "precheck": {
+    "ok": false,
+    "n_main": 39,
+    "n_wider": 52,
+    "fallback": "aggregate_only",
+    "band": [
+      0.3,
+      0.7
+    ]
+  },
+  "thresholds": {
+    "tight_lt_pp": 3,
+    "meaningful_3_to_8_pp": [
+      3,
+      8
+    ],
+    "large_gt_pp": 8
+  }
+}
