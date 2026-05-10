@@ -267,7 +267,9 @@ class MMEngine:
     def __init__(self, client: KalshiClient, db: MMDatabase,
                  global_state: GlobalState, order_size: int = 2,
                  max_inventory: int = MAX_INVENTORY,
-                 max_unhedged_exit: int = 5):
+                 max_unhedged_exit: int = 5,
+                 maker_fee_calculator=None,
+                 taker_fee_calculator=None):
         self.client = client
         self.db = db
         self.gs = global_state
@@ -275,6 +277,8 @@ class MMEngine:
         self.max_inventory = max_inventory
         self.max_unhedged_exit = max_unhedged_exit
         self.tick_count = 0  # per-market tick counter (for snapshot every 6th)
+        self.maker_fee_calculator = maker_fee_calculator or maker_fee_cents
+        self.taker_fee_calculator = taker_fee_calculator or taker_fee_cents
 
     def tick_one_market(self, ms: MarketState):
         """Execute one tick cycle for a single market."""
@@ -617,7 +621,7 @@ class MMEngine:
                      filled: int, best_yes_bid: int, best_no_bid: int):
         """Record a simulated maker fill."""
         now = datetime.now(timezone.utc)
-        fee = maker_fee_cents(order.price, filled)
+        fee = self.maker_fee_calculator(order.price, filled)
         ms.total_fees += fee
         ms.realized_pnl -= fee  # fees reduce P&L immediately
 
@@ -676,7 +680,7 @@ class MMEngine:
             price = 100 - best_yes_bid  # NO ask
             side_str = "no_aggress"
             size = min(self.order_size, abs(net))
-            fee = taker_fee_cents(price, size)
+            fee = self.taker_fee_calculator(price, size)
             ms.no_queue.extend([price] * size)
             # Cooldown: halt YES quoting for 30s (prevents re-fill cycle)
             ms.aggress_cooldown_yes = now + timedelta(seconds=30)
@@ -685,7 +689,7 @@ class MMEngine:
             price = yes_ask
             side_str = "yes_aggress"
             size = min(self.order_size, abs(net))
-            fee = taker_fee_cents(price, size)
+            fee = self.taker_fee_calculator(price, size)
             ms.yes_queue.extend([price] * size)
             # Cooldown: halt NO quoting for 30s
             ms.aggress_cooldown_no = now + timedelta(seconds=30)

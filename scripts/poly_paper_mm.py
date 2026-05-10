@@ -347,9 +347,12 @@ def main():
             ticker=slug, game_start_utc=game_start)
 
     risk = compute_risk_params(args.capital)
+    poly_maker_fee = lambda price, size: calculate_maker_fee(
+        price, category="sports", count=size)
     engine = MMEngine(client, db, gs, order_size=args.size,
                       max_inventory=risk["max_inventory"],
-                      max_unhedged_exit=risk["max_unhedged_exit"])
+                      max_unhedged_exit=risk["max_unhedged_exit"],
+                      maker_fee_calculator=poly_maker_fee)
     fill_sim = DepthFillSimulator(factor=DRAIN_FACTOR)
 
     # Track rebates earned per market for session summary
