@@ -1,0 +1,1070 @@
+{
+  "generated_at": "2026-05-10T10:03:47.994307+00:00",
+  "db_path": "/Users/openclaw/polymarket-arb/data/poly_mm_live.db",
+  "n_fills_total": 326,
+  "n_distinct_slugs": 110,
+  "n_resolved_slugs": 110,
+  "n_fills_in_resolved": 326,
+  "all_fills_counterfactual": {
+    "n_contracts": 640,
+    "wins": 298,
+    "losses": 342,
+    "win_rate": 0.465625,
+    "avg_win_cents": 50.647651006711406,
+    "avg_loss_cents": 48.07602339181287,
+    "frequency_edge_cents": -3.393626307449271,
+    "magnitude_edge_cents": 1.2858138074492693,
+    "mean_pnl_cents": -2.1078125,
+    "total_pnl_cents": -1349
+  },
+  "all_fills_post_haircut_mean_per_contract_cents": -2.1078125,
+  "defensive_subset": {
+    "n_unhedged_markets": 98,
+    "n_unhedged_resolved": 98,
+    "decomposition": {
+      "n_contracts": 212,
+      "wins": 84,
+      "losses": 128,
+      "win_rate": 0.39622641509433965,
+      "avg_win_cents": 51.142857142857146,
+      "avg_loss_cents": 47.8515625,
+      "frequency_edge_cents": -10.273005811994606,
+      "magnitude_edge_cents": 1.645647321428573,
+      "mean_pnl_cents": -8.627358490566039,
+      "total_pnl_cents": -1829
+    }
+  },
+  "by_ticker": {
+    "asc-nba-tor-det-2026-03-31-pos-2pt5": {
+      "total_pnl_cents": -45.0,
+      "n_contracts": 1,
+      "wins": 0,
+      "losses": 1,
+      "n_fills": 1,
+      "mean_pnl_cents": -45.0,
+      "win_rate": 0.0
+    },
+    "asc-nba-no-por-2026-04-02-pos-6pt5": {
+      "total_pnl_cents": 164.0,
+      "n_contracts": 62,
+      "wins": 32,
+      "losses": 30,
+      "n_fills": 31,
+      "mean_pnl_cents": 2.6451612903225805,
+      "win_rate": 0.5161290322580645
+    },
+    "aec-nhl-det-phi-2026-04-02": {
+      "total_pnl_cents": 64.0,
+      "n_contracts": 176,
+      "wins": 86,
+      "losses": 90,
+      "n_fills": 88,
+      "mean_pnl_cents": 0.36363636363636365,
+      "win_rate": 0.48863636363636365
+    },
+    "asc-cbb-illst-aubrn-2026-04-02-pos-6pt5": {
+      "total_pnl_cents": 90.0,
+      "n_contracts": 60,
+      "wins": 30,
+      "losses": 30,
+      "n_fills": 30,
+      "mean_pnl_cents": 1.5,
+      "win_rate": 0.5
+    },
+    "asc-nba-lal-okc-2026-04-02-pos-8pt5": {
+      "total_pnl_cents": 56.0,
+      "n_contracts": 56,
+      "wins": 28,
+      "losses": 28,
+      "n_fills": 28,
+      "mean_pnl_cents": 1.0,
+      "win_rate": 0.5
+    },
+    "tsc-nba-ind-cha-2026-04-03-233pt5": {
+      "total_pnl_cents": 96.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 48.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-sd-bos-2026-04-03-8pt5": {
+      "total_pnl_cents": -92.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -46.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-phi-col-2026-04-03-10pt5": {
+      "total_pnl_cents": 104.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 52.0,
+      "win_rate": 1.0
+    },
+    "asc-nba-bos-mil-2026-04-03-neg-17pt5": {
+      "total_pnl_cents": -100.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -50.0,
+      "win_rate": 0.0
+    },
+    "asc-nba-uta-hou-2026-04-03-pos-17pt5": {
+      "total_pnl_cents": -100.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -50.0,
+      "win_rate": 0.0
+    },
+    "aec-cbb-okl-bayl-2026-04-04": {
+      "total_pnl_cents": 100.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 50.0,
+      "win_rate": 1.0
+    },
+    "asc-nba-sa-den-2026-04-04-neg-2pt5": {
+      "total_pnl_cents": -94.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -47.0,
+      "win_rate": 0.0
+    },
+    "asc-nba-was-mia-2026-04-04-pos-17pt5": {
+      "total_pnl_cents": 104.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 52.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-mil-kc-2026-04-03-8pt5": {
+      "total_pnl_cents": -96.0,
+      "n_contracts": 6,
+      "wins": 2,
+      "losses": 4,
+      "n_fills": 3,
+      "mean_pnl_cents": -16.0,
+      "win_rate": 0.3333333333333333
+    },
+    "aec-mlb-mil-kc-2026-04-03": {
+      "total_pnl_cents": -98.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -49.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-mia-nyy-2026-04-04-7pt5": {
+      "total_pnl_cents": 106.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 53.0,
+      "win_rate": 1.0
+    },
+    "asc-cbb-tulsa-aubrn-2026-04-05-pos-5pt5": {
+      "total_pnl_cents": 0.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": 0.0,
+      "win_rate": 0.5
+    },
+    "asc-nba-pho-chi-2026-04-05-neg-10pt5": {
+      "total_pnl_cents": -6.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": -1.5,
+      "win_rate": 0.5
+    },
+    "tsc-nba-cha-min-2026-04-05-228pt5": {
+      "total_pnl_cents": 108.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 54.0,
+      "win_rate": 1.0
+    },
+    "asc-nba-phi-sa-2026-04-06-pos-8pt5": {
+      "total_pnl_cents": 2.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": 0.5,
+      "win_rate": 0.5
+    },
+    "asc-mlb-hou-col-2026-04-06-neg-1pt5": {
+      "total_pnl_cents": -96.0,
+      "n_contracts": 6,
+      "wins": 2,
+      "losses": 4,
+      "n_fills": 3,
+      "mean_pnl_cents": -16.0,
+      "win_rate": 0.3333333333333333
+    },
+    "tsc-mlb-hou-col-2026-04-06-10pt5": {
+      "total_pnl_cents": 98.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 49.0,
+      "win_rate": 1.0
+    },
+    "asc-nba-det-orl-2026-04-06-neg-3pt5": {
+      "total_pnl_cents": -94.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -47.0,
+      "win_rate": 0.0
+    },
+    "tsc-nba-por-den-2026-04-06-238pt5": {
+      "total_pnl_cents": 106.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 53.0,
+      "win_rate": 1.0
+    },
+    "tsc-nhl-sea-wpg-2026-04-06-5pt5": {
+      "total_pnl_cents": 100.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 50.0,
+      "win_rate": 1.0
+    },
+    "tsc-nba-mia-tor-2026-04-07-239pt5": {
+      "total_pnl_cents": -102.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -51.0,
+      "win_rate": 0.0
+    },
+    "asc-mlb-ath-nyy-2026-04-07-pos-1pt5": {
+      "total_pnl_cents": -98.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -49.0,
+      "win_rate": 0.0
+    },
+    "aec-mlb-kc-cle-2026-04-07": {
+      "total_pnl_cents": -94.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -47.0,
+      "win_rate": 0.0
+    },
+    "tsc-nhl-tb-ott-2026-04-07-6pt5": {
+      "total_pnl_cents": 54.0,
+      "n_contracts": 7,
+      "wins": 4,
+      "losses": 3,
+      "n_fills": 4,
+      "mean_pnl_cents": 7.714285714285714,
+      "win_rate": 0.5714285714285714
+    },
+    "asc-nhl-veg-van-2026-04-07-neg-1pt5": {
+      "total_pnl_cents": 4.0,
+      "n_contracts": 8,
+      "wins": 4,
+      "losses": 4,
+      "n_fills": 4,
+      "mean_pnl_cents": 0.5,
+      "win_rate": 0.5
+    },
+    "tsc-mlb-ath-nyy-2026-04-08-8pt5": {
+      "total_pnl_cents": -96.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -48.0,
+      "win_rate": 0.0
+    },
+    "asc-mlb-lad-tor-2026-04-08-neg-1pt5": {
+      "total_pnl_cents": -94.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -47.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-az-nym-2026-04-08-7pt5": {
+      "total_pnl_cents": 104.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 52.0,
+      "win_rate": 1.0
+    },
+    "tsc-nhl-buf-nyr-2026-04-08-6pt5": {
+      "total_pnl_cents": 108.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 54.0,
+      "win_rate": 1.0
+    },
+    "aec-nhl-edm-sj-2026-04-08": {
+      "total_pnl_cents": 102.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 51.0,
+      "win_rate": 1.0
+    },
+    "asc-mlb-ath-nyy-2026-04-09-pos-1pt5": {
+      "total_pnl_cents": 96.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 48.0,
+      "win_rate": 1.0
+    },
+    "aec-mlb-cin-mia-2026-04-09": {
+      "total_pnl_cents": -90.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -45.0,
+      "win_rate": 0.0
+    },
+    "asc-nhl-tor-nyi-2026-04-09-pos-1pt5": {
+      "total_pnl_cents": -238.0,
+      "n_contracts": 5,
+      "wins": 0,
+      "losses": 5,
+      "n_fills": 3,
+      "mean_pnl_cents": -47.6,
+      "win_rate": 0.0
+    },
+    "tsc-nba-bos-ny-2026-04-09-217pt5": {
+      "total_pnl_cents": 108.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 54.0,
+      "win_rate": 1.0
+    },
+    "tsc-nba-mia-tor-2026-04-09-236pt5": {
+      "total_pnl_cents": 100.0,
+      "n_contracts": 6,
+      "wins": 4,
+      "losses": 2,
+      "n_fills": 3,
+      "mean_pnl_cents": 16.666666666666668,
+      "win_rate": 0.6666666666666666
+    },
+    "asc-nba-phi-hou-2026-04-09-pos-3pt5": {
+      "total_pnl_cents": -166.0,
+      "n_contracts": 4,
+      "wins": 0,
+      "losses": 4,
+      "n_fills": 2,
+      "mean_pnl_cents": -41.5,
+      "win_rate": 0.0
+    },
+    "tsc-nba-phi-hou-2026-04-09-226pt5": {
+      "total_pnl_cents": -96.0,
+      "n_contracts": 10,
+      "wins": 4,
+      "losses": 6,
+      "n_fills": 5,
+      "mean_pnl_cents": -9.6,
+      "win_rate": 0.4
+    },
+    "asc-nhl-van-la-2026-04-09-pos-1pt5": {
+      "total_pnl_cents": -198.0,
+      "n_contracts": 4,
+      "wins": 0,
+      "losses": 4,
+      "n_fills": 2,
+      "mean_pnl_cents": -49.5,
+      "win_rate": 0.0
+    },
+    "asc-nba-chi-was-2026-04-09-neg-5pt5": {
+      "total_pnl_cents": 96.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 48.0,
+      "win_rate": 1.0
+    },
+    "tsc-nhl-cgy-col-2026-04-09-6pt5": {
+      "total_pnl_cents": -186.0,
+      "n_contracts": 4,
+      "wins": 0,
+      "losses": 4,
+      "n_fills": 2,
+      "mean_pnl_cents": -46.5,
+      "win_rate": 0.0
+    },
+    "asc-nba-lal-gs-2026-04-09-pos-5pt5": {
+      "total_pnl_cents": 162.0,
+      "n_contracts": 4,
+      "wins": 4,
+      "losses": 0,
+      "n_fills": 2,
+      "mean_pnl_cents": 40.5,
+      "win_rate": 1.0
+    },
+    "tsc-nba-lal-gs-2026-04-09-225pt5": {
+      "total_pnl_cents": -84.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -42.0,
+      "win_rate": 0.0
+    },
+    "tsc-nba-ind-bkn-2026-04-09-223pt5": {
+      "total_pnl_cents": -102.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -51.0,
+      "win_rate": 0.0
+    },
+    "aec-atp-joesch-tobsam-2026-04-10": {
+      "total_pnl_cents": -218.0,
+      "n_contracts": 4,
+      "wins": 0,
+      "losses": 4,
+      "n_fills": 2,
+      "mean_pnl_cents": -54.5,
+      "win_rate": 0.0
+    },
+    "asc-nba-min-hou-2026-04-10-pos-10pt5": {
+      "total_pnl_cents": 94.0,
+      "n_contracts": 6,
+      "wins": 4,
+      "losses": 2,
+      "n_fills": 3,
+      "mean_pnl_cents": 15.666666666666666,
+      "win_rate": 0.6666666666666666
+    },
+    "asc-mlb-tex-lad-2026-04-10-pos-1pt5": {
+      "total_pnl_cents": -6.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": -1.5,
+      "win_rate": 0.5
+    },
+    "tsc-mlb-mia-det-2026-04-11-7pt5": {
+      "total_pnl_cents": -142.0,
+      "n_contracts": 3,
+      "wins": 0,
+      "losses": 3,
+      "n_fills": 2,
+      "mean_pnl_cents": -47.333333333333336,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-az-phi-2026-04-11-8pt5": {
+      "total_pnl_cents": -104.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -52.0,
+      "win_rate": 0.0
+    },
+    "aec-ufc-cubswa-natlan-2026-04-11": {
+      "total_pnl_cents": 98.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 49.0,
+      "win_rate": 1.0
+    },
+    "aec-ufc-curbla-joshok-2026-04-11": {
+      "total_pnl_cents": -98.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -49.0,
+      "win_rate": 0.0
+    },
+    "atc-mls-por-laf-2026-04-11-laf": {
+      "total_pnl_cents": -155.0,
+      "n_contracts": 3,
+      "wins": 0,
+      "losses": 3,
+      "n_fills": 2,
+      "mean_pnl_cents": -51.666666666666664,
+      "win_rate": 0.0
+    },
+    "asc-mlb-nyy-tb-2026-04-11-neg-1pt5": {
+      "total_pnl_cents": -98.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -49.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-pit-chc-2026-04-12-12pt5": {
+      "total_pnl_cents": 106.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 53.0,
+      "win_rate": 1.0
+    },
+    "tsc-nba-atl-mia-2026-04-12-241pt5": {
+      "total_pnl_cents": 106.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 53.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-cle-atl-2026-04-12-7pt5": {
+      "total_pnl_cents": 110.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 55.0,
+      "win_rate": 1.0
+    },
+    "asc-nba-sac-por-2026-04-12-pos-16pt5": {
+      "total_pnl_cents": 110.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 55.0,
+      "win_rate": 1.0
+    },
+    "aec-atp-tometc-jacdra-2026-04-13": {
+      "total_pnl_cents": 58.0,
+      "n_contracts": 1,
+      "wins": 1,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 58.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-laa-nyy-2026-04-13-9pt5": {
+      "total_pnl_cents": 104.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 52.0,
+      "win_rate": 1.0
+    },
+    "aec-mlb-tex-ath-2026-04-13": {
+      "total_pnl_cents": 94.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 47.0,
+      "win_rate": 1.0
+    },
+    "aec-atp-omajas-maxjon-2026-04-13": {
+      "total_pnl_cents": -90.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -45.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-bos-min-2026-04-13-7pt5": {
+      "total_pnl_cents": -100.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -50.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-mia-atl-2026-04-13-8pt5": {
+      "total_pnl_cents": 108.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 54.0,
+      "win_rate": 1.0
+    },
+    "aec-wta-annbli-domsal-2026-04-14": {
+      "total_pnl_cents": -88.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -44.0,
+      "win_rate": 0.0
+    },
+    "tsc-nba-mia-cha-2026-04-14-228pt5": {
+      "total_pnl_cents": 96.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 48.0,
+      "win_rate": 1.0
+    },
+    "tsc-nba-por-pho-2026-04-14-217pt5": {
+      "total_pnl_cents": 106.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 53.0,
+      "win_rate": 1.0
+    },
+    "tsc-nhl-car-nyi-2026-04-14-6pt5": {
+      "total_pnl_cents": 100.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 50.0,
+      "win_rate": 1.0
+    },
+    "aec-atp-aleblo-benshe-2026-04-15": {
+      "total_pnl_cents": -130.0,
+      "n_contracts": 3,
+      "wins": 0,
+      "losses": 3,
+      "n_fills": 2,
+      "mean_pnl_cents": -43.333333333333336,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-nym-lad-2026-04-14-7pt5": {
+      "total_pnl_cents": 2.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": 0.5,
+      "win_rate": 0.5
+    },
+    "tsc-nba-orl-phi-2026-04-15-222pt5": {
+      "total_pnl_cents": -52.0,
+      "n_contracts": 1,
+      "wins": 0,
+      "losses": 1,
+      "n_fills": 1,
+      "mean_pnl_cents": -52.0,
+      "win_rate": 0.0
+    },
+    "aec-atp-guijus-matsot-2026-04-15": {
+      "total_pnl_cents": -106.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -53.0,
+      "win_rate": 0.0
+    },
+    "tsc-nhl-dal-buf-2026-04-15-6pt5": {
+      "total_pnl_cents": 110.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 55.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-tb-cws-2026-04-15-8pt5": {
+      "total_pnl_cents": 104.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 52.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-sf-cin-2026-04-15-9pt5": {
+      "total_pnl_cents": 106.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 53.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-kc-det-2026-04-15-8pt5": {
+      "total_pnl_cents": -102.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -51.0,
+      "win_rate": 0.0
+    },
+    "aec-mlb-tex-ath-2026-04-15": {
+      "total_pnl_cents": -92.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -46.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-sf-cin-2026-04-16-8pt5": {
+      "total_pnl_cents": -96.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -48.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-kc-det-2026-04-16-8pt5": {
+      "total_pnl_cents": 4.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": 1.0,
+      "win_rate": 0.5
+    },
+    "tsc-mlb-tb-cws-2026-04-16-8pt5": {
+      "total_pnl_cents": -94.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -47.0,
+      "win_rate": 0.0
+    },
+    "aec-nhl-stl-uta-2026-04-16": {
+      "total_pnl_cents": 102.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 51.0,
+      "win_rate": 1.0
+    },
+    "aec-nhl-ana-nas-2026-04-16": {
+      "total_pnl_cents": 104.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 52.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-tor-mil-2026-04-16-8pt5": {
+      "total_pnl_cents": -96.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -48.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-sea-sd-2026-04-16-8pt5": {
+      "total_pnl_cents": -102.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -51.0,
+      "win_rate": 0.0
+    },
+    "aec-atp-densha-alemol-2026-04-17": {
+      "total_pnl_cents": -158.0,
+      "n_contracts": 3,
+      "wins": 0,
+      "losses": 3,
+      "n_fills": 2,
+      "mean_pnl_cents": -52.666666666666664,
+      "win_rate": 0.0
+    },
+    "tsc-nba-gs-pho-2026-04-17-219pt5": {
+      "total_pnl_cents": 0.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": 0.0,
+      "win_rate": 0.5
+    },
+    "aec-mlb-nym-chc-2026-04-17": {
+      "total_pnl_cents": -84.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -42.0,
+      "win_rate": 0.0
+    },
+    "atc-mls-col-mia-2026-04-18-mia": {
+      "total_pnl_cents": 162.0,
+      "n_contracts": 3,
+      "wins": 3,
+      "losses": 0,
+      "n_fills": 2,
+      "mean_pnl_cents": 54.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-nym-chc-2026-04-18-8pt5": {
+      "total_pnl_cents": -44.0,
+      "n_contracts": 3,
+      "wins": 1,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": -14.666666666666666,
+      "win_rate": 0.3333333333333333
+    },
+    "tsc-nba-hou-lal-2026-04-18-207pt5": {
+      "total_pnl_cents": -114.0,
+      "n_contracts": 6,
+      "wins": 2,
+      "losses": 4,
+      "n_fills": 3,
+      "mean_pnl_cents": -19.0,
+      "win_rate": 0.3333333333333333
+    },
+    "tsc-mlb-sf-wsh-2026-04-18-9pt5": {
+      "total_pnl_cents": 100.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 50.0,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-mil-mia-2026-04-18-7pt5": {
+      "total_pnl_cents": -98.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -49.0,
+      "win_rate": 0.0
+    },
+    "asc-nba-atl-ny-2026-04-18-pos-5pt5": {
+      "total_pnl_cents": -94.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -47.0,
+      "win_rate": 0.0
+    },
+    "tsc-mlb-bal-cle-2026-04-18-7pt5": {
+      "total_pnl_cents": -94.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -47.0,
+      "win_rate": 0.0
+    },
+    "aec-atp-learie-yunbu-2026-04-18": {
+      "total_pnl_cents": 163.0,
+      "n_contracts": 3,
+      "wins": 3,
+      "losses": 0,
+      "n_fills": 2,
+      "mean_pnl_cents": 54.333333333333336,
+      "win_rate": 1.0
+    },
+    "tsc-mlb-sd-laa-2026-04-18-9pt5": {
+      "total_pnl_cents": -94.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -47.0,
+      "win_rate": 0.0
+    },
+    "aec-atp-flacob-benshe-2026-04-19": {
+      "total_pnl_cents": 8.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": 2.0,
+      "win_rate": 0.5
+    },
+    "aec-mlb-nym-chc-2026-04-19": {
+      "total_pnl_cents": -92.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -46.0,
+      "win_rate": 0.0
+    },
+    "asc-mlb-lad-col-2026-04-19-neg-2pt5": {
+      "total_pnl_cents": -100.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -50.0,
+      "win_rate": 0.0
+    },
+    "asc-nhl-la-col-2026-04-19-pos-1pt5": {
+      "total_pnl_cents": -100.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -50.0,
+      "win_rate": 0.0
+    },
+    "asc-nba-orl-det-2026-04-19-pos-8pt5": {
+      "total_pnl_cents": 6.0,
+      "n_contracts": 4,
+      "wins": 2,
+      "losses": 2,
+      "n_fills": 2,
+      "mean_pnl_cents": 1.5,
+      "win_rate": 0.5
+    },
+    "tsc-nba-orl-det-2026-04-19-222pt5": {
+      "total_pnl_cents": -92.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -46.0,
+      "win_rate": 0.0
+    },
+    "tsc-nba-por-sa-2026-04-19-222pt5": {
+      "total_pnl_cents": 100.0,
+      "n_contracts": 2,
+      "wins": 2,
+      "losses": 0,
+      "n_fills": 1,
+      "mean_pnl_cents": 50.0,
+      "win_rate": 1.0
+    },
+    "asc-nba-por-sa-2026-04-19-pos-11pt5": {
+      "total_pnl_cents": -98.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -49.0,
+      "win_rate": 0.0
+    },
+    "aec-ipl-guj-mui-2026-04-20": {
+      "total_pnl_cents": -92.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -46.0,
+      "win_rate": 0.0
+    },
+    "aec-ipl-lsg-raj-2026-04-22": {
+      "total_pnl_cents": -82.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -41.0,
+      "win_rate": 0.0
+    },
+    "aec-lol-omg-lng-2026-04-24": {
+      "total_pnl_cents": -72.0,
+      "n_contracts": 2,
+      "wins": 0,
+      "losses": 2,
+      "n_fills": 1,
+      "mean_pnl_cents": -36.0,
+      "win_rate": 0.0
+    }
+  },
+  "by_side": {
+    "yes_bid": {
+      "total_pnl_cents": -1885.0,
+      "n_contracts": 408,
+      "wins": 179,
+      "losses": 229,
+      "n_fills": 209,
+      "mean_pnl_cents": -4.620098039215686,
+      "win_rate": 0.4387254901960784
+    },
+    "no_bid": {
+      "total_pnl_cents": 536.0,
+      "n_contracts": 232,
+      "wins": 119,
+      "losses": 113,
+      "n_fills": 117,
+      "mean_pnl_cents": 2.310344827586207,
+      "win_rate": 0.5129310344827587
+    }
+  },
+  "by_category": {
+    "sports": {
+      "total_pnl_cents": -1349.0,
+      "n_contracts": 640,
+      "wins": 298,
+      "losses": 342,
+      "n_fills": 326,
+      "mean_pnl_cents": -2.1078125,
+      "win_rate": 0.465625
+    }
+  },
+  "realized_pair_pnl_cents": 0,
+  "stored_fees_total_cents": 279.174525,
+  "haircut_multiplier": 0.5,
+  "haircut_decomposition": {
+    "selection_bias": 0.7,
+    "slippage": 0.9,
+    "hit_rate": 0.8,
+    "combined": 0.5
+  },
+  "fee_convention_note": "DB stores Kalshi-style positive maker fees (formula 0.0175*P*(1-P)*100). Polymarket actual rebate is NEGATIVE (formula 0.02*0.25*P*(1-P)*100 = 0.005*P*(1-P)*100). Counterfactual P&L computed without fees because: (a) entry fees are sunk, identical between strategies; (b) hold-to-settle has no exit fee. Cross-check vs realized requires same fees."
+}
