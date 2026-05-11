@@ -165,41 +165,46 @@ def load_outcomes_from_summary(path):
     return outcomes
 
 
-def main():
-    conn = sqlite3.connect(DB_PATH)
-    fills = load_fills(conn)
-    print(f"Loaded {len(fills)} fills from {DB_PATH}")
+def analyze_slice(fills, outcomes, label):
+    """Print baseline + per-survival-model counterfactual for one slice of fills.
 
-    # Tag each fill with offset bucket
-    bucket_counts = defaultdict(int)
-    bucket_counts_by_side = defaultdict(lambda: defaultdict(int))
+    Returns dict[model_name] -> {"yes": float, "no": int, "ratio": float, "pnl_c": float}
+    so callers can build a comparison table.
+    """
+    baseline_yes = sum(1 for f in fills if f["side"] == "yes_bid")
+    baseline_no = sum(1 for f in fills if f["side"] == "no_bid")
+    baseline_ratio = baseline_yes / baseline_no if baseline_no else float("inf")
+
+    # Baseline hold-to-settle P&L (no penalty applied)
+    baseline_yes_pnl = 0.0
+    baseline_no_pnl = 0.0
     for f in fills:
-        snap = find_nearest_snapshot(conn, f)
-        bucket, raw = offset_bucket(f, snap)
-        f["_bucket"] = bucket
-        f["_offset_raw"] = raw
-        bucket_counts[bucket] += 1
-        bucket_counts_by_side[f["side"]][bucket] += 1
+        outcome = outcomes.get(f["ticker"])
+        if not outcome:
+            continue
+        if f["side"] == "yes_bid":
+            pnl = (100 - f["price"]) if outcome == "yes" else -f["price"]
+            baseline_yes_pnl += pnl * f["size"]
+        else:
+            pnl = (100 - f["price"]) if outcome == "no" else -f["price"]
+            baseline_no_pnl += pnl * f["size"]
+    baseline_total_pnl = baseline_yes_pnl + baseline_no_pnl
 
-    print("\nFill offset distribution (relative to BBO at fill time):")
-    for side in ("yes_bid", "no_bid"):
-        total = sum(bucket_counts_by_side[side].values())
-        print(f"  {side} (n={total}):")
-        for k, n in sorted(bucket_counts_by_side[side].items(),
-                           key=lambda x: str(x[0])):
-            pct = n / total * 100 if total else 0
-            print(f"    {k!s:>15s}: {n:>3d} ({pct:.1f}%)")
+    print(f"\n{'=' * 60}")
+    print(f"SLICE: {label}  (n={len(fills)}: yes={baseline_yes}, no={baseline_no})")
+    print(f"{'=' * 60}")
+    print(f"  Baseline (no penalty): yes={baseline_yes}, no={baseline_no}, "
+          f"ratio={baseline_ratio:.2f}")
+    print(f"  Baseline hold-to-settle P&L: YES={baseline_yes_pnl:.0f}c, "
+          f"NO={baseline_no_pnl:.0f}c, TOTAL={baseline_total_pnl:.0f}c "
+          f"(${baseline_total_pnl/100:+.2f})")
 
-    # Apply each survival model
-    outcomes = load_outcomes_from_summary(SETTLEMENT_JSON)
-    print(f"\nLoaded {len(outcomes)} resolved outcomes from cache "
-          f"({len(outcomes) / 110 * 100:.0f}% coverage)")
+    if baseline_yes == 0:
+        print(f"  (skipping survival models — no yes_bid fills in slice)")
+        return {"_baseline": {"ratio": baseline_ratio, "pnl_c": baseline_total_pnl,
+                              "yes": baseline_yes, "no": baseline_no}}
 
-    print("\n=== Counterfactual under each survival model ===")
-    print(f"\nBaseline (no penalty): yes={sum(1 for f in fills if f['side']=='yes_bid')}, "
-          f"no={sum(1 for f in fills if f['side']=='no_bid')}, "
-          f"ratio={sum(1 for f in fills if f['side']=='yes_bid') / sum(1 for f in fills if f['side']=='no_bid'):.2f}")
-
+    results = {}
     for model_name, model in SURVIVAL_MODELS.items():
         expected_yes_count = 0.0
         expected_yes_contracts = 0.0
@@ -216,8 +221,7 @@ def main():
                 pnl = (100 - f["price"]) if outcome == "yes" else -f["price"]
                 expected_yes_pnl += p_survive * pnl * f["size"]
 
-        # no_bid stays the same
-        no_count = sum(1 for f in fills if f["side"] == "no_bid")
+        no_count = baseline_no
         no_contracts = sum(f["size"] for f in fills if f["side"] == "no_bid")
         no_pnl = 0.0
         for f in fills:
@@ -229,17 +233,111 @@ def main():
                 no_pnl += pnl * f["size"]
 
         ratio = expected_yes_count / no_count if no_count else float("inf")
+        results[model_name] = {
+            "yes": expected_yes_count,
+            "no": no_count,
+            "ratio": ratio,
+            "pnl_c": expected_yes_pnl + no_pnl,
+            "yes_drop_pct": (1 - expected_yes_count / baseline_yes) * 100,
+            "delta_vs_baseline": (expected_yes_pnl + no_pnl) - baseline_total_pnl,
+        }
+        delta = (expected_yes_pnl + no_pnl) - baseline_total_pnl
         print(f"\n  [{model_name}]")
-        print(f"    Expected yes_bid fills:   {expected_yes_count:.0f} "
-              f"(from 209, drop {(1 - expected_yes_count/209)*100:.0f}%)")
-        print(f"    Expected yes_bid contracts: {expected_yes_contracts:.0f}")
+        print(f"    Expected yes_bid fills:   {expected_yes_count:.1f} "
+              f"(from {baseline_yes}, drop {(1 - expected_yes_count/baseline_yes)*100:.0f}%)")
+        print(f"    Expected yes_bid contracts: {expected_yes_contracts:.1f}")
         print(f"    no_bid fills (unchanged):  {no_count}")
         print(f"    no_bid contracts:           {no_contracts}")
         print(f"    yes:no ratio (post-penalty): {ratio:.2f}")
         print(f"    YES hold-to-settle P&L:    {expected_yes_pnl:.0f}c")
         print(f"    NO hold-to-settle P&L:     {no_pnl:.0f}c")
         print(f"    Total hold-to-settle P&L:  {expected_yes_pnl + no_pnl:.0f}c "
-              f"(${(expected_yes_pnl + no_pnl)/100:.2f})")
+              f"(${(expected_yes_pnl + no_pnl)/100:+.2f})")
+        print(f"    DELTA vs baseline:         {delta:+.0f}c "
+              f"(${delta/100:+.2f})  [+ = penalty helps]")
+    # store baseline summary for the comparison table
+    results["_baseline"] = {
+        "ratio": baseline_ratio,
+        "pnl_c": baseline_total_pnl,
+        "yes": baseline_yes,
+        "no": baseline_no,
+    }
+    return results
+
+
+def main():
+    conn = sqlite3.connect(DB_PATH)
+    fills = load_fills(conn)
+    print(f"Loaded {len(fills)} fills from {DB_PATH}")
+
+    # Tag each fill with offset bucket (done once across the full dataset)
+    bucket_counts_by_side = defaultdict(lambda: defaultdict(int))
+    for f in fills:
+        snap = find_nearest_snapshot(conn, f)
+        bucket, raw = offset_bucket(f, snap)
+        f["_bucket"] = bucket
+        f["_offset_raw"] = raw
+        f["_prefix"] = f["ticker"][:3]
+        bucket_counts_by_side[f["side"]][bucket] += 1
+
+    print("\nFill offset distribution (relative to BBO at fill time):")
+    for side in ("yes_bid", "no_bid"):
+        total = sum(bucket_counts_by_side[side].values())
+        print(f"  {side} (n={total}):")
+        for k, n in sorted(bucket_counts_by_side[side].items(),
+                           key=lambda x: str(x[0])):
+            pct = n / total * 100 if total else 0
+            print(f"    {k!s:>15s}: {n:>3d} ({pct:.1f}%)")
+
+    outcomes = load_outcomes_from_summary(SETTLEMENT_JSON)
+    print(f"\nLoaded {len(outcomes)} resolved outcomes from cache "
+          f"({len(outcomes) / 110 * 100:.0f}% coverage)")
+
+    print("\n" + "=" * 60)
+    print("=== Counterfactual under each survival model ===")
+    print("=" * 60)
+
+    # Full dataset
+    all_results = analyze_slice(fills, outcomes, "ALL (full dataset)")
+
+    # Per-prefix slices, in fixed order; only slices that exist in data
+    prefixes_present = sorted({f["_prefix"] for f in fills})
+    per_prefix_results = {}
+    for prefix in prefixes_present:
+        slice_fills = [f for f in fills if f["_prefix"] == prefix]
+        per_prefix_results[prefix] = analyze_slice(
+            slice_fills, outcomes, f"prefix={prefix}"
+        )
+
+    # Comparison summary — each cell shows (ratio, P&L $); baseline column
+    # shows the hold-to-settle P&L with no penalty applied. The +/- on the
+    # penalty columns is vs baseline P&L.
+    print("\n" + "=" * 60)
+    print("=== Comparison summary: yes:no ratio + total P&L ===")
+    print("=" * 60)
+    print(f"{'Slice':<6s}  {'Baseline':>22s}  "
+          f"{'pessimistic':>22s}  {'base':>22s}  {'optimistic':>22s}")
+    for label, results in [("ALL", all_results)] + [
+        (p, per_prefix_results[p]) for p in prefixes_present
+    ]:
+        b = results.get("_baseline")
+        if b is None:
+            print(f"{label:<6s}  (empty slice)")
+            continue
+        base_ratio = b["ratio"]
+        base_pnl_dollars = b["pnl_c"] / 100
+        base_str = f"r={base_ratio:>5.2f} ${base_pnl_dollars:>+7.2f}"
+        cells = []
+        for m in SURVIVAL_MODELS:
+            r = results.get(m)
+            if r is None:
+                cells.append(f"{'-':>22s}")
+                continue
+            cells.append(
+                f"r={r['ratio']:>5.2f} ${r['pnl_c']/100:>+7.2f} "
+                f"Δ${r['delta_vs_baseline']/100:>+6.2f}"
+            )
+        print(f"{label:<6s}  {base_str:>22s}  " + "  ".join(cells))
 
     conn.close()
 
