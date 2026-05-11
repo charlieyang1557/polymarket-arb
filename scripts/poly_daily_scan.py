@@ -224,14 +224,17 @@ def apply_prefilters(c: dict) -> bool:
 
     Filters (adapted from Kalshi, relaxed for Polymarket rebates):
       - spread >= 1c and <= 10c (1c is profitable with maker rebates)
-      - midpoint 20-80c (avoid extremes)
+      - midpoint 45-55c — tightened per fill_asymmetry_diagnosis.md Fix 3.
+        Extreme-mid markets (<45 or >55) showed disproportionately
+        asymmetric fill ratios (e.g., 14 yes_bid / 0 no_bid at mid<45).
+        The bulk 45-55c bucket is where balanced flow exists.
       - net_spread > 0 (profitable after rebate — always true on Poly)
       - symmetry 0.2-5.0
       - Both sides have depth > 0
     """
     return (c.get("spread", 0) >= 1
             and c.get("spread", 0) <= 10
-            and 20 <= c.get("midpoint", 0) <= 80
+            and 45 <= c.get("midpoint", 0) <= 55
             and c.get("net_spread", 0) > 0
             and c.get("best_yes_depth", 0) > 0
             and c.get("best_no_depth", 0) > 0
@@ -467,8 +470,8 @@ def deep_check(client: PolyClient, candidates: list[dict],
         -c["spread"],             # then by spread (within traded markets)
     ), reverse=True)
     to_check = [c for c in candidates
-                if c["spread"] >= 1 and c["midpoint"] >= 20
-                and c["midpoint"] <= 80][:max_check]
+                if c["spread"] >= 1 and c["midpoint"] >= 45
+                and c["midpoint"] <= 55][:max_check]
 
     print(f"  Deep-checking {len(to_check)} markets (spread >= 2c)...")
 

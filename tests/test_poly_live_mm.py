@@ -1099,9 +1099,13 @@ class TestReducingSideAndPlaceGuard:
             (now, 49.5),
         ]
 
+        # Compute expected NO from skewed_quotes: fair=49.5, half=1,
+        # vol_offset=1 (stdev=0 -> dynamic_spread=2, market_spread=1),
+        # inv=2, skew_raw=1. NO = round(50.5 - 1 - 1 + 1) = round(49.5) = 50.
+        # Existing NO at 49 → delta=1 → reducing-side force-cancel.
         curr_orders = {"slug-a": {"no": {
             "order_id": "old-no",
-            "price_cents": 50,
+            "price_cents": 49,
             "original_qty": 2,
             "filled_qty": 0,
             "remaining_qty": 2,

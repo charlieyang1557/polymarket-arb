@@ -58,16 +58,35 @@ def obi_microprice(best_bid: int, best_ask: int,
     return best_bid + spread * (no_depth / total)
 
 
+YES_ADVERSE_SELECTION_PENALTY = 1
+"""Cents subtracted from the YES bid only (not NO).
+
+Empirically derived from May 2026 production data on Polymarket sports —
+the bot's fill distribution was 209 yes_bid vs 117 no_bid, with a 99/14
+first-fill imbalance at inv=0. Per fill_asymmetry_diagnosis.md H2, taker
+flow on these markets is dominated by YES-sellers (retail position
+dumpers), making the YES side structurally adverse-selected. Lowering
+the YES bid by 1c offsets the expected adverse-selection cost.
+"""
+
+
 def skewed_quotes(fair: float, best_yes_bid: int, best_no_bid: int,
                   net_inventory: int, gamma: float = 0.5,
                   quote_offset: int = 0) -> tuple[int, int]:
     """Compute skewed bid prices for YES and NO sides.
 
     Anchors to OBI fair value (not BBO). Quotes are placed at:
-      YES bid = fair - half_spread - quote_offset - skew
+      YES bid = fair - half_spread - quote_offset - skew - YES_PENALTY
       NO bid  = (100-fair) - half_spread - quote_offset + skew
 
-    Where half_spread = max(1, market_spread // 2).
+    Where half_spread = max(1, market_spread // 2). The YES penalty is
+    a fixed 1c discount on the YES bid only — see
+    YES_ADVERSE_SELECTION_PENALTY for the empirical justification.
+
+    Uses round() (banker's rounding) instead of math.floor() so that
+    when fair has a fractional component, YES and NO round symmetrically
+    around it. floor() biased downward and amplified the YES asymmetry
+    by ~10-15% (see fill_asymmetry_diagnosis.md Fix 2).
 
     Positive net_inventory = long YES:
       skew > 0 → YES bid lower (less aggressive) + NO bid higher (more aggressive)
@@ -81,15 +100,17 @@ def skewed_quotes(fair: float, best_yes_bid: int, best_no_bid: int,
     market_spread = 100 - best_no_bid - best_yes_bid  # = yes_ask - best_yes_bid
     half_spread = max(1, market_spread // 2)
 
-    yes_price = max(1, math.floor(fair - half_spread - quote_offset - skew_raw))
-    no_price = max(1, math.floor((100 - fair) - half_spread - quote_offset + skew_raw))
+    yes_price = max(1, round(fair - half_spread - quote_offset
+                             - skew_raw - YES_ADVERSE_SELECTION_PENALTY))
+    no_price = max(1, round((100 - fair) - half_spread - quote_offset + skew_raw))
 
     # Profitability floor: gross round-trip must be >= 1c
     # (Polymarket makers earn rebates — no positive fee cost to cover)
     while (100 - yes_price - no_price) < 1 and abs(skew_raw) > 0.1:
         skew_raw *= 0.8
-        yes_price = max(1, math.floor(fair - half_spread - quote_offset - skew_raw))
-        no_price = max(1, math.floor((100 - fair) - half_spread - quote_offset + skew_raw))
+        yes_price = max(1, round(fair - half_spread - quote_offset
+                                 - skew_raw - YES_ADVERSE_SELECTION_PENALTY))
+        no_price = max(1, round((100 - fair) - half_spread - quote_offset + skew_raw))
 
     return yes_price, no_price
 

@@ -82,20 +82,21 @@ def test_is_soft_close_empty():
 from src.mm.state import skewed_quotes
 
 def test_skewed_quotes_flat_anchors_to_fair():
-    """With no skew, quotes are centered on fair value."""
-    # fair=52, spread=4 (best_yes_bid=48, best_no_bid=48 → yes_ask=52)
-    # half_spread=4//2=2, yes_price=52-2=50, no_price=(100-52)-2=46
+    """With no skew, quotes are centered on fair value (minus YES penalty)."""
+    # fair=52, half=2, YES penalty=1
+    # YES = round(52-2-0-0-1) = 49, NO = round(48-2+0) = 46
     yes_p, no_p = skewed_quotes(fair=52.0, best_yes_bid=48, best_no_bid=48,
                                  net_inventory=0, gamma=0.5)
-    assert yes_p == 50
+    assert yes_p == 49
     assert no_p == 46
 
 def test_skewed_quotes_fair_above_mid_raises_yes_bid():
-    """OBI fair above midpoint → YES bid is above midpoint."""
-    # fair=53, spread=4 → half=2 → yes_price=51, no_price=45
+    """OBI fair above midpoint → YES bid is above midpoint (minus penalty)."""
+    # fair=53, half=2, YES penalty=1
+    # YES = round(53-2-0-0-1) = 50, NO = round(47-2+0) = 45
     yes_p, no_p = skewed_quotes(fair=53.0, best_yes_bid=48, best_no_bid=48,
                                  net_inventory=0)
-    assert yes_p == 51
+    assert yes_p == 50
     assert no_p == 45
 
 def test_skewed_quotes_skew_symmetric():

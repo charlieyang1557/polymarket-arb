@@ -5,30 +5,25 @@ from src.mm.state import skewed_quotes
 from src.mm.engine import should_skip_side, clamp_order_size
 
 
-# -- Floor rounding (both sides are bids → both floor) --
+# -- Rounding behavior (round + 1c YES adverse-selection penalty) --
 # Use best_yes_bid=44, best_no_bid=50, fair=48.0:
 #   market_spread = 100-50-44 = 6, half_spread = max(1, 6//2) = 3
-#   yes_base = floor(48-3) = 45, no_base = floor(52-3) = 49
-# (fair-anchored, not BBO-anchored)
+#   yes_base = round(48 - 3 - YES_PENALTY=1) = 44
+#   no_base  = round(52 - 3) = 49
+# (fair-anchored, with 1c YES adverse-selection penalty + banker's rounding)
 
 def test_skew_yes_bid_floors():
-    """YES bid with fractional skew floors down.
-
-    inv=3, gamma=0.5 → skew_raw=1.5
-    YES bid: floor(48 - 3 - 1.5) = floor(43.5) = 43
-    """
+    """YES bid with fractional skew rounds (banker's)."""
+    # inv=3, skew_raw=1.5: YES = round(48 - 3 - 1.5 - 1) = round(42.5) = 42
     yes_price, _ = skewed_quotes(
         fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=3, gamma=0.5, quote_offset=0)
-    assert yes_price == 43
+    assert yes_price == 42
 
 
 def test_skew_no_bid_floors():
-    """NO bid with fractional skew floors down (conservative).
-
-    inv=3, gamma=0.5 → skew_raw=1.5
-    NO bid: floor(52 - 3 + 1.5) = floor(50.5) = 50
-    """
+    """NO bid rounds (banker's)."""
+    # inv=3, skew_raw=1.5: NO = round(52 - 3 + 1.5) = round(50.5) = 50 (banker's)
     _, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=3, gamma=0.5, quote_offset=0)
@@ -36,31 +31,27 @@ def test_skew_no_bid_floors():
 
 
 def test_skew_negative_inv_floors():
-    """Negative inv: both sides still floor.
-
-    inv=-3, gamma=0.5 → skew_raw=-1.5
-    YES bid: floor(48 - 3 - (-1.5)) = floor(46.5) = 46
-    NO bid:  floor(52 - 3 + (-1.5)) = floor(47.5) = 47
-    """
+    """Negative inv: both sides still round."""
+    # inv=-3, skew_raw=-1.5:
+    #   YES = round(48 - 3 - (-1.5) - 1) = round(45.5) = 46 (banker's: 6 even)
+    #   NO  = round(52 - 3 + (-1.5))     = round(47.5) = 48 (banker's: 8 even)
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=-3, gamma=0.5, quote_offset=0)
     assert yes_price == 46
-    assert no_price == 47
+    assert no_price == 48
 
 
 def test_integer_skew_unchanged():
-    """Integer skew (no fractional part) → floor same as int.
-
-    inv=4, gamma=0.5 → skew_raw=2
-    YES: floor(48 - 3 - 2) = 43
-    NO:  floor(52 - 3 + 2) = 51
-    """
+    """Integer skew (no fractional part) → round same as int."""
+    # inv=4, skew_raw=2:
+    #   YES = round(48 - 3 - 2 - 1) = 42
+    #   NO  = round(52 - 3 + 2)     = 51
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=4, gamma=0.5, quote_offset=0)
-    assert yes_price == 43  # floor(48 - 3 - 2)
-    assert no_price == 51   # floor(52 - 3 + 2)
+    assert yes_price == 42
+    assert no_price == 51
 
 
 def test_roundtrip_profit_guaranteed():
@@ -75,16 +66,14 @@ def test_roundtrip_profit_guaranteed():
 
 
 def test_fractional_skew_visible_at_inv_1():
-    """At inv=1, skew_raw=0.5 → fractional floor applies.
-
-    YES: floor(48 - 3 - 0.5) = floor(44.5) = 44
-    NO:  floor(52 - 3 + 0.5) = floor(49.5) = 49
-    """
+    """At inv=1, skew_raw=0.5 → fractional banker's rounding applies."""
+    # YES = round(48 - 3 - 0.5 - 1) = round(43.5) = 44 (banker's: 4 even)
+    # NO  = round(52 - 3 + 0.5)     = round(49.5) = 50 (banker's: 0 even)
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=44, best_no_bid=50,
         net_inventory=1, gamma=0.5, quote_offset=0)
-    assert yes_price == 44  # floor(44.5) = 44
-    assert no_price == 49   # floor(49.5) = 49
+    assert yes_price == 44
+    assert no_price == 50
 
 
 # -- Single-side inventory cap --

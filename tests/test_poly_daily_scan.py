@@ -86,6 +86,31 @@ def test_prefilter_fails_extreme_midpoint_high():
     assert apply_prefilters(c) is False
 
 
+# --- Tightened midpoint filter: 45-55c (Fix 3 from asymmetry diagnosis) ---
+
+def test_prefilter_fails_just_below_45():
+    """Per fill_asymmetry_diagnosis.md Fix 3: extreme-mid markets (<45)
+    yielded 14 yes_bid fills vs 0 no_bid fills — disproportionately
+    asymmetric tail. Reject anything below 45c."""
+    c = _candidate(midpoint=44)
+    assert apply_prefilters(c) is False
+
+
+def test_prefilter_fails_just_above_55():
+    c = _candidate(midpoint=56)
+    assert apply_prefilters(c) is False
+
+
+def test_prefilter_passes_lower_boundary_45():
+    c = _candidate(midpoint=45)
+    assert apply_prefilters(c) is True
+
+
+def test_prefilter_passes_upper_boundary_55():
+    c = _candidate(midpoint=55)
+    assert apply_prefilters(c) is True
+
+
 def test_prefilter_fails_no_depth():
     c = _candidate(best_yes_depth=0)
     assert apply_prefilters(c) is False

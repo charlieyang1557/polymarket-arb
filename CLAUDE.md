@@ -140,7 +140,7 @@ Schedule matching (Python-side, in scan_today_sports):
 Pre-filters (binary pass/fail):
   - net_spread >= 1 and <= 8, where net_spread = market_spread - 2 * ceil(0.0175 * P * (1-P) * 100). This is gross spread minus estimated round-trip maker fees. net_spread=1 is profitable (raw spread=3c minus 2c fees).
   - spread < 15
-  - midpoint 35c - 65c (filters alt-lines/blowout bets with toxic adverse selection)
+  - midpoint 45c - 55c (Fix 3 from fill_asymmetry_diagnosis.md — tightened from 35-65 after extreme-mid markets showed disproportionately asymmetric fill ratios)
   - symmetry 0.2 - 5.0
   - L1 queue depth: <20K normally, OR <200K if trades_per_hour >= 50 (high-volume March Madness)
   - trades_per_hour >= 10
