@@ -86,6 +86,8 @@ Data flow: Scanner selects markets → Engine quotes both sides → Fills detect
 
 ## Risk Management
 
+**Strategy-level kill criterion:** [data/research/KILL_CRITERION.md](data/research/KILL_CRITERION.md) defines the explicit Path C → Path B trigger after 4 weeks of paper trading post-Step-1-5 fixes. Check at session boundaries — do NOT recommend continuing live trading without re-reading this doc.
+
 ```
 Layer 1: Per-order validation
   - Fat-finger: price within ±10% of midpoint
