@@ -1,7 +1,11 @@
 # Kill Criterion — Path C → Path B Trigger
 
-**Status:** Active as of 2026-05-10 (after Steps 1-4 of Path C handoff).
-**Owner:** Auto-checked at end of every paper-trading session.
+**Status:** Active as of 2026-05-10. **Revised 2026-05-11** after
+empirical finding that paper MM systematically over-fills (~10× rate)
+and under-asymmetric (~1.0 yes/no vs live's 4.5×) — paper alone is
+not predictive of live. See [memory/paper_vs_live_gap.md](file:///Users/openclaw/.claude/projects/-Users-openclaw-polymarket-arb/memory/paper_vs_live_gap.md).
+**Owner:** Auto-checked at end of every paper-trading session for
+operational health; strategy decisions require live counterfactual.
 
 ## Context
 
@@ -22,13 +26,23 @@ unprofitable, the strategy is empirically dead-on-arrival.
 
 ## Measurement window
 
-**4 calendar weeks of paper trading**, beginning the first session
-after Steps 1-5 of the handoff are merged. Re-evaluation at any
-intermediate point is allowed only to *pause* the test (e.g., bankroll
-exhaustion); the criterion below requires 4 full weeks of data.
+**4 calendar weeks of paper trading** for *operational* validation
+(does the bot run, does telemetry populate, does pair_pnl persist,
+does Discord emit). Begins the first session after Steps 1-5 of the
+handoff are merged. Sessions use `scripts/poly_paper_mm.py`.
 
-Sessions must use `scripts/poly_paper_mm.py` (paper trading) — not
-live — until this criterion is decided.
+**Strategy validation cannot rely on paper P&L or yes:no ratio**
+because the simulation over-fills and symmetrizes the fill
+distribution. For strategy validation, use:
+
+- **Counterfactual on `poly_mm_live.db`** (326 real fills): apply the
+  YES penalty mathematically to the original fills and compute the
+  resulting yes:no ratio and hold-to-settle P&L. Documented as part
+  of the asymmetry diagnosis work.
+- **Small-size live trading** ($5-10 bankroll) after the
+  counterfactual passes — that's the only true signal, but gated on
+  explicit user approval per
+  [.claude/rules/trading-safety.md](../../.claude/rules/trading-safety.md).
 
 ## Inputs
 
@@ -42,16 +56,21 @@ All values come from queries on `data/poly_mm_paper.db` (or wherever
 - **yes_no_ratio** = SUM(yes_bid fill rows) / SUM(no_bid fill rows)
   across all sessions in the window.
 
-## Decision matrix
+## Decision matrix — counterfactual on live, not paper
 
-| net_pnl_cents | yes_no_ratio (or its inverse, whichever > 1) | Action |
+The decision matrix applies to **live counterfactual** outputs (or
+eventually real live trading data), NOT to the paper bot's session
+summaries. Paper-based metrics are operational signals, not strategy
+evidence.
+
+| net_pnl_cents (counterfactual on live) | yes_no_ratio (live, post-penalty sim, either side > 1) | Action |
 |---|---|---|
 | < -100 (worse than -$1) | > 1.4 | **KILL** — Path B. Fixes failed to rebalance flow. |
 | < -100 | 1.0 - 1.4 | **KILL (urgent)** — Path B. Flow rebalanced but economics still negative; the underlying strategy is unprofitable independent of the asymmetry. |
-| -100 to 0 | > 1.4 | **EXTEND 2 weeks** — close call. Flow still asymmetric; one more cycle may clarify whether penalty needs increasing. |
-| -100 to 0 | 1.0 - 1.4 | **EXTEND 2 weeks** — economics borderline but flow looks healthy. |
-| > 0 | > 1.4 | **EXTEND 2 weeks** — positive but flow unbalanced. Watch closely. |
-| > 0 | 1.0 - 1.4 | **CONTINUE** — both rebalanced and profitable. Continue paper trading another 2 weeks for confirmation before any live discussion. |
+| -100 to 0 | > 1.4 | **EXTEND** — close call. Try larger penalty or `tsc`-exclusion (path_b option 1). |
+| -100 to 0 | 1.0 - 1.4 | **EXTEND** — economics borderline but flow looks healthy. |
+| > 0 | > 1.4 | **EXTEND** — positive but flow unbalanced. Watch closely. |
+| > 0 | 1.0 - 1.4 | **GREEN-LIGHT for small-size live trial** — both rebalanced and profitable in counterfactual. Live trial gated on explicit user approval. |
 
 "Either side > 1.4×" means we check both `yes_no_ratio` and `1 / yes_no_ratio`
 and use whichever is larger — the criterion is symmetric (over-quoting
