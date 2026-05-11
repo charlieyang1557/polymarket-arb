@@ -26,35 +26,48 @@ unprofitable, the strategy is empirically dead-on-arrival.
 
 ## Measurement window
 
-**4 calendar weeks of paper trading** for *operational* validation
-(does the bot run, does telemetry populate, does pair_pnl persist,
-does Discord emit). Begins the first session after Steps 1-5 of the
-handoff are merged. Sessions use `scripts/poly_paper_mm.py`.
+**Paper trading is for operational shakedown only** (does the bot
+run, does telemetry populate, does pair_pnl persist, does Discord
+emit). It is NOT a strategy validation gate — see
+[memory/feedback_live_is_ground_truth.md](file:///Users/openclaw/.claude/projects/-Users-openclaw-polymarket-arb/memory/feedback_live_is_ground_truth.md)
+(user feedback 2026-05-11: paper is "not even a reliable reference"
+for strategy purposes because `drain_queue()` over-fills 10x and
+symmetrizes the yes:no ratio). Sessions use
+`scripts/poly_paper_mm.py` and any P&L or ratio numbers from those
+runs MUST be discarded for strategy decisions.
 
-**Strategy validation cannot rely on paper P&L or yes:no ratio**
-because the simulation over-fills and symmetrizes the fill
-distribution. For strategy validation, use:
+**Strategy validation sources, in order of trust:**
 
-- **Counterfactual on `poly_mm_live.db`** (326 real fills): apply the
-  YES penalty mathematically to the original fills and compute the
-  resulting yes:no ratio and hold-to-settle P&L. Documented as part
-  of the asymmetry diagnosis work.
-- **Small-size live trading** ($5-10 bankroll) after the
-  counterfactual passes — that's the only true signal, but gated on
-  explicit user approval per
+- **Realized live trading data** (`poly_mm_live.db`): ground truth.
+- **Counterfactual on live data**: e.g.,
+  [scripts/research/roundtrip_simulator.py](../../scripts/research/roundtrip_simulator.py)
+  — replays the 326 real fills with configurable survival/quote
+  hypotheses. This is the right tool for "should we change parameter
+  X" questions. See
+  [data/research/roundtrip_simulator_findings.md](roundtrip_simulator_findings.md)
+  for the round-trip findings under each survival model.
+- **Aggressor-aware live data**: Step 4 (WebSocket taker-side
+  collector) will provide this once built — proper queue dynamics
+  and VPIN toxicity gating become possible.
+- **Small-size live trading** ($5-10 bankroll): gated on explicit
+  user approval per
   [.claude/rules/trading-safety.md](../../.claude/rules/trading-safety.md).
+  This is the only way to *prove* strategy soundness.
 
-## Inputs
+## Inputs (strategy gate)
 
-All values come from queries on `data/poly_mm_paper.db` (or wherever
-`--db-path` points) aggregated over all sessions in the window:
+All strategy-validation values come from queries on
+`data/poly_mm_live.db` or from `scripts/research/roundtrip_simulator.py`
+output (which reads `poly_mm_live.db`). NEVER from `poly_mm_paper.db`.
 
-- **net_pnl_cents** = SUM(realized_pnl + unrealized_pnl) at last
-  snapshot per (session_id, ticker), minus session fees. Polymarket
-  rebates are negative fees (credit), so net should already be correct
-  after the Step 1 fee DI fix.
-- **yes_no_ratio** = SUM(yes_bid fill rows) / SUM(no_bid fill rows)
-  across all sessions in the window.
+- **net_pnl_cents** = output of round-trip simulator under the chosen
+  survival model (mean of 200 trials). Maker rebates are recomputed
+  via `calculate_maker_fee` to bypass the pre-2026-05-10 stored-fee
+  bug.
+- **yes_no_ratio** = `yes_fills_kept / no_fills_kept` from the
+  simulator output. Both sides modeled equivalently (the simulator
+  only drops yes_bid fills currently; future versions may drop
+  no_bid too if Path B options are explored).
 
 ## Decision matrix — counterfactual on live, not paper
 
@@ -88,14 +101,29 @@ alternative strategies to evaluate while paper-trading Path C:
 If KILL fires, the chosen Path B option becomes the next implementation
 target. Don't kill without something to switch to.
 
-## How to check (operational)
+## How to check
 
-After each paper session ends, the session summary will already include
-per-side telemetry and the headline `yes_bid : no_bid` ratio (Step 4).
-To check aggregate over the window:
+**Strategy gate (run against `poly_mm_live.db` only):** invoke the
+round-trip simulator:
+
+```bash
+python scripts/research/roundtrip_simulator.py --trials 200 --seed 0
+# Or per-prefix:
+python scripts/research/roundtrip_simulator.py --filter-prefix tsc
+```
+
+Read the `net_pnl_c_mean` and `yes_fills_kept_mean / no_fills_kept_mean`
+ratio per slice × model. Apply the decision matrix above.
+
+**Operational shakedown checks (paper or live):** after each session
+ends, the session summary will include per-side telemetry and the
+headline `yes_bid : no_bid` ratio. These are NOT strategy gates; they
+verify the instrumentation works.
 
 ```sql
--- net_pnl_cents over a window
+-- Aggregate session telemetry — run against EITHER paper or live DB
+-- depending on which you're shaking down. Strategy decisions must
+-- still come from the round-trip simulator on poly_mm_live.db.
 WITH last_snap AS (
   SELECT session_id, ticker, MAX(ts) AS max_ts FROM mm_snapshots
   WHERE ts >= '2026-05-10T00:00:00+00:00'  -- replace with window start
@@ -110,7 +138,7 @@ JOIN last_snap l ON s.session_id = l.session_id
                 AND s.ticker = l.ticker
                 AND s.ts = l.max_ts;
 
--- yes_no_ratio over a window
+-- yes_no_ratio over a window (operational only — strategy gate uses simulator)
 SELECT
   SUM(CASE WHEN side='yes_bid' THEN 1 ELSE 0 END) AS n_yes,
   SUM(CASE WHEN side='no_bid'  THEN 1 ELSE 0 END) AS n_no,
@@ -123,18 +151,23 @@ WHERE filled_at >= '2026-05-10T00:00:00+00:00'
 
 ## Hard ceilings (override the matrix above)
 
-Two unconditional KILL conditions short-circuit the 4-week window:
+These hard ceilings apply only to **live trading sessions**, never to
+paper sessions:
 
-1. **Net loss > $5 cumulative in a single week** — bankroll-preservation
-   trigger. $5 = 20% of the original $25 bankroll; this is more than the
-   $2.92 prior loss in a much shorter span.
-2. **Quote-disabled markets > 50%** — if `should_disable_quoting`
-   (paired_rate < 20%, see [src/mm/engine.py](../../src/mm/engine.py))
-   has fired on more than half the sessions, the strategy isn't
-   reaching round-trips at all — the YES penalty cut fills too far.
+1. **Net loss > $5 cumulative in a single live week** — bankroll-
+   preservation trigger. $5 = 20% of the original $25 bankroll. This
+   trigger fires from `poly_mm_live.db` only.
+2. **Quote-disabled markets > 50% across live sessions** — if
+   `should_disable_quoting` (paired_rate < 20%, see
+   [src/mm/engine.py](../../src/mm/engine.py)) has fired on more
+   than half the LIVE sessions, the strategy isn't reaching round-
+   trips at all.
 
-When a hard ceiling fires, write the diagnostic to `path_c_revision.md`
-and pause trading.
+When a hard ceiling fires from live data, write the diagnostic to
+`path_c_revision.md` and pause trading.
+
+Paper-side quote-disabled rates and weekly P&L are operational data
+points only — do not let them trigger a strategy KILL.
 
 ## Out of scope
 
