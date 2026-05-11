@@ -852,15 +852,19 @@ def main():
                 print(f"  WARNING: balance query failed: {e} "
                       f"— using fallback --capital {capital_cents}")
 
+        # Resolve sibling script paths from this file, not from cwd, so
+        # cron launching from /main/ still picks up the worktree's code
+        # when this scanner itself lives in a worktree.
+        script_dir = Path(__file__).resolve().parent
         if args.paper:
-            script = "scripts/poly_paper_mm.py"
+            script = str(script_dir / "poly_paper_mm.py")
             mode_label = "PAPER"
             logfile = f"data/poly_mm_paper_{ts}.log"
             cmd = (f"{sys.executable} -u {script} "
                    f"--slugs {slug_str} "
                    f"--duration 86400 --size 2 --interval 10")
         else:
-            script = "scripts/poly_live_mm.py"
+            script = str(script_dir / "poly_live_mm.py")
             mode_label = "LIVE"
             logfile = f"data/poly_mm_live_{ts}.log"
             cmd = (f"{sys.executable} -u {script} "
