@@ -574,10 +574,29 @@ def main():
     print(f"    Peak P&L:         {gs.peak_total_pnl:.1f}c")
     print(f"    DB:               {args.db_path}")
 
+    # Per-side fill ratio (visible-at-a-glance in Discord per Step 4 of
+    # Path C handoff — primary success metric for the YES penalty fix).
+    side_msg = ""
+    try:
+        import math as _math
+        import sqlite3 as _sqlite3
+        from scripts.session_summary import compute_per_side_stats
+        _conn = _sqlite3.connect(args.db_path)
+        _stats = compute_per_side_stats(_conn, session_id)
+        _conn.close()
+        _ratio = _stats["yes_no_ratio"]
+        _ratio_str = (f"{_ratio:.2f}" if _ratio not in (_math.inf, 0.0)
+                      else ("∞" if _ratio == _math.inf else "0.0"))
+        side_msg = (f" | yes={_stats['yes_bid']['n_fills']} "
+                    f"no={_stats['no_bid']['n_fills']} "
+                    f"ratio={_ratio_str}")
+    except Exception:
+        pass
+
     discord_notify(
         f"**Poly Paper MM Ended** | {elapsed/3600:.1f}h | "
         f"gross={gross_pnl:.1f}c rebates=+{total_rebates:.1f}c "
-        f"net={net_pnl:.1f}c | session={session_id}")
+        f"net={net_pnl:.1f}c{side_msg} | session={session_id}")
 
     db.close()
 

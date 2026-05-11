@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import math
 import os
 import sqlite3
 import sys
@@ -37,6 +38,113 @@ def get_session_id(conn: sqlite3.Connection, session_id: str | None) -> str:
         "SELECT DISTINCT session_id FROM mm_events "
         "ORDER BY ts DESC LIMIT 1").fetchone()
     return row[0] if row else ""
+
+
+def compute_per_side_stats(conn: sqlite3.Connection,
+                           session_id: str) -> dict:
+    """Aggregate yes_bid vs no_bid fill stats for the given session.
+
+    The production diagnosis (fill_asymmetry_diagnosis.md) found 209
+    yes_bid vs 117 no_bid fills — a 1.79x imbalance driven by structural
+    YES-seller taker flow. This function surfaces that imbalance so it's
+    visible in every session summary.
+
+    Returns a dict:
+      {
+        "yes_bid": {n_fills, contracts, mean_price, paired_fills,
+                    paired_contracts, win_rate, pair_pnl_sum, fees_sum},
+        "no_bid":  same shape,
+        "yes_no_ratio": float — n_yes_fills / n_no_fills; math.inf if
+                                no NO fills; 0.0 if no fills at all.
+      }
+    win_rate is None when paired_fills == 0.
+    """
+    def _stats_for_side(side_value: str) -> dict:
+        # Access by index to be agnostic to conn.row_factory setting
+        row = conn.execute(
+            "SELECT COUNT(*), "
+            "       COALESCE(SUM(size), 0), "
+            "       COALESCE(SUM(price*size)*1.0 / NULLIF(SUM(size),0), 0.0), "
+            "       COALESCE(SUM(fee), 0.0) "
+            "FROM mm_fills "
+            "WHERE session_id = ? AND side = ?",
+            (session_id, side_value)).fetchone()
+        n_fills = row[0] or 0
+        contracts = row[1] or 0
+        mean_price = row[2] or 0.0
+        fees_sum = row[3] or 0.0
+
+        paired_row = conn.execute(
+            "SELECT COUNT(*), "
+            "       COALESCE(SUM(size), 0), "
+            "       COALESCE(SUM(pair_pnl), 0.0), "
+            "       SUM(CASE WHEN pair_pnl > 0 THEN 1 ELSE 0 END) "
+            "FROM mm_fills "
+            "WHERE session_id = ? AND side = ? AND pair_id IS NOT NULL",
+            (session_id, side_value)).fetchone()
+        n_paired = paired_row[0] or 0
+        paired_contracts = paired_row[1] or 0
+        pair_pnl_sum = paired_row[2] or 0.0
+        n_wins = paired_row[3] or 0
+        win_rate = (n_wins / n_paired) if n_paired > 0 else None
+
+        return {
+            "n_fills": n_fills,
+            "contracts": contracts,
+            "mean_price": float(mean_price),
+            "paired_fills": n_paired,
+            "paired_contracts": paired_contracts,
+            "pair_pnl_sum": float(pair_pnl_sum),
+            "win_rate": win_rate,
+            "fees_sum": float(fees_sum),
+        }
+
+    yes = _stats_for_side("yes_bid")
+    no = _stats_for_side("no_bid")
+
+    if no["n_fills"] > 0:
+        ratio = yes["n_fills"] / no["n_fills"]
+    elif yes["n_fills"] > 0:
+        ratio = math.inf
+    else:
+        ratio = 0.0
+
+    return {"yes_bid": yes, "no_bid": no, "yes_no_ratio": ratio}
+
+
+def _format_per_side_section(stats: dict) -> list[str]:
+    """Render compute_per_side_stats output as markdown lines."""
+    def _fmt_win_rate(wr):
+        return f"{wr:.0%}" if wr is not None else "n/a"
+
+    def _fmt_ratio(r):
+        if r == math.inf:
+            return "∞ (no_bid=0)"
+        if r == 0.0:
+            return "0.0"
+        return f"{r:.2f}"
+
+    y = stats["yes_bid"]
+    n = stats["no_bid"]
+    return [
+        "## Per-Side Telemetry",
+        "Surfaces yes_bid vs no_bid fill asymmetry — the primary driver of",
+        "May 2026 losses. Target: ratio near 1.0 after Fix 1 (YES penalty).",
+        "",
+        "| Metric | yes_bid | no_bid |",
+        "|---|---|---|",
+        f"| Fills | {y['n_fills']} | {n['n_fills']} |",
+        f"| Contracts | {y['contracts']} | {n['contracts']} |",
+        f"| Mean price (c) | {y['mean_price']:.2f} | {n['mean_price']:.2f} |",
+        f"| Paired fills | {y['paired_fills']} | {n['paired_fills']} |",
+        f"| Paired contracts | {y['paired_contracts']} | {n['paired_contracts']} |",
+        f"| Win rate (paired) | {_fmt_win_rate(y['win_rate'])} | {_fmt_win_rate(n['win_rate'])} |",
+        f"| Pair P&L sum (c) | {y['pair_pnl_sum']:+.1f} | {n['pair_pnl_sum']:+.1f} |",
+        f"| Fees sum (c) | {y['fees_sum']:+.2f} | {n['fees_sum']:+.2f} |",
+        "",
+        f"**yes_bid : no_bid fill ratio = {_fmt_ratio(stats['yes_no_ratio'])}**",
+        "",
+    ]
 
 
 def compute_pnl_split(conn, session_id, ticker):
@@ -261,6 +369,12 @@ def generate_summary(db_path: str, session_id: str | None = None) -> str:
         f"- Game exits: {game_exits}",
         f"- Market deactivations: {deactivations}",
         "",
+    ])
+    # Per-side telemetry (yes_bid vs no_bid)
+    lines.extend(_format_per_side_section(
+        compute_per_side_stats(conn, sid)))
+
+    lines.extend([
         "## P&L Decomposition (Spread vs Inventory)",
         "| Market | Round-trips | Spread P&L | Residual | Inventory P&L | Mix |",
         "|--------|------------|------------|----------|--------------|-----|",
