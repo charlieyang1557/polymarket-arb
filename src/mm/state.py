@@ -194,6 +194,12 @@ class MarketState:
     no_order: SimOrder | None = None
     yes_queue: list[int] = field(default_factory=list)
     no_queue: list[int] = field(default_factory=list)
+    # Parallel queues of DB fill row ids — one entry per contract, in lockstep
+    # with yes_queue/no_queue. Used to back-update mm_fills.pair_id/pair_pnl
+    # after pair_off_inventory. May be empty when MarketState is constructed
+    # in tests that mutate queues directly.
+    yes_fill_ids: list[int] = field(default_factory=list)
+    no_fill_ids: list[int] = field(default_factory=list)
     realized_pnl: float = 0.0
     unrealized_pnl: float = 0.0
     total_fees: float = 0.0
@@ -257,6 +263,7 @@ class GlobalState:
     session_id: str = ""
     db_error_count: int = 0
     peak_total_pnl: float = 0.0
+    pair_seq: int = 0  # monotonic counter — one per pair-off cycle producing pairs
 
     @property
     def total_realized_pnl(self) -> float:

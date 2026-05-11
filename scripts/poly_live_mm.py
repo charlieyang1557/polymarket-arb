@@ -48,6 +48,7 @@ from src.mm.engine import (
     MMEngine, discord_notify, clamp_order_size, soft_close_exit_price,
     progressive_exit_price, should_disable_quoting,
     is_side_cooled_down, should_skip_side, pair_off_inventory,
+    process_pair_off,
 )
 from src.mm.risk import (
     Action, check_layer1, check_layer2, check_layer3, check_layer4,
@@ -1021,13 +1022,35 @@ def main():
                 inv_changed_slugs.add(slug)
                 ms.total_fills += filled
 
-                if side == "yes":
-                    ms.yes_queue.extend([price] * filled)
-                else:
-                    ms.no_queue.extend([price] * filled)
-
                 if ms.oldest_fill_time is None:
                     ms.oldest_fill_time = datetime.now(timezone.utc)
+
+                # Insert fill first so we can capture fill_id and extend the
+                # parallel yes_fill_ids/no_fill_ids queue in lockstep with the
+                # price queue — pair_off_inventory uses these to attribute
+                # pair_id/pair_pnl back to mm_fills rows.
+                # inventory_after reflects post-fill state, computed from the
+                # current queue lengths + this fill's size.
+                post_inv = (len(ms.yes_queue) + filled - len(ms.no_queue)
+                            if side == "yes"
+                            else len(ms.yes_queue) - (len(ms.no_queue) + filled))
+                fill_id = None
+                try:
+                    fill_id = db.insert_fill(
+                        order_id=None, ticker=slug, side=f"{side}_bid",
+                        price=price, size=filled, fee=-rebate_cents, is_taker=0,
+                        inventory_after=post_inv,
+                        filled_at=datetime.now(timezone.utc).isoformat())
+                    gs.db_error_count = 0
+                except Exception as e:
+                    gs.db_error_count += 1
+
+                if side == "yes":
+                    ms.yes_queue.extend([price] * filled)
+                    ms.yes_fill_ids.extend([fill_id] * filled)
+                else:
+                    ms.no_queue.extend([price] * filled)
+                    ms.no_fill_ids.extend([fill_id] * filled)
 
                 inv = ms.net_inventory
                 rebates_earned[slug] = rebates_earned.get(slug, 0) + rebate_cents
@@ -1040,31 +1063,11 @@ def main():
                     f"{slug} {side}_bid {filled}@{price}c | inv={inv} | "
                     f"pnl={ms.realized_pnl:.1f}c")
 
-                # DB
-                try:
-                    db.insert_fill(
-                        order_id=None, ticker=slug, side=f"{side}_bid",
-                        price=price, size=filled, fee=-rebate_cents, is_taker=0,
-                        inventory_after=inv,
-                        filled_at=datetime.now(timezone.utc).isoformat())
-                    gs.db_error_count = 0
-                except Exception as e:
-                    gs.db_error_count += 1
-
-            # Pair off matched inventory for all active markets
+            # Pair off matched inventory for all active markets.
+            # process_pair_off persists pair_id/pair_pnl to mm_fills and
+            # bumps gs.pair_seq once per cycle producing pairs.
             for slug in active_slugs:
-                ms = gs.markets[slug]
-                pairs = pair_off_inventory(ms)
-                for p in pairs:
-                    ms.realized_pnl += p["gross_pnl"]
-                    if p["gross_pnl"] < 0:
-                        ms.consecutive_losses += 1
-                    else:
-                        ms.consecutive_losses = 0
-                ms.paired_fills += len(pairs)
-                if not ms.yes_queue and not ms.no_queue:
-                    ms.oldest_fill_time = None
-                    ms.skew_activated_at = None
+                process_pair_off(gs.markets[slug], gs, db)
 
             # Hedge timer alert: notify Discord if unhedged > 15 min
             now = datetime.now(timezone.utc)

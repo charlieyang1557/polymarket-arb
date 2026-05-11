@@ -235,17 +235,74 @@ def process_fills(order: SimOrder, drain: int) -> int:
 
 
 def pair_off_inventory(ms: MarketState) -> list[dict]:
-    """Settle matched YES+NO pairs. Returns list of pair results."""
+    """Settle matched YES+NO pairs. Returns list of pair results.
+
+    Each pair dict has keys:
+      - yes_cost, no_cost: prices in cents
+      - gross_pnl: 100 - yes_cost - no_cost
+      - yes_fill_id, no_fill_id: DB fill row ids participating in the pair,
+        or None when MarketState was constructed without fill-id queues
+        (e.g., tests mutating yes_queue/no_queue directly).
+    """
     pairs = []
     while ms.yes_queue and ms.no_queue:
         yes_cost = ms.yes_queue.pop(0)
         no_cost = ms.no_queue.pop(0)
+        yes_fid = ms.yes_fill_ids.pop(0) if ms.yes_fill_ids else None
+        no_fid = ms.no_fill_ids.pop(0) if ms.no_fill_ids else None
         gross = 100 - yes_cost - no_cost
         pairs.append({
             "yes_cost": yes_cost, "no_cost": no_cost,
             "gross_pnl": gross,
+            "yes_fill_id": yes_fid, "no_fill_id": no_fid,
         })
     return pairs
+
+
+def process_pair_off(ms: MarketState, gs: GlobalState, db) -> int:
+    """Pair off opposing inventory, update ms state, and persist
+    pair_id/pair_pnl to DB. Returns number of pairs produced.
+
+    Each invocation that produces at least one pair represents one
+    pair-off cycle: gs.pair_seq increments once and every distinct
+    fill_id participating in the cycle is back-updated with that pair_id
+    and the SUM of gross_pnl across all pairs in this cycle that touched
+    the fill (handles size>1 fills participating in multiple pairs).
+
+    Shared by both the paper engine and poly_live_mm — ensures pair
+    tracking lands in mm_fills consistently.
+    """
+    pairs = pair_off_inventory(ms)
+    if not pairs:
+        return 0
+
+    gs.pair_seq += 1
+    pair_id = gs.pair_seq
+    fill_pnl_sum: dict[int, float] = {}
+
+    for p in pairs:
+        ms.realized_pnl += p["gross_pnl"]
+        if p["gross_pnl"] < 0:
+            ms.consecutive_losses += 1
+        else:
+            ms.consecutive_losses = 0
+        for fid in (p["yes_fill_id"], p["no_fill_id"]):
+            if fid is not None:
+                fill_pnl_sum[fid] = fill_pnl_sum.get(fid, 0.0) + p["gross_pnl"]
+        ms.paired_fills += 1
+
+    for fid, pnl in fill_pnl_sum.items():
+        try:
+            db.update_fill(fid, pair_id=pair_id, pair_pnl=pnl)
+        except Exception as e:
+            gs.db_error_count += 1
+            print(f"  DB ERROR (update_fill pair): {e}", file=sys.stderr)
+
+    if not ms.yes_queue and not ms.no_queue:
+        ms.oldest_fill_time = None
+        ms.skew_activated_at = None
+
+    return len(pairs)
 
 
 # -- Discord ---------------------------------------------------------------
@@ -520,18 +577,7 @@ class MMEngine:
             for t in new_trades)
 
         # -- 4. Pair off matched inventory --
-        pairs = pair_off_inventory(ms)
-        for p in pairs:
-            # Fees already deducted at fill time. Gross P&L from pairing.
-            ms.realized_pnl += p["gross_pnl"]
-            if p["gross_pnl"] < 0:
-                ms.consecutive_losses += 1
-            else:
-                ms.consecutive_losses = 0
-        # Reset oldest_fill_time if inventory fully paired off
-        if not ms.yes_queue and not ms.no_queue:
-            ms.oldest_fill_time = None
-            ms.skew_activated_at = None
+        self._process_pair_off(ms)
 
         # Update unrealized (conservative: use bid prices, not midpoint)
         ms.unrealized_pnl = unrealized_pnl_cents(
@@ -617,6 +663,10 @@ class MMEngine:
 
     # -- Internal helpers --------------------------------------------------
 
+    def _process_pair_off(self, ms: MarketState):
+        """Engine-method wrapper around process_pair_off()."""
+        process_pair_off(ms, self.gs, self.db)
+
     def _record_fill(self, ms: MarketState, order: SimOrder,
                      filled: int, best_yes_bid: int, best_no_bid: int):
         """Record a simulated maker fill."""
@@ -626,20 +676,19 @@ class MMEngine:
         ms.realized_pnl -= fee  # fees reduce P&L immediately
 
         side_str = f"{order.side}_bid"
+        # Compute inv after this fill (queues extended below)
         if order.side == "yes":
-            ms.yes_queue.extend([order.price] * filled)
+            inv = len(ms.yes_queue) + filled - len(ms.no_queue)
         else:
-            ms.no_queue.extend([order.price] * filled)
+            inv = len(ms.yes_queue) - (len(ms.no_queue) + filled)
 
-        # Track oldest fill time for L2 time-based checks
         if ms.oldest_fill_time is None:
             ms.oldest_fill_time = now
 
-        inv = ms.net_inventory
         queue_time = (now - order.placed_at).total_seconds()
-
+        fill_id = None
         try:
-            self.db.insert_fill(
+            fill_id = self.db.insert_fill(
                 order_id=order.db_id, ticker=ms.ticker, side=side_str,
                 price=order.price, size=filled, fee=fee, is_taker=0,
                 inventory_after=inv, filled_at=now.isoformat())
@@ -656,6 +705,16 @@ class MMEngine:
         except Exception as e:
             self.gs.db_error_count += 1
             print(f"  DB ERROR: {e}", file=sys.stderr)
+
+        # Extend both the price queue and the parallel fill-id queue in
+        # lockstep so pair_off_inventory can attribute pair_id/pair_pnl back
+        # to the originating mm_fills rows.
+        if order.side == "yes":
+            ms.yes_queue.extend([order.price] * filled)
+            ms.yes_fill_ids.extend([fill_id] * filled)
+        else:
+            ms.no_queue.extend([order.price] * filled)
+            ms.no_fill_ids.extend([fill_id] * filled)
 
         tag = "MAKER"
         print(f"  >>> FILL [{tag}] {side_str} {filled}@{order.price}c "
@@ -679,34 +738,45 @@ class MMEngine:
             # Long YES -> buy NO to flatten
             price = 100 - best_yes_bid  # NO ask
             side_str = "no_aggress"
+            taker_side = "no"
             size = min(self.order_size, abs(net))
             fee = self.taker_fee_calculator(price, size)
-            ms.no_queue.extend([price] * size)
-            # Cooldown: halt YES quoting for 30s (prevents re-fill cycle)
             ms.aggress_cooldown_yes = now + timedelta(seconds=30)
         else:
             # Long NO -> buy YES to flatten
             price = yes_ask
             side_str = "yes_aggress"
+            taker_side = "yes"
             size = min(self.order_size, abs(net))
             fee = self.taker_fee_calculator(price, size)
-            ms.yes_queue.extend([price] * size)
-            # Cooldown: halt NO quoting for 30s
             ms.aggress_cooldown_no = now + timedelta(seconds=30)
 
         ms.total_fees += fee
         ms.realized_pnl -= fee
-        inv = ms.net_inventory
+        # Compute inv AFTER this aggress contracts the position
+        post_inv = (len(ms.yes_queue) + size - len(ms.no_queue)
+                    if taker_side == "yes"
+                    else len(ms.yes_queue) - (len(ms.no_queue) + size))
 
+        fill_id = None
         try:
-            self.db.insert_fill(
+            fill_id = self.db.insert_fill(
                 order_id=None, ticker=ms.ticker, side=side_str,
                 price=price, size=size, fee=fee, is_taker=1,
-                inventory_after=inv, filled_at=now.isoformat())
+                inventory_after=post_inv, filled_at=now.isoformat())
             self.gs.db_error_count = 0
         except Exception as e:
             self.gs.db_error_count += 1
             print(f"  DB ERROR: {e}", file=sys.stderr)
+
+        # Push to queue + fill_id queue in lockstep
+        if taker_side == "no":
+            ms.no_queue.extend([price] * size)
+            ms.no_fill_ids.extend([fill_id] * size)
+        else:
+            ms.yes_queue.extend([price] * size)
+            ms.yes_fill_ids.extend([fill_id] * size)
+        inv = ms.net_inventory
 
         print(f"  >>> FILL [TAKER] {side_str} {size}@{price}c "
               f"fee={fee:.2f}c inv={inv} pnl={ms.realized_pnl:.1f}c")

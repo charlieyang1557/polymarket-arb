@@ -120,6 +120,14 @@ class MMDatabase:
         self.conn.commit()
         return cur.lastrowid
 
+    def update_fill(self, fill_id: int, **kwargs):
+        if not kwargs:
+            return
+        sets = ", ".join(f"{k}=?" for k in kwargs)
+        vals = list(kwargs.values()) + [fill_id]
+        self.conn.execute(f"UPDATE mm_fills SET {sets} WHERE id=?", vals)
+        self.conn.commit()
+
     def insert_snapshot(self, **kwargs):
         kwargs["session_id"] = self.session_id
         cols = ", ".join(kwargs.keys())
