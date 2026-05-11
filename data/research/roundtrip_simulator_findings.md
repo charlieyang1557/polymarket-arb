@@ -255,15 +255,79 @@ performance is suboptimal vs the differential approach above.
   symmetric properties of the sample. If asc/aec drift correlations
   flip in future samples, the gain and loss could swap or vanish.
 
+## Appendix B: Differential penalty by marketType (added 2026-05-11)
+
+After the per-prefix breakdown above, the simulator was extended with
+`make_differential_survival_fn(per_prefix_model)` — a survival function
+that applies the chosen survival model ONLY to fills whose ticker prefix
+matches the spec. Non-matched prefixes get no penalty (survival = 1.0).
+
+CLI:
+```bash
+python scripts/research/roundtrip_simulator.py --differential "tsc:base"
+python scripts/research/roundtrip_simulator.py --differential "tsc:pessimistic,asc:base"
+```
+
+### B.1 Sweep: tsc-only across survival models
+
+| Config | ALL net | tsc net | aec net | asc net |
+|---|---|---|---|---|
+| **baseline (no penalty)** | **+$2.19** | −$0.78 | +$0.26 | +$2.69 |
+| **flat 1c (base model, all prefixes)** | +$0.63 | −$0.46 | −$17.43 | +$18.99 |
+| `tsc:pessimistic` | **+$2.54** | −$0.41 | +$0.26 | +$2.69 |
+| `tsc:base` | +$2.48 | −$0.46 | +$0.26 | +$2.69 |
+| `tsc:optimistic` | +$2.41 | −$0.54 | +$0.26 | +$2.69 |
+
+**Tsc-only differential beats flat-1c in every survival model** by
+$1.78-$1.91. It also beats baseline (no penalty anywhere) by
+$0.22-$0.35. The improvement is concentrated in tsc (the prefix with
+the actual 3.67× imbalance); aec and asc are unchanged because the
+penalty doesn't touch them.
+
+`tsc:pessimistic` is marginally best (+$2.54), but the gap between
+pessimistic/base/optimistic on tsc is within trial-to-trial noise.
+For implementation, `tsc:base` is the cleaner default (matches the
+flat-1c penalty's mechanic, just narrowed to tsc).
+
+### B.2 Why tsc-only is more robust than any tsc+asc combination
+
+Sweeping `tsc:base,asc:base` gives an impressive-looking
+ALL=+$18.50 — but this is the same sample-luck signal the flat-1c
+penalty exploited. The +$16 of "extra" P&L comes from cutting yes_bid
+fills in asc markets that happened to settle NO; in another sample
+that drifts YES, the same cut would lose ~$16.
+
+`tsc:base` (alone) does NOT depend on drift correlation. It
+suppresses fills where the imbalance is real (3.67×) and lets the
+near-balanced prefixes (asc 1.39×, aec 1.57×) trade freely.
+
+### B.3 Recommendation
+
+If the differential implementation goes in:
+
+- Make `yes_penalty` in [src/mm/state.py](../../src/mm/state.py)
+  `skewed_quotes()` accept a per-marketType map (or accept a callable
+  that takes the ticker and returns the penalty).
+- Default config: `{"tsc": 1}` — penalty only on tsc.
+- Add TDD coverage of the new branch in `skewed_quotes()`.
+- Re-run the round-trip simulator post-implementation to verify the
+  prediction holds (should give +$2.48 ALL under base model).
+- Per [memory/feedback_live_is_ground_truth.md](file:///Users/openclaw/.claude/projects/-Users-openclaw-polymarket-arb/memory/feedback_live_is_ground_truth.md):
+  paper validation of this change is not informative; either run
+  small-size live, or wait for the WebSocket taker collector
+  ([scripts/trade_tape_collector.py](../../scripts/trade_tape_collector.py))
+  to accumulate enough data to rerun the simulator with aggressor-aware
+  queue dynamics first.
+
 ## Next steps (post-Step-2)
 
 1. **Per-prefix penalty implementation** in
    [src/mm/state.py](../../src/mm/state.py) `skewed_quotes()` — make
    `yes_penalty` a function of marketType. Add tests covering the
-   new behavior. (Don't implement until user confirms; the
-   hold-to-settle counterfactual already supported a per-prefix
-   approach, but tests should compare round-trip simulator's
-   prediction vs the actual differential implementation.)
+   new behavior. (Don't implement until user confirms; the simulator
+   recommendation above is `{"tsc": 1, default: 0}`. Tests should
+   compare round-trip simulator's +$2.48 prediction vs the actual
+   differential implementation's measured behavior on a re-run.)
 
 2. **Step 4: WebSocket taker-side collector** (deferred to own
    session). Collect real aggressor-side trade tape; use to:

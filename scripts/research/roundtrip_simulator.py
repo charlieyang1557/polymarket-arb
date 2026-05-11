@@ -298,10 +298,50 @@ def run_trial(fills_by_st, snaps_by_st, outcomes, survival_fn, rng):
     return totals
 
 
+def make_differential_survival_fn(per_prefix_model: dict[str, str]):
+    """Build a survival_fn that applies penalty only to selected prefixes.
+
+    Args:
+        per_prefix_model: maps ticker prefix (e.g., "tsc") → survival
+            model name (e.g., "base"). Prefixes not in the map get no
+            penalty (survival = 1.0). Validated up front: unknown model
+            names raise KeyError immediately.
+
+    Returns a function compatible with apply_survival_to_fills:
+        survival_fn(fill_dict) → float in [0, 1]
+
+    The fill_dict must have "ticker" and "_bucket" keys.
+    """
+    # Validate model names eagerly so callers get a clean error
+    resolved = {}
+    for prefix, model_name in per_prefix_model.items():
+        resolved[prefix] = SURVIVAL_MODELS[model_name]  # raises KeyError if unknown
+
+    def survival_fn(fill):
+        ticker = fill.get("ticker", "")
+        prefix = ticker[:3] if ticker else ""
+        model = resolved.get(prefix)
+        if model is None:
+            return 1.0  # no penalty for this prefix
+        return model.get(fill.get("_bucket"), 0.4)
+
+    return survival_fn
+
+
 def run_simulation(fills_by_st, snaps_by_st, outcomes, survival_model_name,
-                   n_trials=200, seed=0):
-    """Run n_trials Monte Carlo trials; return mean + percentile summary."""
-    if survival_model_name is None:
+                   n_trials=200, seed=0, per_prefix_model=None):
+    """Run n_trials Monte Carlo trials; return mean + percentile summary.
+
+    Args:
+        survival_model_name: None (baseline), or "pessimistic"/"base"/
+            "optimistic". Ignored if per_prefix_model is provided.
+        per_prefix_model: optional dict mapping prefix → model name for
+            differential-by-marketType penalty (e.g., {"tsc": "base"}
+            for tsc-only penalty).
+    """
+    if per_prefix_model is not None:
+        survival_fn = make_differential_survival_fn(per_prefix_model)
+    elif survival_model_name is None:
         survival_fn = lambda f: 1.0  # no penalty (baseline)
         # Baseline is deterministic; one trial suffices
         n_trials = 1
@@ -340,12 +380,32 @@ def slice_fills_by_prefix(fills_by_st, prefix):
             if t.startswith(prefix + "-")}
 
 
+def parse_differential_spec(spec: str) -> dict[str, str]:
+    """Parse a CLI spec like 'tsc:base,asc:pessimistic' → dict."""
+    out = {}
+    for chunk in spec.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if ":" not in chunk:
+            raise ValueError(f"differential spec entry missing ':': {chunk}")
+        prefix, model = chunk.split(":", 1)
+        out[prefix.strip()] = model.strip()
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--trials", type=int, default=200)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--filter-prefix", default=None,
                         help="Only run simulator on slugs starting with this prefix")
+    parser.add_argument("--differential", default=None,
+                        help="Differential penalty spec, e.g. 'tsc:base' to apply "
+                             "the base survival model only to tsc fills. Comma-"
+                             "separate multiple: 'tsc:base,asc:pessimistic'. "
+                             "When set, the standard per-model table is replaced "
+                             "with a single 'differential' row per slice.")
     parser.add_argument("--db", default=DB_PATH)
     args = parser.parse_args()
 
@@ -377,13 +437,29 @@ def main():
     print(f"{'Slice':<8s}  {'Model':<13s}  {'Trials':>7s}  "
           f"{'Net P&L $':>11s}  {'p25..p75':>17s}  {'YES kept':>9s}  {'NO kept':>9s}")
     print("=" * 80)
+    # If --differential is set, only run baseline + differential. Otherwise
+    # run baseline + each of the three survival models (the original behavior).
+    if args.differential:
+        differential_map = parse_differential_spec(args.differential)
+        spec_label = "diff[" + ",".join(f"{k}={v}" for k, v in differential_map.items()) + "]"
+        configs = [(None, "baseline", None),
+                   (None, spec_label, differential_map)]
+    else:
+        differential_map = None
+        configs = [(None, "baseline", None),
+                   ("pessimistic", "pessimistic", None),
+                   ("base", "base", None),
+                   ("optimistic", "optimistic", None)]
+
     rows = []
     for slice_label, slice_fills in slices:
-        for model_name in [None, "pessimistic", "base", "optimistic"]:
-            label = "baseline" if model_name is None else model_name
-            n_trials = 1 if model_name is None else args.trials
-            summary = run_simulation(slice_fills, snaps_by_st, outcomes,
-                                     model_name, n_trials=n_trials, seed=args.seed)
+        for model_name, label, prefix_map in configs:
+            n_trials = 1 if (model_name is None and prefix_map is None) else args.trials
+            summary = run_simulation(
+                slice_fills, snaps_by_st, outcomes,
+                model_name, n_trials=n_trials, seed=args.seed,
+                per_prefix_model=prefix_map,
+            )
             net_mean_dollars = summary["net_pnl_c_mean"] / 100
             p25 = summary["net_pnl_c_p25"] / 100
             p75 = summary["net_pnl_c_p75"] / 100

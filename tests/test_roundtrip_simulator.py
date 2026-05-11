@@ -15,11 +15,14 @@ import os
 import random
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.research.roundtrip_simulator import (
     apply_survival_to_fills,
     simulate_session_ticker,
+    make_differential_survival_fn,
     SURVIVAL_MODELS,
 )
 
@@ -225,6 +228,64 @@ def test_survival_models_have_three_named_levels():
         assert 0 in m and -1 in m and "+1_or_above" in m and "no_snapshot" in m
         for key, p in m.items():
             assert 0 <= p <= 1, f"{name}[{key}] = {p}"
+
+
+# ---------- differential penalty by marketType ---------------------------
+
+def test_differential_survival_fn_tsc_only_applies_to_tsc_fills():
+    """make_differential_survival_fn({'tsc': 'base'}) → tsc fills get
+    base-model survival; non-tsc fills always survive (return 1.0)."""
+    fn = make_differential_survival_fn({"tsc": "base"})
+    # tsc yes_bid at bucket=0 → base model survival = 0.40
+    tsc_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "tsc-mlb-foo"}
+    assert fn(tsc_fill) == pytest.approx(0.40)
+    # asc yes_bid → no penalty → 1.0
+    asc_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "asc-nba-foo"}
+    assert fn(asc_fill) == 1.0
+    # aec yes_bid → no penalty → 1.0
+    aec_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "aec-ipl-foo"}
+    assert fn(aec_fill) == 1.0
+
+
+def test_differential_survival_fn_empty_dict_means_no_penalty_anywhere():
+    """make_differential_survival_fn({}) returns a function that always returns 1.0."""
+    fn = make_differential_survival_fn({})
+    for prefix in ("tsc", "asc", "aec", "atc"):
+        fill = {"side": "yes_bid", "_bucket": 0, "ticker": f"{prefix}-foo"}
+        assert fn(fill) == 1.0
+
+
+def test_differential_survival_fn_supports_multiple_prefixes():
+    """{'tsc': 'base', 'asc': 'pessimistic'} → each prefix uses its model."""
+    fn = make_differential_survival_fn({"tsc": "base", "asc": "pessimistic"})
+    tsc_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "tsc-foo"}
+    asc_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "asc-foo"}
+    assert fn(tsc_fill) == pytest.approx(0.40)  # base
+    assert fn(asc_fill) == pytest.approx(0.20)  # pessimistic
+    # untagged prefix gets no penalty
+    aec_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "aec-foo"}
+    assert fn(aec_fill) == 1.0
+
+
+def test_differential_survival_fn_does_not_affect_no_bid():
+    """no_bid fills should always survive regardless of penalty configuration.
+    (The YES penalty only suppresses yes_bid fills.)"""
+    fn = make_differential_survival_fn({"tsc": "base"})
+    no_fill = {"side": "no_bid", "_bucket": 0, "ticker": "tsc-foo"}
+    # apply_survival_to_fills already filters no_bid out; the survival_fn
+    # itself is only called for yes_bid. But defensively, the fn should
+    # not return a probability for no_bid that would suppress them.
+    # We test the integration via apply_survival_to_fills.
+    import random
+    fills = [no_fill]
+    kept = apply_survival_to_fills(fills, fn, random.Random(0))
+    assert len(kept) == 1
+
+
+def test_differential_survival_fn_unknown_model_name_raises():
+    """An unrecognized model name should fail loudly."""
+    with pytest.raises(KeyError):
+        make_differential_survival_fn({"tsc": "not_a_model"})
 
 
 # ---------- chronological ordering ---------------------------------------
