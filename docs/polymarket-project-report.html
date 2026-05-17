@@ -400,12 +400,12 @@ td.mono {
   <div class="hero-label">Live Project Report</div>
   <h1>Polymarket US<br>Automated Trading Bot</h1>
   <div class="hero-sub">
-    A systematic exploration of market-making, directional, and cross-market strategies on CFTC-regulated prediction markets — with ongoing adversarial-selection mitigations as of April 2026.
+    A systematic exploration of market-making, directional, and cross-market strategies on CFTC-regulated prediction markets — framed by <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6615739" style="color:var(--accent);text-decoration:none;">Bartlett &amp; O'Hara (2026)</a>, "Adverse Selection in Prediction Markets: Evidence from Kalshi."
   </div>
   <div class="hero-meta">
     <div class="hero-meta-item">
       <div class="hero-meta-label">Duration</div>
-      <div class="hero-meta-value">Mar 10 — Present</div>
+      <div class="hero-meta-value">Mar 10 — May 16, 2026</div>
     </div>
     <div class="hero-meta-item">
       <div class="hero-meta-label">Capital Deployed</div>
@@ -431,15 +431,15 @@ td.mono {
   </p>
   <div class="stat-grid">
     <div class="stat-card">
-      <div class="stat-value">140</div>
+      <div class="stat-value">~190</div>
       <div class="stat-label">Git Commits</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">639</div>
+      <div class="stat-value">656</div>
       <div class="stat-label">Unit Tests</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">36</div>
+      <div class="stat-value">326</div>
       <div class="stat-label">Live Fills</div>
     </div>
     <div class="stat-card">
@@ -448,12 +448,12 @@ td.mono {
     </div>
   </div>
   <div class="callout">
-    <div class="callout-title">Key Finding — As of Apr 7</div>
-    <p>Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). No retail-accessible edge exists in passive market making, directional taker strategies, or cross-market correlation trading at our capital scale ($25-30).</p>
+    <div class="callout-title">Key Finding</div>
+    <p>Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). Live fill attribution confirms the adverse-selection mechanism described in Bartlett &amp; O'Hara (2026) — yes_bid fills lost -4.62c/contract (WR 43.9%) while no_bid fills won +2.31c/contract (WR 51.3%). Our bot absorbed 1.79× more YES fills than NO fills, putting it on the losing side of the asymmetry. No retail-accessible edge exists in passive market making, directional taker strategies, or cross-market correlation trading at our capital scale.</p>
   </div>
   <div class="callout" style="margin-top:16px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.07);">
-    <div class="callout-title" style="color:var(--amber);">Ongoing — Apr 10: Approach A+B Improvements</div>
-    <p>Six targeted fixes to the market-making engine were deployed on Apr 10: fair-value anchoring (de-couple quotes from BBO adverse selection), adaptive gamma, near-touch OBI depth, Polymarket fee model correction, priority quote management on fill, and a kill condition tracker. Round-trip fill rate target: &gt;35% over 5 sessions. Kill condition fires if not met.</p>
+    <div class="callout-title" style="color:var(--amber);">Apr 10 → May 16: Adverse-Selection Mitigations Tested</div>
+    <p>Six targeted fixes deployed (fair-value anchoring, adaptive gamma, near-touch OBI, fee model fix, priority quoting, kill condition tracker). A round-trip simulator built on 326 live fills evaluated additional mitigations including a 1c YES penalty — which showed net mildly negative aggregate impact (-$1.56), with heterogeneous effects by market type (tsc: +$0.32, aec: -$17.69) dominated by drift-correlated exit pricing. The structural disadvantage persists at retail scale.</p>
   </div>
 </section>
 
@@ -654,6 +654,16 @@ td.mono {
       <div class="timeline-title">Approach A+B: logic, speed &amp; adverse-selection fixes</div>
       <div class="timeline-desc">Six targeted improvements deployed: fair-value anchoring (OBI microprice instead of BBO), adaptive gamma (0.5→2.0c ramp), near-touch OBI depth (3c filter), Polymarket fee model fix (rebate instead of Kalshi cost), priority quote management on fill (immediate reduce-side quote), and kill condition tracker (session stats JSON + Discord alert). Kill condition: &gt;35% round-trip rate after 5 sessions.</div>
     </div>
+    <div class="timeline-item">
+      <div class="timeline-date">May 10-11</div>
+      <div class="timeline-title">Bartlett &amp; O'Hara paper integration + round-trip simulator</div>
+      <div class="timeline-desc">Identified the academic frame: SSRN 6615739 explains the adverse-selection asymmetry our bot was on the wrong side of. Built a survival-model-based round-trip simulator on 326 live fills to test further mitigations against actual production data. A 1c YES penalty showed heterogeneous effects by market type (tsc: +$0.32, aec: -$17.69) and net mildly negative aggregate (-$1.56). Hold-to-settle counterfactual gave opposite-sign conclusions, reinforcing that round-trip simulation is the correct evaluation frame.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">May 16</div>
+      <div class="timeline-title">Project conclusion</div>
+      <div class="timeline-desc">Structural adverse selection at retail scale confirmed unfixable with capital available. Final balance +$0.65 over starting capital, but attributable to survivorship bias on unhedged settlements rather than systematic edge. Infrastructure, methodology, and academic grounding deliverables documented.</div>
+    </div>
   </div>
 </section>
 
@@ -752,9 +762,65 @@ td.mono {
   </div>
 </section>
 
-<!-- KEY BUGS -->
+<!-- ADVERSE SELECTION PAPER -->
 <section>
   <div class="section-num">06</div>
+  <h2>Adverse Selection — The Academic Frame</h2>
+  <p class="section-intro">
+    Bartlett &amp; O'Hara (2026), "Adverse Selection in Prediction Markets: Evidence from Kalshi" (Stanford working paper #615, SSRN 6615739), explains the mechanism that drove our losses and informed every subsequent mitigation.
+  </p>
+
+  <h3>Paper's Core Thesis</h3>
+  <p>On Kalshi single-name markets, makers earn +1.91c/contract — but <strong>not</strong> from the bid-ask spread. The profit comes from a <strong>frequency edge</strong>: YES-biased uninformed takers systematically overbet YES on markets that mostly settle NO (67.5% of single-name contracts). The behavioral tax these uninformed takers pay (+$18.22M on NO-settling markets) cross-subsidizes losses informed traders impose (-$11.97M). The cross-subsidy ratio is 1.52× on NO-settling markets (profitable) vs 0.80× on YES-settling (loss).</p>
+
+  <h3>Mapping to Our Bot</h3>
+  <p>The paper's "profitable maker" trades opposite to the YES-biased taker:</p>
+  <ul style="color:var(--text-dim);font-size:15px;margin:0 0 16px 24px;line-height:1.8;">
+    <li>Taker buys YES at the ASK → maker sells YES → wins if market settles NO</li>
+    <li>Taker sells YES (= buys NO at the ASK) → maker is long YES → loses if NO</li>
+  </ul>
+  <p>Our bot quotes <strong>bids on both sides</strong> (no asks). So:</p>
+  <ul style="color:var(--text-dim);font-size:15px;margin:0 0 16px 24px;line-height:1.8;">
+    <li><code>yes_bid</code> fill = taker sells YES to us = we go long YES = <strong>paper's LOSING side</strong></li>
+    <li><code>no_bid</code> fill = taker sells NO to us (= taker buys YES) = we go long NO = <strong>paper's WINNING side</strong></li>
+  </ul>
+
+  <h3>Live Data Confirms the Mechanism</h3>
+  <table>
+    <thead>
+      <tr><th>Side</th><th>Fills</th><th>P&amp;L per contract</th><th>Win rate</th><th>Paper's prediction</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>yes_bid</strong></td><td class="mono">209</td><td class="mono" style="color:var(--red);">-4.62c</td><td class="mono">43.9%</td><td>Losing side ✓</td></tr>
+      <tr><td><strong>no_bid</strong></td><td class="mono">117</td><td class="mono" style="color:var(--green);">+2.31c</td><td class="mono">51.3%</td><td>Winning side ✓</td></tr>
+      <tr><td><strong>Ratio</strong></td><td class="mono">1.79× YES</td><td colspan="3">Heavy YES-side exposure → on the losing side 1.79× more often</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Why the YES Penalty Wasn't Enough</h3>
+  <p>To shift fill distribution toward the paper's winning side, we built a round-trip simulator on the 326 live fills using a survival-model approach. Testing a flat 1c penalty on yes_bid quotes (raising the threshold to reduce YES fill probability):</p>
+  <table>
+    <thead>
+      <tr><th>Slice</th><th>Baseline P&amp;L</th><th>With 1c YES penalty</th><th>Δ</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>ALL</code></td><td class="mono">+$2.19</td><td class="mono">+$0.63</td><td class="mono" style="color:var(--red);">−$1.56</td></tr>
+      <tr><td><code>tsc</code> (target)</td><td class="mono">−$0.78</td><td class="mono">−$0.46</td><td class="mono" style="color:var(--green);">+$0.32</td></tr>
+      <tr><td><code>asc</code></td><td class="mono">+$2.69</td><td class="mono">+$18.99</td><td class="mono">+$16.30 (drift luck)</td></tr>
+      <tr><td><code>aec</code></td><td class="mono">+$0.26</td><td class="mono">−$17.43</td><td class="mono" style="color:var(--red);">−$17.69</td></tr>
+    </tbody>
+  </table>
+  <p>The penalty's effect is dominated by exit-pricing of leftover inventory, not by strategy mechanics. Cutting yes_bid fills changes which side of the FIFO queue has unpaired inventory at game time — and that leftover inventory exits at last-snapshot BBO. If session drift moved against the leftover side (e.g., <code>aec</code> drifted YES, leaving us with NO inventory to exit), the penalty produces brutal exit losses.</p>
+
+  <div class="callout" style="margin-top:24px;">
+    <div class="callout-title">Why This Is Hard to Fix</div>
+    <p>The paper's profitable strategy is <em>hold-to-settle</em> on the right side. Our bot <em>round-trips</em>, and our fill distribution is YES-heavy (the wrong side). Closing the gap requires either asymmetric quoting calibrated per market type, or a regime shift toward holding no_bid fills to settlement — neither of which fully solves the structural disadvantage at $25-30 of capital.</p>
+  </div>
+</section>
+
+<!-- KEY BUGS -->
+<section>
+  <div class="section-num">07</div>
   <h2>Critical Bugs & Fixes</h2>
   <p class="section-intro">
     Production trading exposed bugs that no amount of paper testing would have found. Each was diagnosed from live logs and fixed with tests.
@@ -807,7 +873,7 @@ td.mono {
 
 <!-- KEY LEARNINGS -->
 <section>
-  <div class="section-num">07</div>
+  <div class="section-num">08</div>
   <h2>Key Learnings</h2>
   <p class="section-intro">
     Lessons applicable to any retail quantitative trading project, regardless of asset class.
@@ -857,7 +923,7 @@ td.mono {
 
 <!-- FINANCIAL SUMMARY -->
 <section>
-  <div class="section-num">08</div>
+  <div class="section-num">09</div>
   <h2>Financial Summary</h2>
 
   <div class="stat-grid">
@@ -898,7 +964,7 @@ td.mono {
 
 <!-- ASSETS DELIVERED -->
 <section>
-  <div class="section-num">09</div>
+  <div class="section-num">10</div>
   <h2>Assets Delivered</h2>
   <p class="section-intro">
     The engineering infrastructure is the primary deliverable. It is fully operational and platform-agnostic — ready to be re-deployed if a viable strategy is identified.
@@ -923,7 +989,7 @@ td.mono {
 │   ├── mm/risk.py               <span class="comment"># 4-layer risk management</span>
 │   ├── mm/db.py                 <span class="comment"># SQLite persistence</span>
 │   └── strategy_a/              <span class="comment"># De-vig, team matching, odds DB</span>
-├── tests/                       <span class="comment"># 639 tests across 36+ files</span>
+├── tests/                       <span class="comment"># 656 tests across 37 files</span>
 ├── config/                      <span class="comment"># Daily targets, game schedule</span>
 ├── CLAUDE.md                    <span class="comment"># AI coding assistant instructions</span>
 └── requirements.txt</pre>
@@ -958,17 +1024,17 @@ td.mono {
 
 <!-- CONCLUSION -->
 <section>
-  <div class="section-num">10</div>
+  <div class="section-num">11</div>
   <h2>Conclusion & Recommendations</h2>
   <p class="section-intro">
-    The project empirically validated that Polymarket US sports markets are too efficient for retail-scale automated trading at current settings. Approach A+B improvements (Apr 10) are the final active attempt to raise the round-trip fill rate above the 35% kill condition threshold.
+    The project empirically validated that Polymarket US sports markets are too efficient for retail-scale automated trading. The adverse-selection mechanism formalized by Bartlett &amp; O'Hara (2026) explains why — and our live fill distribution put us on the losing side of the same asymmetry that profitable Kalshi makers exploit.
   </p>
 
   <h3>What Worked</h3>
-  <p>The engineering methodology — paper validate → live deploy → diagnose from logs → fix with tests → iterate — was highly effective. We went from zero to live trading in 5 days, and from "zero fills" to "fills were always happening but undetected" in one debugging session. The empirical rigor in killing strategies saved weeks of wasted effort.</p>
+  <p>The engineering methodology — paper validate → live deploy → diagnose from logs → fix with tests → iterate — was highly effective. We went from zero to live trading in 5 days, and from "zero fills" to "fills were always happening but undetected" in one debugging session. The empirical rigor in killing strategies saved weeks of wasted effort. The round-trip simulator, built after the Approach A+B mitigations, was the key tool for evaluating further strategy changes against actual production data rather than synthetic paper trading.</p>
 
-  <h3>What Didn't Work (Yet)</h3>
-  <p>The fundamental assumption that a retail trader with $25 can profitably market-make on institutional-grade sports prediction markets. The market microstructure (1-3c spreads, queue priority for large orders, Pinnacle-calibrated pricing) makes this structurally difficult without either significant capital ($10K+) for queue priority or ultra-low-latency infrastructure for in-play trading. The Apr 10 Approach A+B fixes target two correctable root causes — if the kill condition fires, this assessment becomes final.</p>
+  <h3>What Didn't Work</h3>
+  <p>The fundamental assumption that a retail trader with $25 can profitably market-make on institutional-grade sports prediction markets. The market microstructure (1-3c spreads, queue priority for large orders, Pinnacle-calibrated pricing) combined with adverse-selection asymmetry (1.79× YES-side exposure on the losing side of the Bartlett &amp; O'Hara cross-subsidy) makes this structurally difficult. The Apr 10 Approach A+B mitigations targeted correctable root causes but the round-trip simulator showed that further mitigations (e.g., flat YES penalty) trade gains in one market type for larger losses in another — net mildly negative aggregate impact.</p>
 
   <h3>Potential Future Directions</h3>
   <table>
@@ -981,9 +1047,9 @@ td.mono {
     </tbody>
   </table>
 
-  <div class="callout" style="margin-top:32px;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.07);">
-    <div class="callout-title" style="color:var(--amber);">Current Status — Pending Kill Condition</div>
-    <p>Approach A+B is live. Kill condition: if avg round-trip fill rate does not exceed 35% over the next 5 sessions, the strategy is sunset. If it does, further iteration is warranted. Either way, this project spent under $1 generating an empirical verdict that would have cost far more through trial-and-error with larger capital. The infrastructure, methodology, and empirical discipline built here are the real deliverables.</p>
+  <div class="callout" style="margin-top:32px;">
+    <div class="callout-title">Final Status — Project Concluded</div>
+    <p>The structural disadvantage from adverse selection persists at retail scale. Asymmetric quoting, hold-to-settle bias for no_bid fills, and VPIN-style toxicity gating remain potential future directions for capital scales above $10K, but they do not change the fundamental constraint at $25-30. This project spent under $1 generating an empirical verdict that would have cost orders of magnitude more through trial-and-error with larger capital. The infrastructure (live MM engine, paper simulator, market scanner, round-trip simulator, risk manager, cross-market analyzer), methodology (paper-then-live with empirical kill conditions), and academic grounding (Bartlett &amp; O'Hara 2026) built here are the real deliverables.</p>
   </div>
 </section>
 
@@ -994,7 +1060,7 @@ td.mono {
     <p>Polymarket Automated Trading — Project Report</p>
     <p style="margin-top:8px;">
       <a href="https://github.com/charlieyang1557/polymarket-arb">github.com/charlieyang1557/polymarket-arb</a>
-      &nbsp;·&nbsp; April 2026
+      &nbsp;·&nbsp; May 2026
     </p>
   </div>
 </footer>
