@@ -1,6 +1,6 @@
 # polymarket-arb
 
-Automated trading system for **Polymarket US** and **Kalshi** prediction markets. Built, deployed live, and systematically tested four strategies (Mar 10 – Apr 7, 2026). Approach A+B adverse-selection mitigations deployed Apr 10 — kill condition pending 5-session validation.
+Automated trading system for **Polymarket US** and **Kalshi** prediction markets. Built, deployed live, and systematically tested four strategies (Mar 10 – May 2026). Informed by [Bartlett & O'Hara (2026)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6615739) "Adverse Selection in Prediction Markets: Evidence from Kalshi" — the academic foundation for understanding why retail market makers lose on prediction markets.
 
 **[Full Project Report](https://htmlpreview.github.io/?https://github.com/charlieyang1557/polymarket-arb/blob/main/docs/polymarket-project-report.html)**
 
@@ -8,15 +8,26 @@ Automated trading system for **Polymarket US** and **Kalshi** prediction markets
 
 | Metric | Value |
 |--------|-------|
-| Duration | Mar 10, 2026 – Present |
+| Duration | Mar 10 – May 16, 2026 |
 | Capital deployed | $28.03 |
-| Balance (Apr 7) | $28.68 (+$0.65) |
+| Balance (final) | $28.68 (+$0.65) |
 | Live fills | 36 maker fills across 5 sessions |
-| Strategies tested | 4 (negative or neutral EV; A+B mitigations live Apr 10) |
-| Commits | ~140 |
-| Unit tests | 639 across 36+ test files |
+| Strategies tested | 4 (all negative or neutral EV) |
+| Commits | ~190 |
+| Unit tests | 656 across 37 test files |
 
-**Key finding (Apr 7)**: Polymarket US sports markets are priced within ±0.8% of Pinnacle (the world's sharpest sportsbook). Adverse selection drove a ~26% round-trip fill rate. **Apr 10**: Six targeted fixes deployed (fair-value anchoring, adaptive gamma, near-touch OBI, fee model fix, priority quoting, kill condition tracker). Kill condition: strategy is sunset if round-trip rate stays below 35% over 5 sessions.
+**Key finding**: Polymarket US sports markets exhibit the same adverse selection dynamics described in Bartlett & O'Hara — YES-biased uninformed takers cross-subsidize informed flow, but only when makers are on the right side of that asymmetry. Our bot absorbed 1.79x more YES fills (the losing side), driving a ~26% round-trip fill rate. Six targeted mitigations were deployed (fair-value anchoring, adaptive gamma, near-touch OBI, fee model fix, priority quoting, kill condition tracker) but the structural disadvantage persists at retail scale.
+
+## Adverse Selection: The Core Problem
+
+Bartlett & O'Hara (2026) show that on Kalshi, makers earn +1.91c/contract on single-name markets — not from the bid-ask spread, but from a **frequency edge**: YES-biased uninformed takers systematically overbet YES on markets that mostly settle NO. The behavioral tax these takers pay ($18.22M on NO-settling markets) cross-subsidizes informed trader losses ($11.97M).
+
+Our live data confirmed the same mechanism on Polymarket sports:
+- **yes_bid fills** lost -4.62c/contract (WR 43.9%) — the paper's losing side
+- **no_bid fills** won +2.31c/contract (WR 51.3%) — the paper's profitable side
+- **Fill ratio**: 209 YES / 117 NO (1.79x asymmetry toward the losing side)
+
+The round-trip simulator on 326 live fills showed that a flat 1c YES penalty (to reduce adverse fills) is net mildly negative in aggregate (-$1.56), though it helps on some market types (tsc: +$0.32) and hurts on others (aec: -$17.69) due to drift-correlated exit pricing.
 
 ## Strategies Tested
 
@@ -35,15 +46,16 @@ Monitor real-time market events for momentum signals. Abandoned after Strategy 1
 ## Architecture
 
 ```
-# Market Making (A+B improvements live Apr 10)
+# Market Making (live trading)
 scripts/poly_live_mm.py          Live MM engine (real orders via Polymarket SDK)
 scripts/poly_paper_mm.py         Paper trading (simulated fills)
 scripts/poly_daily_scan.py       Market scanner (events API, rank-based scoring)
 
 # Research Tools
-scripts/cross_market_logger.py   30s orderbook snapshots across correlated markets
-scripts/analyze_cross_market.py  Lag detection, direction accuracy, simulated PnL
-scripts/poly_calibration.py      Pinnacle de-vig odds comparison
+scripts/research/roundtrip_simulator.py  Round-trip fill simulator (326 live fills, survival model)
+scripts/cross_market_logger.py           30s orderbook snapshots across correlated markets
+scripts/analyze_cross_market.py          Lag detection, direction accuracy, simulated PnL
+scripts/poly_calibration.py              Pinnacle de-vig odds comparison
 
 # Core Engine (shared)
 src/poly_client.py               Polymarket US API adapter
@@ -67,6 +79,8 @@ src/mm/db.py                     SQLite persistence (fills, orders, snapshots)
 
 - **Cancel-pending state machine**: Prevents duplicate order placement during exchange poll lag. Cancel marks `cancel_pending` in local tracking; placement waits for poll confirmation.
 - **Activities-based fill detection**: Exchange-confirmed fills via `portfolio.activities()` with session watermark, passive-only filter, and trade ID dedup.
+- **Round-trip simulator**: Survival-model-based fill pair simulator on 326 live fills. Tests strategy modifications (YES penalty, differential by market type) against actual production data with drift-correlated exit pricing.
+- **Kill condition tracker**: Records session stats and alerts if round-trip rate stays below 35% over 5 sessions — automated strategy sunset gate.
 - **Cross-market correlation analysis**: 350K+ orderbook snapshots across 59 events, with direction accuracy and simulated PnL including price-dependent taker fees and T+1 execution (no lookahead bias).
 
 ## Setup
@@ -86,4 +100,4 @@ python -m pytest tests/ -q
 
 ---
 
-> **Disclaimer**: For educational and research purposes. Trading involves risk of loss. This project concluded that the tested strategies are not profitable at retail scale.
+> **Disclaimer**: For educational and research purposes. Trading involves risk of loss. This project concluded that retail-scale market making on prediction markets faces structural adverse selection that is difficult to overcome without the frequency edge described in Bartlett & O'Hara (2026).
