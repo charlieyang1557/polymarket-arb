@@ -62,17 +62,16 @@ def _taker_fee_per_contract(price_cents: int) -> float:
 
 def apply_survival_to_fills(fills, survival_fn: Callable[[dict], float],
                               rng: random.Random) -> list[dict]:
-    """Filter `fills` by applying survival_fn to each yes_bid fill.
+    """Filter `fills` by applying survival_fn to each fill.
 
-    For each yes_bid fill, draws a uniform [0,1) sample; keeps the fill if
-    sample < survival_fn(fill). no_bid fills are always kept (the YES
-    penalty is one-sided).
+    For each fill, draws a uniform [0,1) sample; keeps the fill if sample
+    < survival_fn(fill). The survival_fn is responsible for returning 1.0
+    for fills that should not be penalized (e.g., no_bid in a YES-only
+    penalty config). Earlier versions hard-coded the yes_bid guard, but
+    the directional penalty mode needs to support penalizing either side.
     """
     kept = []
     for f in fills:
-        if f["side"] != "yes_bid":
-            kept.append(f)
-            continue
         p = survival_fn(f)
         if rng.random() < p:
             kept.append(f)
@@ -318,6 +317,9 @@ def make_differential_survival_fn(per_prefix_model: dict[str, str]):
         resolved[prefix] = SURVIVAL_MODELS[model_name]  # raises KeyError if unknown
 
     def survival_fn(fill):
+        # YES-only differential — no_bid fills always pass
+        if fill.get("side") != "yes_bid":
+            return 1.0
         ticker = fill.get("ticker", "")
         prefix = ticker[:3] if ticker else ""
         model = resolved.get(prefix)
@@ -328,18 +330,178 @@ def make_differential_survival_fn(per_prefix_model: dict[str, str]):
     return survival_fn
 
 
+def _prefix7(ticker: str) -> str:
+    """Extract a 7-char-ish prefix: first two dash-delimited parts.
+
+    'tsc-mlb-az-tex-2026-05-11-7pt5' → 'tsc-mlb'
+    'aec-cs2-foo-bar-2026-05-13'     → 'aec-cs2'
+    'astatc-mlb-foo-2026-05-13'      → 'astatc-mlb'
+    """
+    if not ticker or "-" not in ticker:
+        return ticker or ""
+    parts = ticker.split("-", 2)
+    if len(parts) >= 2:
+        return f"{parts[0]}-{parts[1]}"
+    return ticker
+
+
+def make_directional_survival_fn(penalty_map: dict[str, dict]):
+    """Build a survival_fn for the auto-calibrated directional penalty.
+
+    Args:
+        penalty_map: dict mapping prefix7 (e.g., "tsc-mlb") → config dict
+            with keys:
+              direction: "yes_penalty" | "no_penalty" | None
+              model: survival model name (default "base") - used to set
+                     the magnitude of the penalty's effect
+        Prefixes absent from the map get NO penalty (survival = 1.0 for
+        both sides). Use this for prefixes where the trade tape signal
+        is too weak / unavailable.
+
+    Returns:
+        survival_fn(fill_dict) → float in [0, 1]. The fill_dict must have
+        "ticker", "side", and "_bucket" keys.
+    """
+    resolved = {}
+    for prefix, cfg in penalty_map.items():
+        direction = cfg.get("direction")
+        if direction is None:
+            continue
+        if direction not in ("yes_penalty", "no_penalty"):
+            raise ValueError(
+                f"invalid direction for prefix {prefix}: {direction!r}"
+            )
+        model_name = cfg.get("model", "base")
+        resolved[prefix] = {
+            "direction": direction,
+            "model": SURVIVAL_MODELS[model_name],  # raises KeyError if unknown
+        }
+
+    def survival_fn(fill):
+        prefix = _prefix7(fill.get("ticker", ""))
+        cfg = resolved.get(prefix)
+        if cfg is None:
+            return 1.0  # no penalty for this prefix
+        # Apply penalty ONLY to the side flagged by the direction
+        if cfg["direction"] == "yes_penalty" and fill.get("side") == "yes_bid":
+            return cfg["model"].get(fill.get("_bucket"), 0.4)
+        if cfg["direction"] == "no_penalty" and fill.get("side") == "no_bid":
+            return cfg["model"].get(fill.get("_bucket"), 0.4)
+        return 1.0  # opposite side not penalized
+
+    return survival_fn
+
+
+def compute_directional_penalty_map(
+    trade_tape_db: str,
+    threshold_high: float = 0.55,
+    threshold_low: float = 0.45,
+    min_trades: int = 30,
+    model: str = "base",
+) -> dict[str, dict]:
+    """Derive per-prefix7 penalty direction from trade tape flow signal.
+
+    For each prefix7 in the trade tape, compute the YES_BID share:
+        share = maker_buy / (maker_buy + maker_sell)
+
+    Direction mapping:
+        share > threshold_high → 'yes_penalty' (YES_BID drain heavy →
+            penalize YES bids to reduce adverse selection)
+        share < threshold_low  → 'no_penalty' (YES_ASK / NO_BID drain
+            heavy → penalize NO bids)
+        otherwise              → None (balanced flow; no penalty)
+
+    Args:
+        trade_tape_db: path to data/poly_trade_tape.db
+        threshold_high/low: dead zone is [low, high]
+        min_trades: skip prefixes with fewer than this many trades
+            (too noisy to be reliable)
+        model: SURVIVAL_MODELS name for the penalty intensity
+
+    Returns:
+        dict[prefix7] -> {"direction": str|None, "model": str,
+                          "yes_bid_share": float, "n_trades": int}
+    """
+    conn = sqlite3.connect(trade_tape_db)
+    try:
+        rows = conn.execute("""
+            SELECT
+                substr(market_slug, 1, instr(market_slug || '-',
+                    '-', instr(market_slug, '-')+1) - 1) AS prefix7,
+                maker_side,
+                COUNT(*) AS n
+            FROM mm_trade_tape
+            GROUP BY prefix7, maker_side
+        """).fetchall()
+    except sqlite3.OperationalError:
+        # Fallback: simpler SQL if SQLite version doesn't support that nested instr
+        rows = conn.execute("""
+            SELECT market_slug, maker_side FROM mm_trade_tape
+        """).fetchall()
+        # Manual aggregation
+        from collections import defaultdict
+        agg: dict = defaultdict(lambda: defaultdict(int))
+        for slug, ms in rows:
+            agg[_prefix7(slug)][ms] += 1
+        rows = []
+        for p, sides in agg.items():
+            for ms, n in sides.items():
+                rows.append((p, ms, n))
+
+    by_prefix: dict[str, dict] = {}
+    for p, ms, n in rows:
+        if p not in by_prefix:
+            by_prefix[p] = {"buy": 0, "sell": 0}
+        if ms == "ORDER_SIDE_BUY":
+            by_prefix[p]["buy"] += n
+        elif ms == "ORDER_SIDE_SELL":
+            by_prefix[p]["sell"] += n
+    conn.close()
+
+    result: dict[str, dict] = {}
+    for prefix, counts in by_prefix.items():
+        total = counts["buy"] + counts["sell"]
+        if total < min_trades:
+            continue
+        share = counts["buy"] / total
+        if share > threshold_high:
+            direction = "yes_penalty"
+        elif share < threshold_low:
+            direction = "no_penalty"
+        else:
+            direction = None
+        result[prefix] = {
+            "direction": direction,
+            "model": model,
+            "yes_bid_share": share,
+            "n_trades": total,
+        }
+    return result
+
+
 def run_simulation(fills_by_st, snaps_by_st, outcomes, survival_model_name,
-                   n_trials=200, seed=0, per_prefix_model=None):
+                   n_trials=200, seed=0, per_prefix_model=None,
+                   directional_penalty_map=None):
     """Run n_trials Monte Carlo trials; return mean + percentile summary.
+
+    Precedence (highest to lowest):
+        1. directional_penalty_map (per-prefix7 YES_or_NO penalty)
+        2. per_prefix_model (per-prefix3 YES-only penalty, differential)
+        3. survival_model_name (uniform YES penalty model)
+        4. None → baseline (no penalty)
 
     Args:
         survival_model_name: None (baseline), or "pessimistic"/"base"/
-            "optimistic". Ignored if per_prefix_model is provided.
-        per_prefix_model: optional dict mapping prefix → model name for
-            differential-by-marketType penalty (e.g., {"tsc": "base"}
-            for tsc-only penalty).
+            "optimistic". Ignored if higher-precedence args set.
+        per_prefix_model: dict prefix3 → model name for YES-only
+            differential (e.g., {"tsc": "base"}).
+        directional_penalty_map: dict prefix7 → {"direction": "yes_penalty"
+            | "no_penalty" | None, "model": str}. Built from trade tape
+            via compute_directional_penalty_map().
     """
-    if per_prefix_model is not None:
+    if directional_penalty_map is not None:
+        survival_fn = make_directional_survival_fn(directional_penalty_map)
+    elif per_prefix_model is not None:
         survival_fn = make_differential_survival_fn(per_prefix_model)
     elif survival_model_name is None:
         survival_fn = lambda f: 1.0  # no penalty (baseline)
@@ -347,7 +509,11 @@ def run_simulation(fills_by_st, snaps_by_st, outcomes, survival_model_name,
         n_trials = 1
     else:
         model = SURVIVAL_MODELS[survival_model_name]
-        survival_fn = lambda f: model.get(f.get("_bucket"), 0.4)
+        # YES-only by default; no_bid fills always survive
+        survival_fn = lambda f: (
+            model.get(f.get("_bucket"), 0.4) if f.get("side") == "yes_bid"
+            else 1.0
+        )
 
     rng = random.Random(seed)
     trials = [run_trial(fills_by_st, snaps_by_st, outcomes, survival_fn, rng)
@@ -406,6 +572,28 @@ def main():
                              "separate multiple: 'tsc:base,asc:pessimistic'. "
                              "When set, the standard per-model table is replaced "
                              "with a single 'differential' row per slice.")
+    parser.add_argument("--auto-calibrate", action="store_true",
+                        help="Build a directional penalty map from the trade "
+                             "tape (data/poly_trade_tape.db) and run the "
+                             "simulator with that config. Each prefix is "
+                             "flagged 'yes_penalty', 'no_penalty', or none "
+                             "based on observed flow direction.")
+    parser.add_argument("--trade-tape-db",
+                        default="/Users/openclaw/polymarket-arb/data/poly_trade_tape.db",
+                        help="Path to trade tape DB for auto-calibration")
+    parser.add_argument("--auto-threshold-high", type=float, default=0.55,
+                        help="YES_BID share above which a prefix gets "
+                             "yes_penalty (default 0.55)")
+    parser.add_argument("--auto-threshold-low", type=float, default=0.45,
+                        help="YES_BID share below which a prefix gets "
+                             "no_penalty (default 0.45)")
+    parser.add_argument("--auto-min-trades", type=int, default=30,
+                        help="Minimum trades to include a prefix in the "
+                             "auto-calibration (default 30)")
+    parser.add_argument("--auto-model", default="base",
+                        choices=list(SURVIVAL_MODELS.keys()),
+                        help="Survival model magnitude for auto-calibration "
+                             "(default base)")
     parser.add_argument("--db", default=DB_PATH)
     args = parser.parse_args()
 
@@ -437,28 +625,51 @@ def main():
     print(f"{'Slice':<8s}  {'Model':<13s}  {'Trials':>7s}  "
           f"{'Net P&L $':>11s}  {'p25..p75':>17s}  {'YES kept':>9s}  {'NO kept':>9s}")
     print("=" * 80)
-    # If --differential is set, only run baseline + differential. Otherwise
-    # run baseline + each of the three survival models (the original behavior).
-    if args.differential:
+    # Build configs list: each config is (model_name, label, prefix_map,
+    # directional_map). One of prefix_map or directional_map is non-None
+    # (or both None for baseline / uniform survival models).
+    if args.auto_calibrate:
+        directional_map = compute_directional_penalty_map(
+            args.trade_tape_db,
+            threshold_high=args.auto_threshold_high,
+            threshold_low=args.auto_threshold_low,
+            min_trades=args.auto_min_trades,
+            model=args.auto_model,
+        )
+        print(f"\nAuto-calibration from trade tape ({args.trade_tape_db}):")
+        print(f"  thresholds: high={args.auto_threshold_high} "
+              f"low={args.auto_threshold_low}  min_trades={args.auto_min_trades}")
+        print(f"  prefixes calibrated: {len(directional_map)}")
+        for p in sorted(directional_map.keys()):
+            cfg = directional_map[p]
+            dir_str = cfg["direction"] or "none (balanced)"
+            print(f"    {p:<14s}  share={cfg['yes_bid_share']*100:>5.1f}%  "
+                  f"n={cfg['n_trades']:>4d}  → {dir_str}")
+        spec_label = f"auto[{args.auto_model},n={args.auto_min_trades}]"
+        configs = [(None, "baseline", None, None),
+                   (None, spec_label, None, directional_map)]
+    elif args.differential:
         differential_map = parse_differential_spec(args.differential)
         spec_label = "diff[" + ",".join(f"{k}={v}" for k, v in differential_map.items()) + "]"
-        configs = [(None, "baseline", None),
-                   (None, spec_label, differential_map)]
+        configs = [(None, "baseline", None, None),
+                   (None, spec_label, differential_map, None)]
     else:
-        differential_map = None
-        configs = [(None, "baseline", None),
-                   ("pessimistic", "pessimistic", None),
-                   ("base", "base", None),
-                   ("optimistic", "optimistic", None)]
+        configs = [(None, "baseline", None, None),
+                   ("pessimistic", "pessimistic", None, None),
+                   ("base", "base", None, None),
+                   ("optimistic", "optimistic", None, None)]
 
     rows = []
     for slice_label, slice_fills in slices:
-        for model_name, label, prefix_map in configs:
-            n_trials = 1 if (model_name is None and prefix_map is None) else args.trials
+        for model_name, label, prefix_map, dir_map in configs:
+            is_baseline = (model_name is None and prefix_map is None
+                           and dir_map is None)
+            n_trials = 1 if is_baseline else args.trials
             summary = run_simulation(
                 slice_fills, snaps_by_st, outcomes,
                 model_name, n_trials=n_trials, seed=args.seed,
                 per_prefix_model=prefix_map,
+                directional_penalty_map=dir_map,
             )
             net_mean_dollars = summary["net_pnl_c_mean"] / 100
             p25 = summary["net_pnl_c_p25"] / 100

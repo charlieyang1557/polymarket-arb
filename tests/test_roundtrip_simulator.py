@@ -23,6 +23,8 @@ from scripts.research.roundtrip_simulator import (
     apply_survival_to_fills,
     simulate_session_ticker,
     make_differential_survival_fn,
+    make_directional_survival_fn,
+    compute_directional_penalty_map,
     SURVIVAL_MODELS,
 )
 
@@ -166,13 +168,17 @@ def test_net_pnl_combines_gross_and_fees():
 # ---------- survival probability filtering -------------------------------
 
 def test_apply_survival_p0_drops_all_yes_bid():
-    """survival_fn returning 0.0 drops every yes_bid fill."""
+    """A side-aware survival_fn returning 0.0 for yes_bid drops them all.
+
+    Note: the survival_fn is now responsible for the side gating
+    (apply_survival_to_fills no longer hard-codes a yes_bid-only guard).
+    """
     fills = [
         {"id": 1, "side": "yes_bid", "_bucket": 0, "filled_at": "t0"},
         {"id": 2, "side": "no_bid", "_bucket": 0, "filled_at": "t1"},
         {"id": 3, "side": "yes_bid", "_bucket": -1, "filled_at": "t2"},
     ]
-    survival_fn = lambda f: 0.0
+    survival_fn = lambda f: 0.0 if f["side"] == "yes_bid" else 1.0
     kept = apply_survival_to_fills(fills, survival_fn, random.Random(0))
     assert len(kept) == 1
     assert kept[0]["side"] == "no_bid"
@@ -187,11 +193,17 @@ def test_apply_survival_p1_keeps_all():
     assert len(kept) == 2
 
 
-def test_apply_survival_does_not_affect_no_bid():
-    """The penalty is YES-only; no_bid fills survive regardless of survival_fn."""
-    fills = [{"id": 1, "side": "no_bid", "_bucket": 0, "filled_at": "t0"}]
-    kept = apply_survival_to_fills(fills, lambda f: 0.0, random.Random(0))
+def test_apply_survival_can_now_filter_no_bid_too():
+    """The new semantics let survival_fn target either side. NO penalty
+    config drops no_bid fills with the configured probability."""
+    fills = [
+        {"id": 1, "side": "yes_bid", "_bucket": 0, "filled_at": "t0"},
+        {"id": 2, "side": "no_bid", "_bucket": 0, "filled_at": "t1"},
+    ]
+    survival_fn = lambda f: 0.0 if f["side"] == "no_bid" else 1.0
+    kept = apply_survival_to_fills(fills, survival_fn, random.Random(0))
     assert len(kept) == 1
+    assert kept[0]["side"] == "yes_bid"
 
 
 def test_survival_uses_bucket_lookup():
@@ -286,6 +298,127 @@ def test_differential_survival_fn_unknown_model_name_raises():
     """An unrecognized model name should fail loudly."""
     with pytest.raises(KeyError):
         make_differential_survival_fn({"tsc": "not_a_model"})
+
+
+# ---------- directional penalty (YES or NO, derived from trade tape) ----
+
+def test_make_directional_survival_fn_yes_penalty_drops_yes_bid_only():
+    """A prefix flagged yes_penalty should drop yes_bid fills, not no_bid."""
+    penalty_map = {"tsc-mlb": {"direction": "yes_penalty", "model": "base"}}
+    fn = make_directional_survival_fn(penalty_map)
+    yes_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "tsc-mlb-foo"}
+    no_fill = {"side": "no_bid", "_bucket": 0, "ticker": "tsc-mlb-foo"}
+    assert fn(yes_fill) == pytest.approx(0.40)  # base model survival
+    assert fn(no_fill) == 1.0  # no_bid not penalized
+
+
+def test_make_directional_survival_fn_no_penalty_drops_no_bid_only():
+    """A prefix flagged no_penalty should drop no_bid fills, not yes_bid."""
+    penalty_map = {"tsc-nba": {"direction": "no_penalty", "model": "base"}}
+    fn = make_directional_survival_fn(penalty_map)
+    yes_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "tsc-nba-foo"}
+    no_fill = {"side": "no_bid", "_bucket": 0, "ticker": "tsc-nba-foo"}
+    assert fn(yes_fill) == 1.0  # yes_bid not penalized
+    assert fn(no_fill) == pytest.approx(0.40)
+
+
+def test_make_directional_survival_fn_no_penalty_fallback():
+    """A prefix not in the map gets no penalty (survival 1.0)."""
+    penalty_map = {"tsc-mlb": {"direction": "yes_penalty", "model": "base"}}
+    fn = make_directional_survival_fn(penalty_map)
+    yes_fill = {"side": "yes_bid", "_bucket": 0, "ticker": "aec-cs2-foo"}
+    no_fill = {"side": "no_bid", "_bucket": 0, "ticker": "aec-cs2-foo"}
+    assert fn(yes_fill) == 1.0
+    assert fn(no_fill) == 1.0
+
+
+def test_make_directional_survival_fn_uses_prefix7():
+    """Prefix lookup uses 7-char (or up to second dash) prefix, not 3-char."""
+    penalty_map = {"tsc-mlb": {"direction": "yes_penalty", "model": "base"}}
+    fn = make_directional_survival_fn(penalty_map)
+    # tsc-mlb prefix matches
+    assert fn({"side": "yes_bid", "_bucket": 0,
+               "ticker": "tsc-mlb-az-tex-2026-05-11-7pt5"}) == pytest.approx(0.40)
+    # tsc-nba doesn't match (different second component)
+    assert fn({"side": "yes_bid", "_bucket": 0,
+               "ticker": "tsc-nba-okc-lal-2026-05-11-216pt5"}) == 1.0
+
+
+def test_compute_directional_penalty_map_yes_heavy(tmp_path):
+    """Prefix with maker_buy >> maker_sell flagged yes_penalty."""
+    import sqlite3
+    db = tmp_path / "tt.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("""
+        CREATE TABLE mm_trade_tape (
+            market_slug TEXT, maker_side TEXT
+        )
+    """)
+    # 80 BUY, 20 SELL → YES_BID share = 80% → yes_penalty
+    for _ in range(80):
+        conn.execute("INSERT INTO mm_trade_tape VALUES ('astatc-mlb-x', 'ORDER_SIDE_BUY')")
+    for _ in range(20):
+        conn.execute("INSERT INTO mm_trade_tape VALUES ('astatc-mlb-x', 'ORDER_SIDE_SELL')")
+    conn.commit()
+    conn.close()
+    m = compute_directional_penalty_map(str(db), threshold_high=0.55,
+                                          threshold_low=0.45, min_trades=50)
+    assert "astatc-mlb" in m
+    assert m["astatc-mlb"]["direction"] == "yes_penalty"
+
+
+def test_compute_directional_penalty_map_no_heavy(tmp_path):
+    """Prefix with maker_buy << maker_sell flagged no_penalty."""
+    import sqlite3
+    db = tmp_path / "tt.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE mm_trade_tape (market_slug TEXT, maker_side TEXT)")
+    # 20 BUY, 80 SELL → YES_BID share = 20% → no_penalty
+    for _ in range(20):
+        conn.execute("INSERT INTO mm_trade_tape VALUES ('tsc-nba-x', 'ORDER_SIDE_BUY')")
+    for _ in range(80):
+        conn.execute("INSERT INTO mm_trade_tape VALUES ('tsc-nba-x', 'ORDER_SIDE_SELL')")
+    conn.commit()
+    conn.close()
+    m = compute_directional_penalty_map(str(db), threshold_high=0.55,
+                                          threshold_low=0.45, min_trades=50)
+    assert "tsc-nba" in m
+    assert m["tsc-nba"]["direction"] == "no_penalty"
+
+
+def test_compute_directional_penalty_map_balanced(tmp_path):
+    """Prefix with balanced flow flagged None (no penalty)."""
+    import sqlite3
+    db = tmp_path / "tt.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE mm_trade_tape (market_slug TEXT, maker_side TEXT)")
+    for _ in range(50):
+        conn.execute("INSERT INTO mm_trade_tape VALUES ('aec-nhl-x', 'ORDER_SIDE_BUY')")
+    for _ in range(50):
+        conn.execute("INSERT INTO mm_trade_tape VALUES ('aec-nhl-x', 'ORDER_SIDE_SELL')")
+    conn.commit()
+    conn.close()
+    m = compute_directional_penalty_map(str(db), threshold_high=0.55,
+                                          threshold_low=0.45, min_trades=50)
+    # Balanced prefix should be absent from map OR have direction=None
+    direction = m.get("aec-nhl", {}).get("direction")
+    assert direction is None
+
+
+def test_compute_directional_penalty_map_min_trades_filter(tmp_path):
+    """Prefixes below min_trades are excluded from the map."""
+    import sqlite3
+    db = tmp_path / "tt.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE mm_trade_tape (market_slug TEXT, maker_side TEXT)")
+    # Only 5 trades — too few to be reliable
+    for _ in range(5):
+        conn.execute("INSERT INTO mm_trade_tape VALUES ('aec-ufc-x', 'ORDER_SIDE_BUY')")
+    conn.commit()
+    conn.close()
+    m = compute_directional_penalty_map(str(db), threshold_high=0.55,
+                                          threshold_low=0.45, min_trades=20)
+    assert "aec-ufc" not in m
 
 
 # ---------- chronological ordering ---------------------------------------
