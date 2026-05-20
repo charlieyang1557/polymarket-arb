@@ -35,10 +35,39 @@ SCHEDULE_MAX_AGE_HOURS = 6
 # Slug date pattern: YYYY-MM-DD somewhere in the slug
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
-# Known sport codes in Polymarket slugs
-_SPORTS = {"nba", "nhl", "mlb", "nfl", "cbb", "wcbb", "cfb",
-           "ufc", "atp", "wta", "epl", "ucl", "mls", "sea",
-           "bun", "lal", "masters"}
+# Known sport codes in Polymarket slugs. This is a WHITELIST — slugs whose
+# parts[1] is not in this set are rejected by is_sport_market(). Add new
+# sport codes here as Polymarket introduces them.
+#
+# Categories (per CLAUDE.md sport-whitelist):
+#  - Traditional sports: nba, nhl, mlb, nfl, cbb, wcbb, cfb, wnba
+#  - Tennis: atp, wta
+#  - Combat: ufc
+#  - Soccer: mls, epl, ucl, bun (Bundesliga), sea
+#  - Futures: lal (Lakers championship), masters
+#  - E-sports / niche: cs2, ipl (cricket — note: CLAUDE.md says e-sports
+#    need game_schedule data; that gate is enforced elsewhere)
+_SPORTS = {"nba", "nhl", "mlb", "nfl", "cbb", "wcbb", "cfb", "wnba",
+           "ufc", "atp", "wta",
+           "epl", "ucl", "mls", "sea", "bun",
+           "lal", "masters",
+           "cs2", "ipl"}
+
+
+def is_sport_market(slug: str) -> bool:
+    """Whitelist filter: does this slug's sport code belong to a sport we trade?
+
+    Drops non-sport markets like `tc-temp-*` (temperature forecasts) that
+    pass the spread/depth filters but are out of the bot's intended scope.
+
+    Returns True only if slug has at least one '-' AND parts[1] is in _SPORTS.
+    """
+    if not slug or "-" not in slug:
+        return False
+    parts = slug.split("-")
+    if len(parts) < 2:
+        return False
+    return parts[1].lower() in _SPORTS
 
 
 # ---------------------------------------------------------------------------
@@ -414,9 +443,16 @@ def scan_active_markets(client: PolyClient) -> list[dict]:
 
     # Enrich with BBO
     candidates = []
+    non_sport_dropped = 0
     for i, m in enumerate(all_markets):
         slug = m.get("slug", "")
         if not slug:
+            continue
+
+        # Sport-whitelist filter: drop non-sport slugs (e.g., tc-temp-*
+        # weather forecasts) before incurring the BBO API call cost.
+        if not is_sport_market(slug):
+            non_sport_dropped += 1
             continue
 
         try:
@@ -454,7 +490,8 @@ def scan_active_markets(client: PolyClient) -> list[dict]:
 
         time.sleep(0.05)
 
-    print(f"  {len(candidates)} markets with live BBO data")
+    print(f"  {len(candidates)} markets with live BBO data "
+          f"({non_sport_dropped} non-sport slugs dropped)")
     return candidates
 
 

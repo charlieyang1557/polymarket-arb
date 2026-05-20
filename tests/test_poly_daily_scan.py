@@ -9,6 +9,7 @@ from scripts.poly_daily_scan import (
     apply_prefilters,
     rank_candidates,
     avg_rank,
+    is_sport_market,
 )
 
 
@@ -34,6 +35,62 @@ def test_net_spread_at_extreme():
     result = poly_net_spread_cents(5, 90)
     # rebate = 2 * 0.25 * 0.02 * 0.9 * 0.1 * 100 = 0.09c
     assert abs(result - 5.09) < 0.01
+
+
+# --- is_sport_market (whitelist filter) ---
+
+def test_is_sport_market_traditional_sports():
+    """Standard sport slugs pass the whitelist."""
+    assert is_sport_market("tsc-mlb-az-tex-2026-05-11-7pt5") is True
+    assert is_sport_market("tsc-nba-okc-lal-2026-05-11-216pt5") is True
+    assert is_sport_market("tsc-nhl-col-min-2026-05-11-6pt5") is True
+    assert is_sport_market("aec-mlb-pit-nym-2026-03-28") is True
+    assert is_sport_market("aec-nhl-van-cgy-2026-03-28") is True
+    assert is_sport_market("aec-cbb-bayl-minnst-2026-04-01") is True
+
+
+def test_is_sport_market_tennis_and_combat():
+    """Tennis (atp, wta) and combat (ufc) pass."""
+    assert is_sport_market("aec-atp-romsaf-pabrui-2026-03-28") is True
+    assert is_sport_market("aec-wta-someplayer-otherplayer-2026-05-13") is True
+    assert is_sport_market("aec-ufc-israde-joepyf-2026-03-28") is True
+
+
+def test_is_sport_market_soccer():
+    """Soccer leagues (mls, epl, etc.) pass."""
+    assert is_sport_market("atc-mls-atl-hou-2026-05-12") is True
+
+
+def test_is_sport_market_observed_in_trade_tape():
+    """Sports observed in real Polymarket data: wnba, cs2, ipl."""
+    assert is_sport_market("aec-wnba-lvs-sea-2026-05-15") is True
+    assert is_sport_market("aec-cs2-someteam-otherteam-2026-05-13") is True
+    assert is_sport_market("aec-ipl-rcb-csk-2026-05-14") is True
+
+
+def test_is_sport_market_rejects_weather():
+    """tc-temp-* weather markets must be REJECTED."""
+    assert is_sport_market("tc-temp-laxhigh-2026-05-13-gte67lt68f") is False
+    assert is_sport_market("tc-temp-miahigh-2026-05-18-gte88lt89f") is False
+    assert is_sport_market("tc-temp-nychigh-2026-05-19-gte95lt96f") is False
+
+
+def test_is_sport_market_rejects_unknown_categories():
+    """Slugs with unknown parts[1] are rejected (whitelist by design)."""
+    assert is_sport_market("xyz-cryptoprice-btc-2026-05-13") is False
+    assert is_sport_market("foo-bar-baz-2026-05-13") is False
+
+
+def test_is_sport_market_rejects_malformed_slugs():
+    """Empty or short slugs are rejected."""
+    assert is_sport_market("") is False
+    assert is_sport_market("short") is False
+    assert is_sport_market("tsc") is False
+
+
+def test_is_sport_market_handles_team_prefix_lal():
+    """atc-lal-* (Lakers championship futures) was already in _SPORTS."""
+    assert is_sport_market("atc-lal-champ-2026-06-01") is True
 
 
 # --- apply_prefilters ---
