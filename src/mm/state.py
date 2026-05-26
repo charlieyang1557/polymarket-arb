@@ -58,15 +58,33 @@ def obi_microprice(best_bid: int, best_ask: int,
     return best_bid + spread * (no_depth / total)
 
 
-YES_ADVERSE_SELECTION_PENALTY = 1
-"""Cents subtracted from the YES bid only (not NO).
+YES_ADVERSE_SELECTION_PENALTY = 0
+"""Cents subtracted from the YES bid only (not NO). Currently 0 (DISABLED).
 
-Empirically derived from May 2026 production data on Polymarket sports —
-the bot's fill distribution was 209 yes_bid vs 117 no_bid, with a 99/14
-first-fill imbalance at inv=0. Per fill_asymmetry_diagnosis.md H2, taker
-flow on these markets is dominated by YES-sellers (retail position
-dumpers), making the YES side structurally adverse-selected. Lowering
-the YES bid by 1c offsets the expected adverse-selection cost.
+History: was set to 1c on 2026-05-10 as Path C's "fix" for the historical
+209:117 yes_bid:no_bid imbalance (fill_asymmetry_diagnosis.md H2). Reverted
+on 2026-05-20 based on three convergent findings:
+
+  1. Round-trip simulator showed flat 1c penalty was net mildly negative
+     in aggregate (-$1.56 vs baseline; see roundtrip_simulator_findings.md
+     Appendix A). The historical fix damaged round-trip P&L more than it
+     fixed the ratio.
+
+  2. WebSocket trade tape (May 11-19, 1810 trades) showed the aggressor
+     flow direction has FLIPPED for most prefixes vs the historical
+     period: tsc-nba 19% YES_BID share (was 77%), tsc-mlb 47% (was 82%).
+     The "YES-seller taker dominance" thesis is not supported by current
+     market data (trade_tape_aggressor_findings.md).
+
+  3. Trade-tape-informed auto-calibration of the simulator gives net P&L
+     up to $9.37 WORSE than baseline at sensible thresholds — the signal
+     is unstable enough that retrospective application is destructive
+     (simulator_recalibration_findings.md).
+
+If a future iteration wants to re-enable: set to the desired value, or
+better, replace this constant with a per-marketType lookup driven by
+recent trade tape data. See path_b_options.md for the broader strategy
+direction discussion.
 """
 
 
@@ -80,13 +98,15 @@ def skewed_quotes(fair: float, best_yes_bid: int, best_no_bid: int,
       NO bid  = (100-fair) - half_spread - quote_offset + skew
 
     Where half_spread = max(1, market_spread // 2). The YES penalty is
-    a fixed 1c discount on the YES bid only — see
-    YES_ADVERSE_SELECTION_PENALTY for the empirical justification.
+    CURRENTLY 0 (reverted 2026-05-20) — see YES_ADVERSE_SELECTION_PENALTY
+    for revert reasoning. The code path is preserved so a future iteration
+    can re-enable.
 
     Uses round() (banker's rounding) instead of math.floor() so that
     when fair has a fractional component, YES and NO round symmetrically
     around it. floor() biased downward and amplified the YES asymmetry
-    by ~10-15% (see fill_asymmetry_diagnosis.md Fix 2).
+    by ~10-15% (see fill_asymmetry_diagnosis.md Fix 2). This fix is
+    KEPT (independent of the penalty revert).
 
     Positive net_inventory = long YES:
       skew > 0 → YES bid lower (less aggressive) + NO bid higher (more aggressive)

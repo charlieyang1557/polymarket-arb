@@ -7,97 +7,97 @@ GAMMA = 0.5  # cents per contract
 
 # All tests use best_yes_bid=45, best_no_bid=50, fair=48.0:
 #   market_spread = 100 - 50 - 45 = 5, half_spread = max(1, 5//2) = 2
-#   yes_base = round(48 - 2 - YES_PENALTY=1) = 45
+#   yes_base = round(48 - 2 - YES_PENALTY=0) = 46  (post 2026-05-20 revert)
 #   no_base  = round(52 - 2) = 50
-# (fair-anchored, with 1c YES adverse-selection penalty + round())
+# (fair-anchored, banker's rounding; YES penalty was 1c, reverted to 0)
 
 
 # -- Basic skew behavior --
 
 def test_skew_zero_at_zero_inventory():
-    """No inventory → no skew, quotes at fair ± half_spread, minus YES penalty."""
-    # YES = round(48 - 2 - 0 - 0 - 1) = 45
+    """No inventory → no skew, quotes at fair ± half_spread."""
+    # YES = round(48 - 2 - 0 - 0 - 0) = 46
     # NO  = round(52 - 2 - 0 + 0)     = 50
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=0, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 45
+    assert yes_price == 46
     assert no_price == 50
 
 
 def test_skew_positive_inventory():
     """Long YES (inv=4) → lower YES bid further, raise NO bid."""
     # skew_raw = 4 * 0.5 = 2c
-    # YES = round(48 - 2 - 0 - 2 - 1) = 43
+    # YES = round(48 - 2 - 0 - 2 - 0) = 44
     # NO  = round(52 - 2 - 0 + 2)     = 52
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=4, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 43
+    assert yes_price == 44
     assert no_price == 52
 
 
 def test_skew_negative_inventory():
-    """Long NO (inv=-4) → raise YES bid (offset by penalty), lower NO."""
+    """Long NO (inv=-4) → raise YES bid, lower NO."""
     # skew_raw = -2
-    # YES = round(48 - 2 - 0 - (-2) - 1) = round(47) = 47
+    # YES = round(48 - 2 - 0 - (-2) - 0) = round(48) = 48
     # NO  = round(52 - 2 - 0 + (-2))     = 48
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=-4, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 47
+    assert yes_price == 48
     assert no_price == 48
 
 
 def test_skew_at_inv_10():
     """At inv=10, skew=5c — significant but not extreme."""
-    # YES = round(48 - 2 - 5 - 1) = 40, NO = round(52 - 2 + 5) = 55
+    # YES = round(48 - 2 - 5 - 0) = 41, NO = round(52 - 2 + 5) = 55
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=10, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 40
+    assert yes_price == 41
     assert no_price == 55
 
 
 def test_skew_floor_at_1c():
     """Wide spread (47c) with large skew — price computed from fair, not BBO."""
-    # half=23, skew_raw=10, YES = round(48 - 23 - 10 - 1) = 14
+    # half=23, skew_raw=10, YES = round(48 - 23 - 10 - 0) = 15
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=3, best_no_bid=50,
         net_inventory=20, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 14
+    assert yes_price == 15
 
 
 def test_skew_with_quote_offset():
     """Live-game offset stacks with skew."""
     # skew_raw=2, quote_offset=2
-    # YES = round(48 - 2 - 2 - 2 - 1) = 41
+    # YES = round(48 - 2 - 2 - 2 - 0) = 42
     # NO  = round(52 - 2 - 2 + 2)     = 50
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=4, gamma=GAMMA, quote_offset=2)
-    assert yes_price == 41
+    assert yes_price == 42
     assert no_price == 50
 
 
 def test_skew_small_inventory():
     """At inv=1, skew_raw=0.5c — fractional skew rounds via banker's."""
-    # YES = round(48 - 2 - 0.5 - 1) = round(44.5) = 44 (banker's: 4 even)
+    # YES = round(48 - 2 - 0.5 - 0) = round(45.5) = 46 (banker's: 6 even)
     # NO  = round(52 - 2 + 0.5)     = round(50.5) = 50 (banker's: 0 even)
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=1, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 44
+    assert yes_price == 46
     assert no_price == 50
 
 
 def test_skew_inv_2_visible():
     """At inv=2, skew_raw=1c — first integer adjustment."""
-    # YES = round(48 - 2 - 1 - 1) = 44, NO = round(52 - 2 + 1) = 51
+    # YES = round(48 - 2 - 1 - 0) = 45, NO = round(52 - 2 + 1) = 51
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=2, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 44
+    assert yes_price == 45
     assert no_price == 51
 
 
@@ -133,12 +133,12 @@ def test_profitability_floor_preserves_skew_direction():
 
 def test_profitability_floor_does_not_affect_small_skew():
     """Wide spread + small skew = already profitable, floor is no-op."""
-    # YES = round(48 - 2 - 1 - 1) = 44, NO = round(52 - 2 + 1) = 51
-    # gross = 100 - 44 - 51 = 5 >= 1 → no-op.
+    # YES = round(48 - 2 - 1 - 0) = 45, NO = round(52 - 2 + 1) = 51
+    # gross = 100 - 45 - 51 = 4 >= 1 → no-op.
     yes_price, no_price = skewed_quotes(
         fair=48.0, best_yes_bid=45, best_no_bid=50,
         net_inventory=2, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 44
+    assert yes_price == 45
     assert no_price == 51
 
 
@@ -160,9 +160,9 @@ def test_profitability_floor_narrow_spread_high_inv():
 def test_profitability_floor_zero_inv_no_effect():
     """At zero inventory, no skew to reduce — floor is trivially a no-op."""
     # market_spread = 100 - 50 - 48 = 2, half = 1
-    # YES = round(49 - 1 - 0 - 1) = 47, NO = round(51 - 1 + 0) = 50
+    # YES = round(49 - 1 - 0 - 0) = 48, NO = round(51 - 1 + 0) = 50
     yes_price, no_price = skewed_quotes(
         fair=49.0, best_yes_bid=48, best_no_bid=50,
         net_inventory=0, gamma=GAMMA, quote_offset=0)
-    assert yes_price == 47
+    assert yes_price == 48
     assert no_price == 50
