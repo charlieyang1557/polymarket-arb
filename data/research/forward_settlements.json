@@ -1,0 +1,962 @@
+{
+  "aec-atp-alekov-artgea-2026-05-17": {
+    "closed": true,
+    "endDate": "2026-05-31T13:35:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:44.485072Z",
+    "result": "no",
+    "settled": true,
+    "slug": "aec-atp-alekov-artgea-2026-05-17"
+  },
+  "aec-atp-nerfat-lukmik-2026-05-18": {
+    "closed": true,
+    "endDate": "2026-06-01T08:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:44.602067Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-atp-nerfat-lukmik-2026-05-18"
+  },
+  "aec-atp-tiaper-gaseli-2026-05-11": {
+    "closed": true,
+    "endDate": "2026-05-25T09:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:44.721958Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-atp-tiaper-gaseli-2026-05-11"
+  },
+  "aec-atp-titdro-teratm-2026-05-14": {
+    "closed": true,
+    "endDate": "2026-05-28T09:25:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:45.084188Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-atp-titdro-teratm-2026-05-14"
+  },
+  "aec-cs2-ast-lgc-2026-05-12": {
+    "closed": true,
+    "endDate": "2026-05-26T23:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:45.205572Z",
+    "result": "no",
+    "settled": true,
+    "slug": "aec-cs2-ast-lgc-2026-05-12"
+  },
+  "aec-cs2-mglz-aur-2026-05-13": {
+    "closed": true,
+    "endDate": "2026-05-27T11:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:45.339132Z",
+    "result": "no",
+    "settled": true,
+    "slug": "aec-cs2-mglz-aur-2026-05-13"
+  },
+  "aec-cs2-tl-m80-2026-05-12": {
+    "closed": true,
+    "endDate": "2026-05-26T23:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:45.476935Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-cs2-tl-m80-2026-05-12"
+  },
+  "aec-ipl-guj-srh-2026-05-12": {
+    "closed": true,
+    "endDate": "2026-05-26T14:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:45.596070Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-ipl-guj-srh-2026-05-12"
+  },
+  "aec-ipl-pbks-mui-2026-05-14": {
+    "closed": true,
+    "endDate": "2026-05-28T14:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:45.710934Z",
+    "result": "no",
+    "settled": true,
+    "slug": "aec-ipl-pbks-mui-2026-05-14"
+  },
+  "aec-mlb-az-tex-2026-05-11": {
+    "closed": true,
+    "endDate": "2026-05-26T00:05:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:45.863888Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-mlb-az-tex-2026-05-11"
+  },
+  "aec-mlb-kc-cws-2026-05-12": {
+    "closed": true,
+    "endDate": "2026-05-26T23:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:45.988260Z",
+    "result": "no",
+    "settled": true,
+    "slug": "aec-mlb-kc-cws-2026-05-12"
+  },
+  "aec-mlb-kc-stl-2026-05-17": {
+    "closed": true,
+    "endDate": "2026-05-31T18:15:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:46.093286Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-mlb-kc-stl-2026-05-17"
+  },
+  "aec-mlb-mia-min-2026-05-14": {
+    "closed": true,
+    "endDate": "2026-05-28T17:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:46.205671Z",
+    "result": "no",
+    "settled": true,
+    "slug": "aec-mlb-mia-min-2026-05-14"
+  },
+  "aec-mlb-mil-min-2026-05-15": {
+    "closed": true,
+    "endDate": "2026-05-29T23:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:46.333346Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-mlb-mil-min-2026-05-15"
+  },
+  "aec-nhl-veg-ana-2026-05-14": {
+    "closed": true,
+    "endDate": "2026-05-28T21:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:46.438168Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-nhl-veg-ana-2026-05-14"
+  },
+  "aec-ufc-khawil-nikver-2026-05-16": {
+    "closed": true,
+    "endDate": "2026-05-30T17:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:46.564573Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-ufc-khawil-nikver-2026-05-16"
+  },
+  "aec-wnba-la-ind-2026-05-13": {
+    "closed": true,
+    "endDate": "2026-05-28T02:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:46.687468Z",
+    "result": "no",
+    "settled": true,
+    "slug": "aec-wnba-la-ind-2026-05-13"
+  },
+  "aec-wnba-lv-atl-2026-05-17": {
+    "closed": true,
+    "endDate": "2026-05-31T17:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:46.798165Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-wnba-lv-atl-2026-05-17"
+  },
+  "aec-wta-diapar-emmrad-2026-05-18": {
+    "closed": true,
+    "endDate": "2026-06-01T08:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:46.921796Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-wta-diapar-emmrad-2026-05-18"
+  },
+  "aec-wta-mcckes-okssel-2026-05-17": {
+    "closed": true,
+    "endDate": "2026-05-31T08:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:47.037522Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-wta-mcckes-okssel-2026-05-17"
+  },
+  "aec-wta-talgib-shuzha-2026-05-17": {
+    "closed": true,
+    "endDate": "2026-05-31T08:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:47.155885Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "aec-wta-talgib-shuzha-2026-05-17"
+  },
+  "asc-mlb-az-col-2026-05-17-neg-1pt5": {
+    "closed": true,
+    "endDate": "2026-05-31T19:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:47.271208Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "asc-mlb-az-col-2026-05-17-neg-1pt5"
+  },
+  "asc-mlb-sf-lad-2026-05-14-f5-pos-1pt5": {
+    "closed": true,
+    "endDate": "2026-05-29T02:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:47.454629Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "asc-mlb-sf-lad-2026-05-14-f5-pos-1pt5"
+  },
+  "asc-nba-okc-lal-2026-05-11-neg-12pt5": {
+    "closed": true,
+    "endDate": "2026-05-25T22:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:47.573665Z",
+    "result": "no",
+    "settled": true,
+    "slug": "asc-nba-okc-lal-2026-05-11-neg-12pt5"
+  },
+  "asc-nba-sa-min-2026-05-15-neg-6pt5": {
+    "closed": true,
+    "endDate": "2026-05-29T21:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:47.678595Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "asc-nba-sa-min-2026-05-15-neg-6pt5"
+  },
+  "astatc-mlb-ath-laa-2026-05-18-yrfi": {
+    "closed": true,
+    "endDate": "2026-06-02T01:38:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:47.798934Z",
+    "result": "no",
+    "settled": true,
+    "slug": "astatc-mlb-ath-laa-2026-05-18-yrfi"
+  },
+  "astatc-mlb-atl-bos-2026-05-26-yrfi": {
+    "closed": true,
+    "endDate": "2026-06-09T22:45:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:47.913231Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "astatc-mlb-atl-bos-2026-05-26-yrfi"
+  },
+  "astatc-mlb-az-sf-2026-05-26-yrfi": {
+    "closed": false,
+    "endDate": "2026-06-10T01:45:00Z",
+    "ep3_status": "OPEN",
+    "long_price": "0.490",
+    "looked_up_at": "2026-05-27T00:36:48.031120Z",
+    "result": null,
+    "settled": false,
+    "slug": "astatc-mlb-az-sf-2026-05-26-yrfi"
+  },
+  "astatc-mlb-cin-phi-2026-05-19-yrfi": {
+    "closed": true,
+    "endDate": "2026-06-02T22:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:48.150310Z",
+    "result": "no",
+    "settled": true,
+    "slug": "astatc-mlb-cin-phi-2026-05-19-yrfi"
+  },
+  "astatc-mlb-laa-det-2026-05-26-k-jackoc-gte4": {
+    "closed": false,
+    "endDate": "2026-06-09T22:40:00Z",
+    "ep3_status": "OPEN",
+    "long_price": null,
+    "looked_up_at": "2026-05-27T00:36:48.270398Z",
+    "result": null,
+    "settled": false,
+    "slug": "astatc-mlb-laa-det-2026-05-26-k-jackoc-gte4"
+  },
+  "astatc-mlb-lad-laa-2026-05-16-yrfi": {
+    "closed": true,
+    "endDate": "2026-05-31T01:38:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:48.387593Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "astatc-mlb-lad-laa-2026-05-16-yrfi"
+  },
+  "astatc-mlb-lad-sd-2026-05-18-yrfi": {
+    "closed": true,
+    "endDate": "2026-06-02T01:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:48.491156Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "astatc-mlb-lad-sd-2026-05-18-yrfi"
+  },
+  "astatc-mlb-tor-nyy-2026-05-19-yrfi": {
+    "closed": true,
+    "endDate": "2026-06-02T23:05:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:48.679215Z",
+    "result": "no",
+    "settled": true,
+    "slug": "astatc-mlb-tor-nyy-2026-05-19-yrfi"
+  },
+  "astatc-nba-sa-okc-2026-05-26-ast-jalwil-gte4": {
+    "closed": false,
+    "endDate": "2026-06-10T00:30:00Z",
+    "ep3_status": "OPEN",
+    "long_price": "0.990",
+    "looked_up_at": "2026-05-27T00:36:48.775491Z",
+    "result": null,
+    "settled": false,
+    "slug": "astatc-nba-sa-okc-2026-05-26-ast-jalwil-gte4"
+  },
+  "astatc-nba-sa-okc-2026-05-26-ast-vicwem-gte4": {
+    "closed": false,
+    "endDate": "2026-06-10T00:30:00Z",
+    "ep3_status": "OPEN",
+    "long_price": "0.480",
+    "looked_up_at": "2026-05-27T00:36:48.879225Z",
+    "result": null,
+    "settled": false,
+    "slug": "astatc-nba-sa-okc-2026-05-26-ast-vicwem-gte4"
+  },
+  "astatc-nba-sa-okc-2026-05-26-pts-jalwil-gte15": {
+    "closed": false,
+    "endDate": "2026-06-10T00:30:00Z",
+    "ep3_status": "OPEN",
+    "long_price": "0.600",
+    "looked_up_at": "2026-05-27T00:36:49.003893Z",
+    "result": null,
+    "settled": false,
+    "slug": "astatc-nba-sa-okc-2026-05-26-pts-jalwil-gte15"
+  },
+  "astatc-nba-sa-okc-2026-05-26-pts-shaale-gte30": {
+    "closed": false,
+    "endDate": "2026-06-10T00:30:00Z",
+    "ep3_status": "OPEN",
+    "long_price": "0.600",
+    "looked_up_at": "2026-05-27T00:36:49.117242Z",
+    "result": null,
+    "settled": false,
+    "slug": "astatc-nba-sa-okc-2026-05-26-pts-shaale-gte30"
+  },
+  "atc-lal-ovi-ala-2026-05-17-ala": {
+    "closed": true,
+    "endDate": "2026-05-31T17:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:49.238408Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "atc-lal-ovi-ala-2026-05-17-ala"
+  },
+  "atc-mlb-atl-mia-2026-05-19-f5-atl": {
+    "closed": true,
+    "endDate": "2026-06-02T20:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:49.352605Z",
+    "result": "no",
+    "settled": true,
+    "slug": "atc-mlb-atl-mia-2026-05-19-f5-atl"
+  },
+  "atc-mls-hou-vwh-2026-05-16-vwh": {
+    "closed": true,
+    "endDate": "2026-05-31T00:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:49.463646Z",
+    "result": "no",
+    "settled": true,
+    "slug": "atc-mls-hou-vwh-2026-05-16-vwh"
+  },
+  "tc-temp-laxhigh-2026-05-13-gte67lt68f": {
+    "closed": true,
+    "endDate": "2026-05-14T08:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:49.577574Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tc-temp-laxhigh-2026-05-13-gte67lt68f"
+  },
+  "tc-temp-laxhigh-2026-05-15-gte69lt70f": {
+    "closed": true,
+    "endDate": "2026-05-16T08:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:49.684200Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tc-temp-laxhigh-2026-05-15-gte69lt70f"
+  },
+  "tc-temp-laxhigh-2026-05-18-gte71lt72f": {
+    "closed": true,
+    "endDate": "2026-05-19T08:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:49.811550Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tc-temp-laxhigh-2026-05-18-gte71lt72f"
+  },
+  "tc-temp-miahigh-2026-05-18-gte88lt89f": {
+    "closed": true,
+    "endDate": "2026-05-19T05:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:50.005722Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tc-temp-miahigh-2026-05-18-gte88lt89f"
+  },
+  "tc-temp-nychigh-2026-05-19-gte95lt96f": {
+    "closed": true,
+    "endDate": "2026-05-20T05:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:50.111676Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tc-temp-nychigh-2026-05-19-gte95lt96f"
+  },
+  "tc-temp-sfohigh-2026-05-14-lt66f": {
+    "closed": true,
+    "endDate": "2026-05-15T08:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:50.231405Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tc-temp-sfohigh-2026-05-14-lt66f"
+  },
+  "tsc-mlb-atl-mia-2026-05-19-8pt5": {
+    "closed": true,
+    "endDate": "2026-06-02T20:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:50.344515Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-atl-mia-2026-05-19-8pt5"
+  },
+  "tsc-mlb-az-col-2026-05-15-11pt5": {
+    "closed": true,
+    "endDate": "2026-05-30T00:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:50.457173Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-az-col-2026-05-15-11pt5"
+  },
+  "tsc-mlb-az-tex-2026-05-11-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T00:05:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:50.644454Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-az-tex-2026-05-11-7pt5"
+  },
+  "tsc-mlb-bal-tb-2026-05-19-7pt5": {
+    "closed": true,
+    "endDate": "2026-06-02T22:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:50.779285Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-bal-tb-2026-05-19-7pt5"
+  },
+  "tsc-mlb-bal-wsh-2026-05-15-9pt5": {
+    "closed": true,
+    "endDate": "2026-05-29T22:45:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:50.897651Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-bal-wsh-2026-05-15-9pt5"
+  },
+  "tsc-mlb-bos-kc-2026-05-19-7pt5": {
+    "closed": true,
+    "endDate": "2026-06-02T23:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:51.002243Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-bos-kc-2026-05-19-7pt5"
+  },
+  "tsc-mlb-chc-atl-2026-05-12-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T23:15:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:51.114511Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-chc-atl-2026-05-12-8pt5"
+  },
+  "tsc-mlb-chc-atl-2026-05-14-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-28T23:15:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:51.241680Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-chc-atl-2026-05-14-7pt5"
+  },
+  "tsc-mlb-chc-cws-2026-05-15-f5-4pt5": {
+    "closed": true,
+    "endDate": "2026-05-29T23:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:51.366211Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-chc-cws-2026-05-15-f5-4pt5"
+  },
+  "tsc-mlb-chc-cws-2026-05-16-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-30T23:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:51.474096Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-chc-cws-2026-05-16-8pt5"
+  },
+  "tsc-mlb-chc-cws-2026-05-17-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-31T18:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:51.596500Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-chc-cws-2026-05-17-8pt5"
+  },
+  "tsc-mlb-cin-cle-2026-05-16-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-30T22:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:51.712480Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-cin-cle-2026-05-16-8pt5"
+  },
+  "tsc-mlb-col-pit-2026-05-12-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T22:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:51.848196Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-col-pit-2026-05-12-7pt5"
+  },
+  "tsc-mlb-det-nym-2026-05-12-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T23:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:51.953786Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-det-nym-2026-05-12-7pt5"
+  },
+  "tsc-mlb-hou-min-2026-05-19-8pt5": {
+    "closed": true,
+    "endDate": "2026-06-02T23:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:52.067612Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-hou-min-2026-05-19-8pt5"
+  },
+  "tsc-mlb-kc-cws-2026-05-12-9pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T23:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:52.193388Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-kc-cws-2026-05-12-9pt5"
+  },
+  "tsc-mlb-kc-cws-2026-05-14-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-28T23:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:52.297010Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-kc-cws-2026-05-14-7pt5"
+  },
+  "tsc-mlb-lad-laa-2026-05-17-9pt5": {
+    "closed": true,
+    "endDate": "2026-05-31T20:07:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:52.400856Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-lad-laa-2026-05-17-9pt5"
+  },
+  "tsc-mlb-lad-sd-2026-05-19-8pt5": {
+    "closed": true,
+    "endDate": "2026-06-03T01:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:52.548882Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-lad-sd-2026-05-19-8pt5"
+  },
+  "tsc-mlb-nyy-bal-2026-05-11-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-25T22:35:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:52.657174Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-nyy-bal-2026-05-11-8pt5"
+  },
+  "tsc-mlb-nyy-bal-2026-05-12-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T22:35:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:52.755419Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-nyy-bal-2026-05-12-8pt5"
+  },
+  "tsc-mlb-nyy-nym-2026-05-16-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-30T23:15:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:52.867508Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-nyy-nym-2026-05-16-8pt5"
+  },
+  "tsc-mlb-phi-bos-2026-05-14-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-28T22:45:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:52.981430Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-phi-bos-2026-05-14-7pt5"
+  },
+  "tsc-mlb-sd-sea-2026-05-17-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-31T23:20:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:53.089526Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-sd-sea-2026-05-17-7pt5"
+  },
+  "tsc-mlb-sea-hou-2026-05-11-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T00:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:53.209806Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-sea-hou-2026-05-11-8pt5"
+  },
+  "tsc-mlb-sea-hou-2026-05-14-9pt5": {
+    "closed": true,
+    "endDate": "2026-05-28T18:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:53.318513Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-sea-hou-2026-05-14-9pt5"
+  },
+  "tsc-mlb-sf-ath-2026-05-16-9pt5": {
+    "closed": true,
+    "endDate": "2026-05-31T01:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:53.416273Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-sf-ath-2026-05-16-9pt5"
+  },
+  "tsc-mlb-sf-ath-2026-05-17-9pt5": {
+    "closed": true,
+    "endDate": "2026-05-31T20:05:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:53.521771Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-sf-ath-2026-05-17-9pt5"
+  },
+  "tsc-mlb-sf-az-2026-05-19-8pt5": {
+    "closed": true,
+    "endDate": "2026-06-03T01:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:53.623341Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-sf-az-2026-05-19-8pt5"
+  },
+  "tsc-mlb-sf-lad-2026-05-11-9pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T02:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:53.741198Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-sf-lad-2026-05-11-9pt5"
+  },
+  "tsc-mlb-sf-lad-2026-05-12-8pt5": {
+    "closed": true,
+    "endDate": "2026-05-27T02:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:53.855771Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-sf-lad-2026-05-12-8pt5"
+  },
+  "tsc-mlb-sf-lad-2026-05-13-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-28T02:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:53.967189Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-sf-lad-2026-05-13-7pt5"
+  },
+  "tsc-mlb-sf-lad-2026-05-14-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-29T02:10:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:54.076574Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-sf-lad-2026-05-14-7pt5"
+  },
+  "tsc-mlb-stl-ath-2026-05-14-9pt5": {
+    "closed": true,
+    "endDate": "2026-05-28T19:05:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:54.198035Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-stl-ath-2026-05-14-9pt5"
+  },
+  "tsc-mlb-tex-col-2026-05-18-9pt5": {
+    "closed": true,
+    "endDate": "2026-06-02T00:40:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:54.300241Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-mlb-tex-col-2026-05-18-9pt5"
+  },
+  "tsc-mlb-tor-det-2026-05-15-7pt5": {
+    "closed": true,
+    "endDate": "2026-05-29T22:45:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:54.425522Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-mlb-tor-det-2026-05-15-7pt5"
+  },
+  "tsc-nba-cle-det-2026-05-13-210pt5": {
+    "closed": true,
+    "endDate": "2026-05-27T20:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:54.534265Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nba-cle-det-2026-05-13-210pt5"
+  },
+  "tsc-nba-cle-det-2026-05-13-213pt5": {
+    "closed": true,
+    "endDate": "2026-05-27T20:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:54.641919Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nba-cle-det-2026-05-13-213pt5"
+  },
+  "tsc-nba-cle-det-2026-05-17-204pt5": {
+    "closed": true,
+    "endDate": "2026-05-31T20:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:54.758159Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nba-cle-det-2026-05-17-204pt5"
+  },
+  "tsc-nba-det-cle-2026-05-15-210pt5": {
+    "closed": true,
+    "endDate": "2026-05-29T19:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:54.884312Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-nba-det-cle-2026-05-15-210pt5"
+  },
+  "tsc-nba-min-sa-2026-05-12-219pt5": {
+    "closed": true,
+    "endDate": "2026-05-26T20:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:55.039120Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nba-min-sa-2026-05-12-219pt5"
+  },
+  "tsc-nba-okc-lal-2026-05-11-213pt5": {
+    "closed": true,
+    "endDate": "2026-05-25T22:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:55.214146Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nba-okc-lal-2026-05-11-213pt5"
+  },
+  "tsc-nba-okc-lal-2026-05-11-216pt5": {
+    "closed": true,
+    "endDate": "2026-05-25T22:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:55.314100Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nba-okc-lal-2026-05-11-216pt5"
+  },
+  "tsc-nba-sa-min-2026-05-15-219pt5": {
+    "closed": true,
+    "endDate": "2026-05-29T21:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:55.433030Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nba-sa-min-2026-05-15-219pt5"
+  },
+  "tsc-nba-sa-okc-2026-05-18-222pt5": {
+    "closed": true,
+    "endDate": "2026-06-01T20:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:55.542350Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nba-sa-okc-2026-05-18-222pt5"
+  },
+  "tsc-nba-sa-okc-2026-05-26-216pt5": {
+    "closed": false,
+    "endDate": "2026-06-09T20:30:00Z",
+    "ep3_status": "OPEN",
+    "long_price": "0.520",
+    "looked_up_at": "2026-05-27T00:36:55.651610Z",
+    "result": null,
+    "settled": false,
+    "slug": "tsc-nba-sa-okc-2026-05-26-216pt5"
+  },
+  "tsc-nba-sa-okc-2026-05-26-fh-111pt5": {
+    "closed": false,
+    "endDate": "2026-06-10T00:30:00Z",
+    "ep3_status": "OPEN",
+    "long_price": "0.450",
+    "looked_up_at": "2026-05-27T00:36:55.764208Z",
+    "result": null,
+    "settled": false,
+    "slug": "tsc-nba-sa-okc-2026-05-26-fh-111pt5"
+  },
+  "tsc-nhl-buf-mon-2026-05-16-6pt5": {
+    "closed": true,
+    "endDate": "2026-05-30T20:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:55.879660Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nhl-buf-mon-2026-05-16-6pt5"
+  },
+  "tsc-nhl-col-min-2026-05-11-6pt5": {
+    "closed": true,
+    "endDate": "2026-05-25T20:00:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "1",
+    "looked_up_at": "2026-05-27T00:36:55.991177Z",
+    "result": "yes",
+    "settled": true,
+    "slug": "tsc-nhl-col-min-2026-05-11-6pt5"
+  },
+  "tsc-nhl-veg-ana-2026-05-14-6pt5": {
+    "closed": true,
+    "endDate": "2026-05-28T21:30:00Z",
+    "ep3_status": "EXPIRED",
+    "long_price": "0",
+    "looked_up_at": "2026-05-27T00:36:56.101051Z",
+    "result": "no",
+    "settled": true,
+    "slug": "tsc-nhl-veg-ana-2026-05-14-6pt5"
+  }
+}
